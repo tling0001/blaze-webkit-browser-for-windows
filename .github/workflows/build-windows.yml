@@ -16,7 +16,7 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build-engine:
@@ -176,7 +176,7 @@ jobs:
       - name: Check out browser source
         uses: actions/checkout@v5
         with:
-          ref: ${{ github.event_name == 'pull_request' && github.sha || 'main' }}
+          ref: ${{ github.sha }}
 
       - name: Set up .NET 10
         uses: actions/setup-dotnet@v5
@@ -253,6 +253,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'EntranceThemeTransition API verification failed.' }
           winapp find-api check-property UISettings AnimationsEnabled --json --project-dir .
           if ($LASTEXITCODE -ne 0) { throw 'Windows UISettings animation preference API verification failed.' }
+          winapp find-api check-property FlyoutBase AreOpenCloseAnimationsEnabled --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'Native WinUI FlyoutBase animation API verification failed.' }
 
       - name: Download pinned WebKit engine runtime
         uses: actions/download-artifact@v6
@@ -363,7 +365,7 @@ jobs:
       - name: Check out release metadata
         uses: actions/checkout@v5
         with:
-          ref: main
+          ref: ${{ github.sha }}
 
       - name: Read version and matching release notes
         id: release_meta
@@ -397,6 +399,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.release_meta.outputs.version }}
+          TARGET_SHA: ${{ github.sha }}
         shell: bash
         run: |
           mapfile -d '' assets < <(find release-assets -maxdepth 1 -type f \( -name '*.exe' -o -name '*.msix' -o -name '*.cer' -o -name 'INSTALL.txt' \) -print0)
@@ -408,6 +411,6 @@ jobs:
           if gh release view "$VERSION" >/dev/null 2>&1; then
             gh release edit "$VERSION" --title "$VERSION" --notes-file release-notes.md
           else
-            gh release create "$VERSION" --title "$VERSION" --notes-file release-notes.md --target main
+            gh release create "$VERSION" --title "$VERSION" --notes-file release-notes.md --target "$TARGET_SHA"
           fi
           gh release upload "$VERSION" "${assets[@]}" --clobber
