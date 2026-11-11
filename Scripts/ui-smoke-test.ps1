@@ -150,27 +150,87 @@ window.addEventListener('load', () => {
         Invoke-Ui @('wait-for', $popupTab.automationId, '--gone', '-t', '10000') | Out-Null
     }
 
-    Test-UI 'Native settings dialog opens and persists reduced-motion preference' {
+    Test-UI 'Native settings dialog exposes and persists all popup policies' {
         Invoke-Ui @('invoke', 'SettingsButton') | Out-Null
         Invoke-Ui @('wait-for', 'ReduceMotion', '--value', 'Off', '-t', '5000') | Out-Null
         $inspection = Invoke-Ui @('inspect', '--interactive', '--json') | ConvertFrom-Json
         $elements = @(Get-Elements @($inspection.windows | ForEach-Object { $_.elements }))
-        if (-not ($elements | Where-Object { $_.automationId -eq 'ReduceMotion' })) {
-            throw 'The native Settings ContentDialog did not expose the ReduceMotion ToggleSwitch.'
+        foreach ($id in @('PopupHandlingMode', 'PopupModeAutomatic', 'PopupModeAlwaysAllow', 'PopupModeAlwaysDeny')) {
+            if (-not ($elements | Where-Object { $_.automationId -eq $id })) {
+                throw "The native Settings dialog did not expose $id."
+            }
         }
-        if (-not ($elements | Where-Object { $_.automationId -eq 'PopupHandlingMode' })) {
-            throw 'The native Settings ContentDialog did not expose the PopupHandlingMode RadioButtons.'
-        }
+
         Invoke-Ui @('click', 'ReduceMotion') | Out-Null
         Invoke-Ui @('wait-for', 'ReduceMotion', '--value', 'On', '-t', '3000') | Out-Null
+        Invoke-Ui @('click', 'PopupModeAlwaysDeny') | Out-Null
         Save-Screenshot '05-blaze-settings-dialog.png'
         Invoke-Ui @('invoke', 'Primary') | Out-Null
         Invoke-Ui @('wait-for', 'ReduceMotion', '--gone', '-t', '3000') | Out-Null
 
+        $settingsPath = Join-Path $env:LOCALAPPDATA 'Blaze\settings.json'
+        $savedSettings = Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json
+        if ([int]$savedSettings.PopupHandlingMode -ne 2) { throw 'Always deny was not persisted to settings.json.' }
+
         Invoke-Ui @('invoke', 'SettingsButton') | Out-Null
         Invoke-Ui @('wait-for', 'ReduceMotion', '--value', 'On', '-t', '5000') | Out-Null
-        Invoke-Ui @('invoke', 'Close') | Out-Null
+        Invoke-Ui @('click', 'PopupModeAlwaysAllow') | Out-Null
+        Invoke-Ui @('invoke', 'Primary') | Out-Null
         Invoke-Ui @('wait-for', 'ReduceMotion', '--gone', '-t', '3000') | Out-Null
+        $savedSettings = Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json
+        if ([int]$savedSettings.PopupHandlingMode -ne 1) { throw 'Always allow was not persisted to settings.json.' }
+    }
+
+    Test-UI 'Always deny rejects a pop-up without creating a tab' {
+        $popupUri = ([Uri]$popupPage).AbsoluteUri
+        Invoke-Ui @('set-value', 'AddressBox', $popupUri) | Out-Null
+        Invoke-Ui @('send-keys', 'enter', '--via', 'send-input') | Out-Null
+
+        $blockedTab = $null
+        for ($attempt = 0; $attempt -lt 20; $attempt++) {
+            $inspection = Invoke-Ui @('inspect', '--interactive', '--json') | ConvertFrom-Json
+            $elements = @(Get-Elements @($inspection.windows | ForEach-Object { $_.elements }))
+            $blockedTab = $elements | Where-Object {
+                $_.automationId -like 'BrowserTab_*' -and $_.name -eq 'Popup blocked'
+            } | Select-Object -First 1
+            if ($blockedTab) { break }
+            Start-Sleep -Milliseconds 500
+        }
+        if (-not $blockedTab) { throw 'Always deny did not return null from window.open and update the opener title.' }
+        if ($elements | Where-Object { $_.automationId -eq 'PopupPermissionDialog' }) {
+            throw 'Always deny displayed a permission prompt instead of rejecting the pop-up.'
+        }
+    }
+
+    Test-UI 'Always allow opens a pop-up without prompting' {
+        $popupUri = ([Uri]$popupPage).AbsoluteUri
+        Invoke-Ui @('set-value', 'AddressBox', $popupUri) | Out-Null
+        Invoke-Ui @('send-keys', 'enter', '--via', 'send-input') | Out-Null
+
+        $popupTab = $null
+        for ($attempt = 0; $attempt -lt 20; $attempt++) {
+            $inspection = Invoke-Ui @('inspect', '--interactive', '--json') | ConvertFrom-Json
+            $elements = @(Get-Elements @($inspection.windows | ForEach-Object { $_.elements }))
+            if ($elements | Where-Object { $_.automationId -eq 'PopupPermissionDialog' }) {
+                throw 'Always allow unexpectedly displayed a permission prompt.'
+            }
+            $popupTab = $elements | Where-Object {
+                $_.automationId -like 'BrowserTab_*' -and $_.name -eq 'Blaze popup passed'
+            } | Select-Object -First 1
+            if ($popupTab) { break }
+            Start-Sleep -Milliseconds 500
+        }
+        if (-not $popupTab) { throw 'Always allow did not create a visible native browser tab.' }
+        Save-Screenshot '09-popup-always-allow.png'
+        Invoke-Ui @('wait-for', $popupTab.automationId, '--gone', '-t', '10000') | Out-Null
+
+        Invoke-Ui @('invoke', 'SettingsButton') | Out-Null
+        Invoke-Ui @('wait-for', 'PopupHandlingMode', '-t', '5000') | Out-Null
+        Invoke-Ui @('click', 'PopupModeAutomatic') | Out-Null
+        Invoke-Ui @('invoke', 'Primary') | Out-Null
+        $settingsPath = Join-Path $env:LOCALAPPDATA 'Blaze\settings.json'
+        $savedSettings = Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json
+        if ([int]$savedSettings.PopupHandlingMode -ne 0) { throw 'Automatic was not restored as the final popup policy.' }
     }
 
     Test-UI 'WebKit JavaScript alert, confirm and prompt use native WinUI dialogs' {

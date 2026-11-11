@@ -1,5 +1,12 @@
 # Blaze release notes
 
+## [1.0.5] - 2026-11-11
+
+### Popup settings accessibility and coverage
+- Give each native WinUI popup-policy RadioButton its own AutomationId and accessible name.
+- Exercise Automatic, Always allow and Always deny end-to-end in the UI smoke test, including persistence and the actual `window.open()` result.
+- Verify the WinUI RadioButtons item and RadioButton content APIs against the restored app references in CI.
+
 ## [1.0.4] - 2026-11-11
 
 ### Popup settings and native callback reliability

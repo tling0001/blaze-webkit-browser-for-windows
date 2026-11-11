@@ -14,7 +14,7 @@ permissions:
   contents: write
 
 concurrency:
-  # v2 uses a fresh concurrency group to bypass the stale Build 62 run.
+  # v3 bypasses stale runs left in earlier concurrency groups.
   group: Blaze-v3-${{ github.ref }}
   cancel-in-progress: false
 
@@ -265,6 +265,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'AutoSuggestBox QuerySubmitted verification failed.' }
           winapp find-api check-property RadioButtons SelectedIndex ItemsSource --json --project-dir .
           if ($LASTEXITCODE -ne 0) { throw 'RadioButtons property verification failed.' }
+          winapp find-api check-property ItemsControl Items --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'RadioButtons item collection verification failed.' }
+          winapp find-api check-property RadioButton Content --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'RadioButton option content verification failed.' }
           winapp find-api check-property ContentDialog XamlRoot DefaultButton --json --project-dir .
           if ($LASTEXITCODE -ne 0) { throw 'ContentDialog property verification failed.' }
           winapp find-api members AppWindow --filter Resize --json --project-dir .

@@ -376,12 +376,20 @@ public sealed partial class MainPage : Page
         var reduceMotion = new ToggleSwitch { Header = "Reduce motion", IsOn = ViewModel.Settings.ReduceMotion };
         reduceMotion.OffContent = "Animations on";
         reduceMotion.OnContent = "Reduced animations";
-        var popupHandling = new RadioButtons
-        {
-            Header = "Pop-up windows",
-            ItemsSource = new[] { "Automatic", "Always allow", "Always deny" },
-            SelectedIndex = (int)ViewModel.Settings.PopupHandlingMode
-        };
+        var popupHandling = new RadioButtons { Header = "Pop-up windows" };
+        var automaticPopupOption = new RadioButton { Content = "Automatic" };
+        var allowPopupOption = new RadioButton { Content = "Always allow" };
+        var denyPopupOption = new RadioButton { Content = "Always deny" };
+        AutomationProperties.SetAutomationId(automaticPopupOption, "PopupModeAutomatic");
+        AutomationProperties.SetAutomationId(allowPopupOption, "PopupModeAlwaysAllow");
+        AutomationProperties.SetAutomationId(denyPopupOption, "PopupModeAlwaysDeny");
+        AutomationProperties.SetName(automaticPopupOption, "Automatic");
+        AutomationProperties.SetName(allowPopupOption, "Always allow");
+        AutomationProperties.SetName(denyPopupOption, "Always deny");
+        popupHandling.Items.Add(automaticPopupOption);
+        popupHandling.Items.Add(allowPopupOption);
+        popupHandling.Items.Add(denyPopupOption);
+        popupHandling.SelectedIndex = (int)ViewModel.Settings.PopupHandlingMode;
         AutomationProperties.SetAutomationId(position, "TabBarPosition");
         AutomationProperties.SetAutomationId(javaScript, "JavaScriptEnabled");
         AutomationProperties.SetAutomationId(images, "LoadImagesAutomatically");
