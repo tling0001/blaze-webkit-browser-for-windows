@@ -16,7 +16,7 @@ permissions:
   contents: write
 
 concurrency:
-  # v3 bypasses stale runs left in earlier concurrency groups.
+  # Keep the newest build for each ref; cancel older queued or running builds immediately.
   group: Blaze-v3-${{ github.ref }}
   cancel-in-progress: true
 
