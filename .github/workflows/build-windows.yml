@@ -275,14 +275,14 @@ jobs:
           Copy-Item -LiteralPath $packagePath -Destination (Join-Path $releaseDir "Blaze-$version-x64.msix") -Force
 
           $certificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new((Resolve-Path 'devcert.pfx').Path, 'password')
-          [System.IO.File]::WriteAllBytes((Join-Path $releaseDir 'WebKitBrowser-signing.cer'), $certificate.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert))
+          [System.IO.File]::WriteAllBytes((Join-Path $releaseDir 'Blaze-signing.cer'), $certificate.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert))
           $certificate.Dispose()
 
           @"
-          WebKit Browser $version (x64)
+          Blaze $version (x64)
 
-          1. Import WebKitBrowser-signing.cer into the Current User Trusted People certificate store.
-          2. Install WebKitBrowser-$version-x64.msix with App Installer or Add-AppxPackage.
+          1. Import Blaze-signing.cer into the Current User Trusted People certificate store.
+          2. Install Blaze-$version-x64.msix with App Installer or Add-AppxPackage.
           3. The certificate file contains only the public certificate. The private signing key is not included.
 
           This is a testing build of the upstream WinCairo WebKit port.
@@ -296,6 +296,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Inno Setup installation failed.' }
           $iscc = Get-ChildItem 'C:\Program Files (x86)\Inno Setup*' -Filter 'ISCC.exe' -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $iscc) { throw 'Inno Setup compiler ISCC.exe was not found.' }
+          [xml]$project = Get-Content -LiteralPath 'WebKitBrowser.csproj' -Raw
+          $version = $project.Project.PropertyGroup.Version
+          if (-not $version) { throw 'Blaze project version was not found.' }
           $env:BLAZE_VERSION = $version
           & $iscc.FullName /Qp Installer\Blaze.iss
           if ($LASTEXITCODE -ne 0) { throw 'Building Blaze-Setup.exe failed.' }
