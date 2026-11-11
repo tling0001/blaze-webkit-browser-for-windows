@@ -117,6 +117,7 @@ public sealed partial class MainPage : Page
     private void OnBackClick(object sender, RoutedEventArgs e) => ViewModel.GoBackCommand.Execute(null);
     private void OnForwardClick(object sender, RoutedEventArgs e) => ViewModel.GoForwardCommand.Execute(null);
     private void OnReloadClick(object sender, RoutedEventArgs e) => ViewModel.ReloadCommand.Execute(null);
+    private void OnStopClick(object sender, RoutedEventArgs e) => ViewModel.StopCommand.Execute(null);
 
     private void OnHomeClick(object sender, RoutedEventArgs e)
     {
@@ -210,12 +211,11 @@ public sealed partial class MainPage : Page
 
     private async Task ShowSettingsDialogAsync()
     {
-        var position = new ComboBox
+        var position = new RadioButtons
         {
             Header = "Tab bar position",
             ItemsSource = new[] { "Above toolbar", "Below toolbar" },
-            SelectedIndex = ViewModel.Settings.TabBarAboveToolbar ? 0 : 1,
-            MinWidth = 260
+            SelectedIndex = ViewModel.Settings.TabBarAboveToolbar ? 0 : 1
         };
         var javaScript = new ToggleSwitch { Header = "Enable JavaScript", IsOn = ViewModel.Settings.JavaScriptEnabled };
         var images = new ToggleSwitch { Header = "Load images automatically", IsOn = ViewModel.Settings.LoadImagesAutomatically };
@@ -259,7 +259,7 @@ public sealed partial class MainPage : Page
         var dialog = new ContentDialog
         {
             Title = "Settings",
-            Content = panel,
+            Content = new ScrollViewer { Content = panel, MaxHeight = 620 },
             PrimaryButtonText = "Save",
             SecondaryButtonText = "Clear browsing data",
             CloseButtonText = "Cancel",
@@ -281,9 +281,9 @@ public sealed partial class MainPage : Page
             };
             if (await confirmation.ShowAsync() == ContentDialogResult.Primary)
             {
-                foreach (var tab in ViewModel.Tabs)
-                    if (tab.NativeHandle != IntPtr.Zero)
-                        WebKitNative.ClearWebsiteData(tab.NativeHandle);
+                var activeProfile = ViewModel.Tabs.FirstOrDefault(tab => tab.NativeHandle != IntPtr.Zero);
+                if (activeProfile is not null)
+                    WebKitNative.ClearWebsiteData(activeProfile.NativeHandle);
                 await ViewModel.ClearHistoryAsync();
             }
             return;
@@ -352,11 +352,9 @@ public sealed partial class MainPage : Page
         if (tab is null || tab.NativeHandle == IntPtr.Zero)
             return;
 
-        var previousUrl = tab.Url;
         tab.RefreshNativeState();
         AddressBox.Text = tab.Url;
-        if (!string.Equals(previousUrl, tab.Url, StringComparison.Ordinal) &&
-            !string.Equals(tab.LastRecordedUrl, tab.Url, StringComparison.Ordinal))
+        if (!string.Equals(tab.LastRecordedUrl, tab.Url, StringComparison.Ordinal))
         {
             ViewModel.RecordNavigation(tab);
             _ = ViewModel.SaveAsync();
