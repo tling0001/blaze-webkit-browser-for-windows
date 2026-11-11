@@ -22,3 +22,6 @@ WB_API BOOL WB_CanGoBack(WB_VIEW_HANDLE view);
 WB_API BOOL WB_CanGoForward(WB_VIEW_HANDLE view);
 WB_API int WB_GetCurrentUrl(WB_VIEW_HANDLE view, wchar_t* buffer, int capacity);
 WB_API int WB_GetTitle(WB_VIEW_HANDLE view, wchar_t* buffer, int capacity);
+WB_API void WB_SetJavaScriptEnabled(WB_VIEW_HANDLE view, BOOL enabled);
+WB_API void WB_SetLoadsImagesAutomatically(WB_VIEW_HANDLE view, BOOL enabled);
+WB_API void WB_ClearWebsiteData(WB_VIEW_HANDLE view);

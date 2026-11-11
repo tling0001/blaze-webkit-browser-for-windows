@@ -192,3 +192,47 @@ int WB_GetTitle(WB_VIEW_HANDLE view, wchar_t* buffer, int capacity)
     if (title) WKRelease(title);
     return result;
 }
+
+void WB_SetJavaScriptEnabled(WB_VIEW_HANDLE view, BOOL enabled)
+{
+    if (!view || !view->view)
+        return;
+    auto configuration = WKPageCopyPageConfiguration(WKViewGetPage(view->view));
+    if (!configuration)
+        return;
+    auto preferences = WKPageConfigurationGetPreferences(configuration);
+    if (preferences)
+        WKPreferencesSetJavaScriptEnabled(preferences, enabled != FALSE);
+    WKRelease(configuration);
+}
+
+void WB_SetLoadsImagesAutomatically(WB_VIEW_HANDLE view, BOOL enabled)
+{
+    if (!view || !view->view)
+        return;
+    auto configuration = WKPageCopyPageConfiguration(WKViewGetPage(view->view));
+    if (!configuration)
+        return;
+    auto preferences = WKPageConfigurationGetPreferences(configuration);
+    if (preferences)
+        WKPreferencesSetLoadsImagesAutomatically(preferences, enabled != FALSE);
+    WKRelease(configuration);
+}
+
+void WB_ClearWebsiteData(WB_VIEW_HANDLE view)
+{
+    if (!view || !view->view)
+        return;
+    auto store = WKPageGetWebsiteDataStore(WKViewGetPage(view->view));
+    if (!store)
+        return;
+    auto cookies = WKWebsiteDataStoreGetHTTPCookieStore(store);
+    if (cookies)
+        WKHTTPCookieStoreDeleteAllCookies(cookies, nullptr, [](void*) { });
+    WKWebsiteDataStoreRemoveAllFetchCaches(store, nullptr, [](void*) { });
+    WKWebsiteDataStoreRemoveNetworkCache(store, nullptr, [](void*) { });
+    WKWebsiteDataStoreRemoveMemoryCaches(store, nullptr, [](void*) { });
+    WKWebsiteDataStoreRemoveAllServiceWorkerRegistrations(store, nullptr, [](void*) { });
+    WKWebsiteDataStoreRemoveAllIndexedDatabases(store, nullptr, [](void*) { });
+    WKWebsiteDataStoreRemoveLocalStorage(store, nullptr, [](void*) { });
+}

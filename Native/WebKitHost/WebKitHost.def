@@ -12,3 +12,6 @@ EXPORTS
     WB_CanGoForward
     WB_GetCurrentUrl
     WB_GetTitle
+    WB_SetJavaScriptEnabled
+    WB_SetLoadsImagesAutomatically
+    WB_ClearWebsiteData
