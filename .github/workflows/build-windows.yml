@@ -247,8 +247,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'AutomationProperties.SetName API verification failed.' }
           winapp find-api check-property UIElement Transitions --json --project-dir .
           if ($LASTEXITCODE -ne 0) { throw 'UIElement.Transitions API verification failed.' }
-          winapp find-api check-property ContentDialog ContentTransitions XamlRoot --json --project-dir .
-          if ($LASTEXITCODE -ne 0) { throw 'ContentDialog transition and XamlRoot API verification failed.' }
+          winapp find-api check-property ContentDialog ContentTransitions --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'ContentDialog.ContentTransitions API verification failed.' }
+          winapp find-api check-property ContentDialog XamlRoot --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'ContentDialog.XamlRoot API verification failed.' }
           winapp find-api check-property EntranceThemeTransition IsStaggeringEnabled --json --project-dir .
           if ($LASTEXITCODE -ne 0) { throw 'EntranceThemeTransition API verification failed.' }
           winapp find-api check-property UISettings AnimationsEnabled --json --project-dir .
