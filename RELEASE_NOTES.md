@@ -1,5 +1,11 @@
 # Blaze release notes
 
+## [1.1.1] - 2026-11-11
+
+### Build reliability
+- Cancel superseded SDK and browser workflow runs so a new commit for the same ref can start immediately.
+- Build the pinned WebKit checkout from a short physical path on the runner's workspace volume; avoid SUBST aliases that caused HarfBuzz's Meson-generated Python code to mix drive letters.
+
 ## [1.1.0] - 2026-11-11
 
 ### WebKit SDK consumption
