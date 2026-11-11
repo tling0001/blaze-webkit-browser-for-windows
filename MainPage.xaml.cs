@@ -26,6 +26,7 @@ public sealed partial class MainPage : Page
     private GCHandle _nativeCallbackHandle;
     private static readonly WebKitNative.DownloadCallback DownloadCallbackHandler = OnNativeDownload;
     private static readonly WebKitNative.PermissionCallback PermissionCallbackHandler = OnNativePermission;
+    private static readonly WebKitNative.JavaScriptDialogCallback JavaScriptDialogCallbackHandler = OnNativeJavaScriptDialog;
 
     public MainPage()
     {
@@ -65,8 +66,6 @@ public sealed partial class MainPage : Page
         _ = ViewModel.SaveAsync();
         foreach (var tab in ViewModel.Tabs)
             DestroyNativeView(tab);
-        if (_nativeCallbackHandle.IsAllocated)
-            _nativeCallbackHandle.Free();
     }
 
     private void OnAddTabButtonClick(TabView sender, TabViewAddTabButtonClickEventArgs args)
@@ -147,7 +146,7 @@ public sealed partial class MainPage : Page
 
     private void OnBookmarksClick(object sender, RoutedEventArgs e)
     {
-        var flyout = new MenuFlyout();
+        var flyout = CreateMenuFlyout();
         if (ViewModel.Bookmarks.Count == 0)
             flyout.Items.Add(new MenuFlyoutItem { Text = "No saved bookmarks yet", IsEnabled = false });
         else
@@ -213,11 +212,18 @@ public sealed partial class MainPage : Page
             flyout.ShowAt(element);
     }
 
+    private bool AreAnimationsEnabled => !ViewModel.Settings.ReduceMotion && new UISettings().AnimationsEnabled;
+
+    private MenuFlyout CreateMenuFlyout() => new()
+    {
+        AreOpenCloseAnimationsEnabled = AreAnimationsEnabled
+    };
+
     private async void OnSettingsClick(object sender, RoutedEventArgs e) => await ShowSettingsDialogAsync();
 
     private TransitionCollection CreateEntranceTransitions()
     {
-        if (ViewModel.Settings.ReduceMotion || !new UISettings().AnimationsEnabled)
+        if (!AreAnimationsEnabled)
             return [];
 
         return [new EntranceThemeTransition { IsStaggeringEnabled = false }];
@@ -381,6 +387,71 @@ public sealed partial class MainPage : Page
             await ShowSettingsDialogAsync();
     }
 
+    private async Task HandleJavaScriptDialogAsync(int dialogType, string origin, string message, string defaultValue, IntPtr listener)
+    {
+        var kind = dialogType switch
+        {
+            0 => "alert",
+            1 => "confirmation",
+            2 => "prompt",
+            _ => "navigation confirmation"
+        };
+        var content = new StackPanel { Spacing = 10 };
+        if (!string.IsNullOrWhiteSpace(origin))
+            content.Children.Add(new TextBlock { Text = origin, TextWrapping = TextWrapping.Wrap });
+        content.Children.Add(new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap });
+
+        TextBox? responseBox = null;
+        if (dialogType == 2)
+        {
+            responseBox = new TextBox { Header = "Response", Text = defaultValue };
+            AutomationProperties.SetAutomationId(responseBox, "JavaScriptPromptInput");
+            AutomationProperties.SetName(responseBox, "JavaScript prompt response");
+            content.Children.Add(responseBox);
+        }
+
+        var isAlert = dialogType == 0;
+        var dialog = new ContentDialog
+        {
+            Title = $"JavaScript {kind}",
+            Content = content,
+            PrimaryButtonText = "OK",
+            CloseButtonText = isAlert ? null : "Cancel",
+            DefaultButton = isAlert ? ContentDialogButton.Primary : ContentDialogButton.Close,
+            XamlRoot = XamlRoot
+        };
+        AutomationProperties.SetAutomationId(dialog, "JavaScriptDialog");
+
+        var accepted = isAlert;
+        string? response = null;
+        try
+        {
+            var result = await ShowDialogAsync(dialog);
+            accepted = isAlert || result == ContentDialogResult.Primary;
+            if (dialogType == 2 && accepted)
+                response = responseBox?.Text ?? string.Empty;
+        }
+        catch
+        {
+            // Always release WebKit's suspended JavaScript execution, even if
+            // the page is unloading or the native dialog cannot be displayed.
+            accepted = isAlert;
+        }
+        finally
+        {
+            WebKitNative.ResolveJavaScriptDialog(listener, dialogType, accepted, response);
+        }
+    }
+
+    private static void OnNativeJavaScriptDialog(int dialogType, string origin, string message, string defaultValue, IntPtr listener, IntPtr userData)
+    {
+        if (GCHandle.FromIntPtr(userData).Target is MainPage page
+            && App.DispatcherQueue.TryEnqueue(() => _ = page.HandleJavaScriptDialogAsync(dialogType, origin, message, defaultValue, listener)))
+            return;
+
+        WebKitNative.ResolveJavaScriptDialog(listener, dialogType, dialogType == 0, null);
+    }
+
     private static void OnNativeDownload(string filePath, int status, long bytesWritten, long totalBytesExpected, IntPtr userData)
     {
         if (GCHandle.FromIntPtr(userData).Target is MainPage page)
@@ -481,6 +552,7 @@ public sealed partial class MainPage : Page
             var callbackHandle = GCHandle.ToIntPtr(_nativeCallbackHandle);
             WebKitNative.SetDownloadCallback(tab.NativeHandle, DownloadCallbackHandler, callbackHandle);
             WebKitNative.SetPermissionCallback(tab.NativeHandle, PermissionCallbackHandler, callbackHandle);
+            WebKitNative.SetJavaScriptDialogCallback(tab.NativeHandle, JavaScriptDialogCallbackHandler, callbackHandle);
             WebKitNative.SetJavaScriptEnabled(tab.NativeHandle, ViewModel.Settings.JavaScriptEnabled);
             WebKitNative.SetLoadsImagesAutomatically(tab.NativeHandle, ViewModel.Settings.LoadImagesAutomatically);
             WebKitNative.Navigate(tab.NativeHandle, tab.Url);
