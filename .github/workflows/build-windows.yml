@@ -1,0 +1,71 @@
+name: Build Windows browser
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Locate WinUI project
+        id: project
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $projects = @(Get-ChildItem -Path . -Filter *.csproj -Recurse |
+            Where-Object { $_.FullName -notmatch '\\(bin|obj)\\' })
+          if ($projects.Count -eq 0) {
+            throw 'No WinUI .csproj found. Run the Bootstrap WinUI 3 project workflow first.'
+          }
+          $project = $projects | Where-Object { (Get-Content $_.FullName -Raw) -match '<UseWinUI>true</UseWinUI>' } | Select-Object -First 1
+          if (-not $project) {
+            throw 'No project with <UseWinUI>true</UseWinUI> was found. Refusing to build a non-WinUI app.'
+          }
+          "path=$($project.FullName)" >> $env:GITHUB_OUTPUT
+
+      - name: Restore
+        run: dotnet restore "${{ steps.project.outputs.path }}"
+
+      - name: Build x64
+        run: dotnet build "${{ steps.project.outputs.path }}" --configuration Release --no-restore -p:Platform=x64
+
+      - name: Publish unpackaged x64 app
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $project = "${{ steps.project.outputs.path }}"
+          dotnet publish $project --configuration Release --no-restore --runtime win-x64 --self-contained false -p:Platform=x64 -p:WindowsPackageType=None -p:PublishSingleFile=false
+
+      - name: Upload build output
+        uses: actions/upload-artifact@v4
+        with:
+          name: WebKitBrowser-Windows-x64
+          path: |
+            **/bin/Release/**/publish/**
+            **/bin/Release/net*/**
+          if-no-files-found: error
+          retention-days: 14
