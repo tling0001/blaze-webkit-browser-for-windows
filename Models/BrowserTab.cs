@@ -8,16 +8,22 @@ public partial class BrowserTab : ObservableObject
     public string Id { get; } = Guid.NewGuid().ToString("N");
 
     [ObservableProperty]
-    public partial string Title { get; set; } = "New tab";
+    public partial string Title { get; set; }
 
     [ObservableProperty]
-    public partial string Url { get; set; } = "about:blank";
+    public partial string Url { get; set; }
 
     [ObservableProperty]
     public partial bool CanGoBack { get; set; }
 
     [ObservableProperty]
     public partial bool CanGoForward { get; set; }
+
+    public BrowserTab()
+    {
+        Title = "New tab";
+        Url = "about:blank";
+    }
 
     public IntPtr NativeHandle { get; set; }
     public string LastRecordedUrl { get; set; } = string.Empty;

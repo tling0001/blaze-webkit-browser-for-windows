@@ -1,4 +1,8 @@
 using Microsoft.UI.Xaml;
+using Microsoft.UI;
+using Microsoft.UI.Windowing;
+using System.Runtime.InteropServices;
+using Windows.Graphics;
 
 // To learn more about WinUI, the WinUI project structure,
 // and more about our project templates, see: http://aka.ms/winui-project-info.
@@ -12,6 +16,8 @@ namespace WebKitBrowser;
 /// </summary>
 public sealed partial class MainWindow : Window
 {
+    [DllImport("user32.dll")]
+    private static extern uint GetDpiForWindow(IntPtr hWnd);
     public MainWindow()
     {
         InitializeComponent();
@@ -20,6 +26,10 @@ public sealed partial class MainWindow : Window
         SetTitleBar(AppTitleBar);
 
         AppWindow.SetIcon("Assets/AppIcon.ico");
+        AppWindow.Title = "WebKit Browser";
+        var hwnd = Win32Interop.GetWindowFromWindowId(AppWindow.Id);
+        var scale = GetDpiForWindow(hwnd) / 96.0;
+        AppWindow.Resize(new SizeInt32((int)Math.Ceiling(1360 * scale), (int)Math.Ceiling(900 * scale)));
 
         // Navigate the root frame to the main page on startup.
         RootFrame.Navigate(typeof(MainPage));

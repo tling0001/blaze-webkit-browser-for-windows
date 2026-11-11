@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.25)
 project(WebKitHost LANGUAGES CXX)
 
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+
 if(NOT WIN32 OR NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
   message(FATAL_ERROR "WebKitHost currently supports only 64-bit Windows (WinCairo).")
 endif()
@@ -19,7 +21,7 @@ add_library(WebKitHost SHARED WebKitHost.cpp WebKitHost.def)
 target_compile_features(WebKitHost PRIVATE cxx_std_20)
 target_compile_definitions(WebKitHost PRIVATE WEBKITHOST_EXPORTS WIN32_LEAN_AND_MEAN NOMINMAX)
 target_include_directories(WebKitHost PRIVATE "${WEBKIT_INCLUDE_DIR}")
-target_link_libraries(WebKitHost PRIVATE "${WEBKIT_LIBRARY}" user32)
+target_link_libraries(WebKitHost PRIVATE "${WEBKIT_LIBRARY}" user32 shell32 ole32)
 set_target_properties(WebKitHost PROPERTIES
   OUTPUT_NAME "WebKitHost"
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"

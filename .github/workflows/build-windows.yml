@@ -22,6 +22,12 @@ jobs:
     name: Build pinned WinCairo WebKit (x64)
     runs-on: windows-latest
     steps:
+      - name: Enable Windows long paths for the WebKit source tree
+        shell: pwsh
+        run: |
+          git config --global core.longpaths true
+          git config --global core.autocrlf input
+
       - name: Check out WebKit source at pinned revision
         uses: actions/checkout@v5
         with:
@@ -29,6 +35,12 @@ jobs:
           ref: d641dd75af65b0469eff30bb76a97e01e02633fc
           path: webkit-src
           fetch-depth: 1
+        env:
+          GIT_CONFIG_COUNT: 2
+          GIT_CONFIG_KEY_0: core.longpaths
+          GIT_CONFIG_VALUE_0: true
+          GIT_CONFIG_KEY_1: core.autocrlf
+          GIT_CONFIG_VALUE_1: input
 
       - name: Restore cached WebKit build
         id: webkit-cache
@@ -40,7 +52,6 @@ jobs:
           key: wincairo-x64-d641dd75af65b0469eff30bb76a97e01e02633fc-windows-2025-v1
 
       - name: Install WinCairo build dependencies
-        if: steps.webkit-cache.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -81,7 +92,9 @@ jobs:
           if (-not $vs) { throw 'Visual Studio installation was not found.' }
           $vcvars = Join-Path $vs 'VC\Auxiliary\Build\vcvars64.bat'
           if (-not (Test-Path $vcvars)) { throw 'The x64 MSVC environment is unavailable.' }
-          $command = 'call "' + $vcvars + '" && set CC=clang-cl && set CXX=clang-cl && set PATH="' + $env:WEBKIT_XAMPP + '\perl\bin;' + $env:WEBKIT_XAMPP + '\apache\bin;' + (Split-Path $env:WEBKIT_PYTHON) + ';' + $env:PATH + '" && perl Tools\Scripts\build-webkit --release'
+          $pythonDir = Split-Path $env:WEBKIT_PYTHON
+          $pathValue = $env:WEBKIT_XAMPP + '\perl\bin;' + $env:WEBKIT_XAMPP + '\apache\bin;' + $pythonDir + ';' + $pythonDir + '\Scripts;' + $env:PATH
+          $command = 'call "' + $vcvars + '" && set "CC=clang-cl" && set "CXX=clang-cl" && set "PATH=' + $pathValue + '" && perl Tools\Scripts\build-webkit --release'
           cmd.exe /d /s /c $command
           if ($LASTEXITCODE -ne 0) { throw 'The upstream WebKit Windows-port build failed.' }
 
@@ -109,7 +122,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $stage = Join-Path $env:GITHUB_WORKSPACE 'webkit-runtime'
           New-Item -ItemType Directory -Path $stage -Force | Out-Null
-          Copy-Item -Path 'WebKitBuild\Release\bin64\*' -Destination $stage -Recurse -Force
+          Get-ChildItem -LiteralPath 'WebKitBuild\Release\bin64' -Force | Where-Object { $_.Name -notlike 'MiniBrowser*' } | Copy-Item -Destination $stage -Recurse -Force
           $libraries = 'WebKitLibraries\win\bin'
           if (Test-Path $libraries) {
             Copy-Item -Path "$libraries\*" -Destination $stage -Recurse -Force
@@ -122,7 +135,7 @@ jobs:
           Write-Host "Staged $((Get-ChildItem $stage -File -Recurse).Count) runtime files."
 
       - name: Upload WebKit engine runtime
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: WebKitEngine-x64
           path: webkit-runtime/**
@@ -153,6 +166,8 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw 'WinApp CLI installation failed.' }
           }
           $env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User')
+          $command = Get-Command winapp -ErrorAction Stop
+          Add-Content -LiteralPath $env:GITHUB_PATH -Value (Split-Path $command.Source)
           winapp --version
 
       - name: Discover WinUI tab and input patterns
@@ -163,6 +178,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'WinUI Gallery tab-pattern lookup failed.' }
           winapp find-ui "AutoSuggestBox address search"
           if ($LASTEXITCODE -ne 0) { throw 'WinUI Gallery address-search lookup failed.' }
+          winapp find-ui "RadioButtons settings options"
+          if ($LASTEXITCODE -ne 0) { throw 'WinUI Gallery RadioButtons lookup failed.' }
 
       - name: Restore WinUI project
         shell: pwsh
@@ -178,59 +195,108 @@ jobs:
           $ErrorActionPreference = 'Stop'
           winapp find-api TabView --json --project-dir .
           if ($LASTEXITCODE -ne 0) { throw 'TabView API lookup failed.' }
-          winapp find-api AutoSuggestBox --json --project-dir .
-          if ($LASTEXITCODE -ne 0) { throw 'AutoSuggestBox API lookup failed.' }
+          winapp find-api check-property TabView IsAddTabButtonVisible CanReorderTabs --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'TabView property verification failed.' }
+          winapp find-api members TabView --filter AddTabButtonClick --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'TabView add-tab event verification failed.' }
+          winapp find-api members TabView --filter TabCloseRequested --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'TabView close event verification failed.' }
+          winapp find-api check-property AutoSuggestBox QueryIcon --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'AutoSuggestBox QueryIcon verification failed.' }
+          winapp find-api members AutoSuggestBox --filter QuerySubmitted --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'AutoSuggestBox QuerySubmitted verification failed.' }
+          winapp find-api check-property RadioButtons SelectedIndex ItemsSource --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'RadioButtons property verification failed.' }
+          winapp find-api check-property ContentDialog XamlRoot DefaultButton --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'ContentDialog property verification failed.' }
+          winapp find-api members AppWindow --filter Resize --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'AppWindow Resize API verification failed.' }
+          winapp find-api check-property TabViewItem IsClosable --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'TabViewItem IsClosable API verification failed.' }
+          winapp find-api members AutomationProperties --filter SetAutomationId --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'AutomationProperties.SetAutomationId API verification failed.' }
+          winapp find-api members AutomationProperties --filter SetName --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'AutomationProperties.SetName API verification failed.' }
 
       - name: Download pinned WebKit engine runtime
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
         with:
           name: WebKitEngine-x64
           path: webkit-runtime
 
-      - name: Read version and publish WinUI browser
+      - name: Compile WinUI app and include WebKit runtime
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $version = (Get-Content VERSION -Raw).Trim()
+          dotnet build WebKitBrowser.csproj --configuration Release --no-restore -p:Platform=x64 -p:RuntimeIdentifier=win-x64
+          if ($LASTEXITCODE -ne 0) { throw 'WinUI app compilation failed.' }
+
+      - name: Generate release signing certificate
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          winapp cert generate --manifest .\Package.appxmanifest
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path 'devcert.pfx')) { throw 'WinApp CLI could not generate the package signing certificate.' }
+
+      - name: Package and sign the WinUI browser
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $projectMetadata = [xml](Get-Content -LiteralPath "WebKitBrowser.csproj" -Raw)
+          $version = $projectMetadata.SelectSingleNode("/*[local-name()='Project']/*[local-name()='PropertyGroup']/*[local-name()='Version']").InnerText.Trim()
           if ($version -notmatch '^\d{4}\.\d+\.\d+-port\.\d+$') { throw "Invalid release version: $version" }
-          $numericVersion = $version -replace '-port\.', '.'
-          $output = Join-Path $PWD 'publish\win-x64'
-          New-Item -ItemType Directory -Path $output -Force | Out-Null
-          dotnet publish WebKitBrowser.csproj --configuration Release --no-restore --runtime win-x64 --self-contained true -p:WindowsAppSDKSelfContained=true -p:Version=$version -p:AssemblyVersion=$numericVersion -p:FileVersion=$numericVersion -o $output
-          if ($LASTEXITCODE -ne 0) { throw 'WinUI publish failed.' }
-          Copy-Item -Path 'webkit-runtime\*' -Destination $output -Recurse -Force
-          if (-not (Test-Path (Join-Path $output 'WebKitBrowser.exe'))) { throw 'Published WinUI executable is missing.' }
-          if (-not (Test-Path (Join-Path $output 'WebKitHost.dll'))) { throw 'Published native WebKit host is missing.' }
-          if (-not (Test-Path (Join-Path $output 'WebKit2.dll'))) { throw 'Published WebKit engine is missing.' }
-          $pri = @(Get-ChildItem $output -Filter '*.pri' -File)
-          if ($pri.Count -eq 0) { throw 'WinUI PRI resource index is missing from publish output.' }
-          Write-Host "Verified version $version with $((Get-ChildItem $output -File -Recurse).Count) published files."
 
-      - name: Install Inno Setup
+          $output = & winapp package .\WebKitBrowser.csproj --arch x64 --cert .\devcert.pfx --self-contained 2>&1
+          $exitCode = $LASTEXITCODE
+          $output | ForEach-Object { Write-Host $_ }
+          if ($exitCode -ne 0) { throw 'WinApp CLI MSIX packaging failed.' }
+
+          $outputText = $output -join [Environment]::NewLine
+          $reported = [regex]::Matches($outputText, '(?i)(?:[A-Z]:\\|\.\\|/|[A-Za-z0-9_.-]+\\)[^\r\n"'']+\.msix(?:bundle)?')
+          if ($reported.Count -eq 0) { throw 'WinApp CLI did not report an MSIX artifact path; refusing to guess an output directory.' }
+          $packagePath = $reported[$reported.Count - 1].Value.Trim()
+          $packagePath = $packagePath.Trim([char[]]@('"', "'", ' ', '.', ':'))
+          if (-not [IO.Path]::IsPathRooted($packagePath)) { $packagePath = Join-Path $PWD $packagePath }
+          if (-not (Test-Path -LiteralPath $packagePath)) { throw "Reported MSIX package does not exist: $packagePath" }
+
+          $releaseDir = Join-Path $PWD 'release-assets'
+          New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
+          Copy-Item -LiteralPath $packagePath -Destination (Join-Path $releaseDir "WebKitBrowser-$version-x64.msix") -Force
+
+          $certificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new((Resolve-Path 'devcert.pfx').Path, 'password')
+          [System.IO.File]::WriteAllBytes((Join-Path $releaseDir 'WebKitBrowser-signing.cer'), $certificate.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert))
+          $certificate.Dispose()
+
+          @"
+          WebKit Browser $version (x64)
+
+          1. Import WebKitBrowser-signing.cer into the Current User Trusted People certificate store.
+          2. Install WebKitBrowser-$version-x64.msix with App Installer or Add-AppxPackage.
+          3. The certificate file contains only the public certificate. The private signing key is not included.
+
+          This is a testing build of the upstream WinCairo WebKit port.
+          "@ | Set-Content -LiteralPath (Join-Path $releaseDir 'INSTALL.txt') -Encoding utf8
+
+      - name: Run WinApp UI smoke test against live WebKit
         shell: pwsh
-        run: |
-          choco install innosetup --yes --no-progress
-          if ($LASTEXITCODE -ne 0) { throw 'Inno Setup installation failed.' }
+        run: .\Scripts\ui-smoke-test.ps1
 
-      - name: Build per-user x64 installer
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $iscc = Get-ChildItem "${env:ProgramFiles(x86)}\Inno Setup 6" -Filter 'ISCC.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $iscc) { throw 'Inno Setup compiler was not found.' }
-          $version = (Get-Content VERSION -Raw).Trim()
-          & $iscc "/DArchitecture=x64" "/DAppVersion=$version" "/DSourceDir=$PWD\publish\win-x64" "installer\WebKitBrowser.iss"
-          if ($LASTEXITCODE -ne 0) { throw 'Inno Setup failed.' }
-          $installer = "installer-output\WebKitBrowser-$version-x64-Setup.exe"
-          if (-not (Test-Path $installer)) { throw "Installer missing: $installer" }
+      - name: Upload UI smoke test screenshots
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: WebKitBrowser-UI-smoke-test
+          path: |
+            ui-test-results.json
+            ui-test-artifacts/**
+          if-no-files-found: warn
+          retention-days: 14
 
-      - name: Upload installer and published runtime
-        uses: actions/upload-artifact@v4
+      - name: Upload signed MSIX and public signing certificate
+        uses: actions/upload-artifact@v6
         with:
           name: WebKitBrowser-Windows-x64
-          path: |
-            installer-output/*.exe
-            publish/win-x64/**
+          path: release-assets/*
           if-no-files-found: error
           retention-days: 14
 
@@ -249,7 +315,7 @@ jobs:
         id: release_meta
         shell: bash
         run: |
-          VERSION="$(tr -d '\r\n' < VERSION)"
+          VERSION="$(python3 -c 'import xml.etree.ElementTree as ET; print(ET.parse("WebKitBrowser.csproj").findtext(".//Version"))')"
           test -n "$VERSION"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           python3 - "$VERSION" RELEASE_NOTES.md release-notes.md <<'PY'
@@ -267,8 +333,8 @@ jobs:
           Path(destination).write_text("\n\n".join(selected).strip() + "\n", encoding="utf-8")
           PY
 
-      - name: Download installer artifacts
-        uses: actions/download-artifact@v4
+      - name: Download MSIX release artifacts
+        uses: actions/download-artifact@v6
         with:
           name: WebKitBrowser-Windows-x64
           path: release-assets
@@ -279,10 +345,10 @@ jobs:
           VERSION: ${{ steps.release_meta.outputs.version }}
         shell: bash
         run: |
-          mapfile -d '' installers < <(find release-assets -type f -name '*-Setup.exe' -print0)
-          if [ "${#installers[@]}" -ne 1 ]; then
-            echo "Expected exactly one x64 installer, found ${#installers[@]}." >&2
-            find release-assets -maxdepth 3 -type f -print >&2
+          mapfile -d '' assets < <(find release-assets -maxdepth 1 -type f \( -name '*.msix' -o -name '*.cer' -o -name 'INSTALL.txt' \) -print0)
+          if [ "${#assets[@]}" -lt 3 ]; then
+            echo "Expected the signed MSIX, public certificate and install guide." >&2
+            find release-assets -maxdepth 2 -type f -print >&2
             exit 1
           fi
           if gh release view "$VERSION" >/dev/null 2>&1; then
@@ -290,4 +356,4 @@ jobs:
           else
             gh release create "$VERSION" --title "$VERSION" --notes-file release-notes.md --target main
           fi
-          gh release upload "$VERSION" "${installers[@]}" --clobber
+          gh release upload "$VERSION" "${assets[@]}" --clobber

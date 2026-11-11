@@ -7,6 +7,9 @@
 #define WB_API extern "C" __declspec(dllimport)
 #endif
 
+using WB_DOWNLOAD_CALLBACK = void (__cdecl*)(const wchar_t* filePath, int status, long long bytesWritten, long long totalBytesExpected, void* userData);
+using WB_PERMISSION_CALLBACK = int (__cdecl*)(const wchar_t* origin, int permissionType, void* userData);
+
 struct WB_VIEW;
 using WB_VIEW_HANDLE = WB_VIEW*;
 
@@ -25,3 +28,5 @@ WB_API int WB_GetTitle(WB_VIEW_HANDLE view, wchar_t* buffer, int capacity);
 WB_API void WB_SetJavaScriptEnabled(WB_VIEW_HANDLE view, BOOL enabled);
 WB_API void WB_SetLoadsImagesAutomatically(WB_VIEW_HANDLE view, BOOL enabled);
 WB_API void WB_ClearWebsiteData(WB_VIEW_HANDLE view);
+WB_API void WB_SetDownloadCallback(WB_VIEW_HANDLE view, WB_DOWNLOAD_CALLBACK callback, void* userData);
+WB_API void WB_SetPermissionCallback(WB_VIEW_HANDLE view, WB_PERMISSION_CALLBACK callback, void* userData);

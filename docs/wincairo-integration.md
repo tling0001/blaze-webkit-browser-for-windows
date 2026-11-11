@@ -1,40 +1,65 @@
-# WinCairo integration notes
+# WinCairo integration
 
-## Verified public Windows API
+## Selected engine and supported platform
 
-The official WebKit Windows port exports the C API in `Source/WebKit/UIProcess/API/C/win/WKView.h`:
+The application uses the upstream WebKit Windows port, WinCairo. WebKit's Windows-port documentation identifies Cairo as the graphics backend, libcurl as the network backend, and x64 Windows as the supported architecture. This is a native WebKit port; it is not Chromium, Gecko, WebView2, CEF, or Electron.
 
-- `WKViewCreate(RECT, WKPageConfigurationRef, HWND)`
-- `WKViewGetWindow(WKViewRef)`
-- `WKViewGetPage(WKViewRef)`
-- `WKViewSetParentWindow(WKViewRef, HWND)`
-- `WKViewSetIsInWindow(WKViewRef, bool)`
-- `WKViewWindowAncestryDidChange(WKViewRef)`
-- `WKViewSetUsesOffscreenRendering(WKViewRef, bool)`
+## Actual public C API used
 
-WebKit's own Windows MiniBrowser constructs a `WKWebsiteDataStore`, `WKContext`, `WKPreferences`, and `WKPageConfiguration`, creates the native view with `WKViewCreate`, and navigates with `WKPageLoadURL`. It uses `WKPageGoBack`, `WKPageGoForward`, and `WKPageReload` for navigation. This is the integration pattern used here.
+The C++ bridge links against WebKit's public C API:
 
-## Host boundary
+- `WKViewCreate` creates a native WebKit view with a parent HWND and pixel rectangle.
+- `WKViewGetWindow` obtains the native child HWND; `WKViewSetIsInWindow` attaches/detaches it.
+- `WKViewGetPage` obtains the page associated with a view.
+- `WKPageConfigurationCreate`, `WKPageConfigurationSetContext`, `WKPageConfigurationSetPreferences`, and `WKPageConfigurationSetWebsiteDataStore` configure each page.
+- `WKPageSetPageNavigationClient` installs `WKPageNavigationClientV3` callbacks for downloads initiated by navigation, response handling, and context menus.
+- `WKDownloadSetClient` installs `WKDownloadClientV0` to select a safe destination and report progress, completion, and failure.
+- `WKPageSetPageUIClient` installs `WKPageUIClientV13` permission callbacks. Geolocation and notification decisions are per-origin; user-media requests are denied until a proper device-selection flow is implemented.
+- `WKWebsiteDataStoreConfigurationCreate` plus the `WKWebsiteDataStoreConfigurationSet*Directory` functions establish persistent profile storage.
 
-The WinUI app owns the top-level window and browser chrome. A native C++ DLL owns each WebKit view and its child HWND. The C# side positions that child window over the WinUI browser content rectangle using physical pixels. The engine never uses WebView2.
+The bridge is implemented in `Native/WebKitHost`. C# calls its small C ABI through `Services/WebKitNative.cs`. The WinUI layer owns browser chrome and view models; C++ owns WKView handles and WebKit callback structures.
 
-The C ABI is deliberately narrow. Do not pass C++ STL, WebKit ref types, or exceptions across the managed boundary. Every returned native view handle must be destroyed exactly once. All WK API calls and HWND layout work must be serialized on the owning UI thread.
+## Multi-tab profile model
 
-## Persistent data and security
+All tabs share one `WKContextRef`, `WKPreferencesRef`, and persistent `WKWebsiteDataStoreRef`, so cookies and site data are shared between tabs. Profile data is stored below `%LOCALAPPDATA%\WebKitBrowser\WebKitData`. Each tab has its own WKView/page and native child HWND. Closing a tab releases its WKView; the shared context is released when the last view closes.
 
-The bridge creates a website data store using WebKit's C API. Before shipping, verify persistence location, private browsing isolation, cookie and website-data clearing, TLS trust handling, popup policy, download destinations, permission requests, and process termination/recovery against the exact pinned engine build.
+Downloads are written to the Windows Downloads known folder. Suggested filenames are sanitized, path components are stripped, and collisions receive a numeric suffix. Download callbacks copy their callback/user-data values into a per-download context so a tab can close without invalidating an in-flight download callback.
 
-Never auto-accept TLS certificate errors. Never expose private WebKit APIs as a substitute for a public API without documenting and testing the compatibility risk.
+Geolocation and notification requests are denied unless the origin has an explicit allow setting. The first request is recorded and surfaced to the user so it can be allowed in Settings. Camera and microphone are denied by default because no device picker exists yet.
 
-## Engine build
+## Reproducible WebKit build
 
-The official Windows-port guide documents a 64-bit build using Visual Studio's Desktop development with C++, CMake, Ninja, LLVM/clang-cl, Perl, Python 3.11, Ruby, and gperf. It builds with `perl Tools/Scripts/build-webkit --release` and runs `WebKitBuild/Release/bin64/MiniBrowser.exe`.
+The GitHub Actions workflow pins the exact WebKit commit in `.github/workflows/build-windows.yml`. It builds on `windows-latest` with the x64 Visual Studio C++ workload and the toolchain required by the upstream Windows-port guide:
 
-The engine workflow pins the WebKit Git revision and preserves the build output plus its matching WebKitRequirements DLLs. A build is not distributable until a clean Windows runner can launch the app and load a remote HTTPS page with the packaged runtime alone.
+- Visual Studio C++ workload
+- XAMPP-provided Perl
+- Python 3.11
+- Ruby
+- CMake
+- GnuWin32 gperf
+- LLVM
+- Ninja
+
+Before checkout, Git long paths are enabled because the WebKit tree contains paths longer than the default Windows Git limit. `core.autocrlf=input` is also set to preserve source files that require LF line endings.
+
+The official build entry point is `perl Tools/Scripts/build-webkit --release`. The script downloads the required WebKitRequirements package. A successful engine build is expected to produce `WebKitBuild/Release/bin64/MiniBrowser.exe`; the workflow uses this as a build-health check and stages the runtime DLLs/process helpers, not MiniBrowser itself.
+
+## Important limitations
+
+WinCairo is an upstream development/testing port and does not have the same regular security servicing and release cadence as WebKit's Apple and Igalia ports. A browser built from it must not be described as production-secure merely because it compiles.
+
+Before calling this browser ready for general use, verify:
+
+1. The pinned engine builds successfully and its revision is recorded with each release.
+2. A clean Windows 10/11 machine can install the signed MSIX and launch the app with no developer tools installed.
+3. WebKit subprocesses, resources, fonts, media, downloads, and site storage all resolve from the packaged runtime.
+4. Navigation, redirects, TLS failures, certificates, popups, JavaScript dialogs, permission flows, downloads, and crash recovery are tested.
+5. A routine upstream security-update process rebuilds and republishes the engine promptly.
+
+Do not add an engine fallback. If WinCairo cannot be built or hosted, surface the failure and fix the WebKit integration.
 
 ## References
 
 - [WebKit Windows port build guide](https://docs.webkit.org/Ports/WindowsPort.html)
 - [WebKit Windows WKView header](https://github.com/WebKit/WebKit/blob/main/Source/WebKit/UIProcess/API/C/win/WKView.h)
 - [WebKit Windows MiniBrowser host implementation](https://github.com/WebKit/WebKit/blob/main/Tools/MiniBrowser/win/WebKitBrowserWindow.cpp)
-- [WebKit Windows port source list](https://github.com/WebKit/WebKit/blob/main/Source/WebKit/PlatformWin.cmake)

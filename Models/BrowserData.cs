@@ -27,3 +27,25 @@ public sealed class SessionState
     public List<string> TabUrls { get; set; } = [];
     public int SelectedIndex { get; set; }
 }
+
+public sealed class DownloadEntry
+{
+    public string FilePath { get; set; } = string.Empty;
+    public string Status { get; set; } = "Starting";
+    public long BytesReceived { get; set; }
+    public long BytesExpected { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.Now;
+
+    public string FileName => Path.GetFileName(FilePath);
+    public string ProgressText => BytesExpected > 0
+        ? $"{Status} — {BytesReceived:N0} / {BytesExpected:N0} bytes"
+        : Status;
+}
+
+public sealed class SitePermissionEntry
+{
+    public string Origin { get; set; } = string.Empty;
+    public bool GeolocationAllowed { get; set; }
+    public bool NotificationsAllowed { get; set; }
+    public DateTimeOffset LastRequestedAt { get; set; } = DateTimeOffset.Now;
+}
