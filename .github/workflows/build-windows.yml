@@ -236,6 +236,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'WinUI Gallery address-search lookup failed.' }
           winapp find-ui "RadioButtons settings options"
           if ($LASTEXITCODE -ne 0) { throw 'WinUI Gallery RadioButtons lookup failed.' }
+          winapp find-ui "FontIcon Segoe Fluent Icons toolbar Button"
+          if ($LASTEXITCODE -ne 0) { throw 'WinUI Gallery Fluent icon-button lookup failed.' }
           winapp find-ui "ContentDialog native dialog animations"
           if ($LASTEXITCODE -ne 0) { throw 'WinUI Gallery ContentDialog pattern lookup failed.' }
 
