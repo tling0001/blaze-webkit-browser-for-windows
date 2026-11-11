@@ -43,7 +43,7 @@ See [`.github/workflows/build-windows.yml`](.github/workflows/build-windows.yml)
 7. Run WinApp UI automation against live WebKit navigation.
 8. Publish the installer, signed MSIX payload, public test certificate and install guide as a versioned GitHub Release.
 
-The project `Version` property is the single release-version source. Use [`Scripts/bump-version.ps1`](Scripts/bump-version.ps1) to increment the `-port.N` suffix, update the numeric package identity version, and add dated release notes.
+The project `Version` property is the single release-version source. Blaze uses normal product versions: `1.0.0`, `1.0.1` through `1.0.9`, then `1.1.0` and onward. Use [`Scripts/bump-version.ps1`](Scripts/bump-version.ps1) to increment the patch number, roll `1.0.9` to `1.1.0`, update the four-part Windows package version, and add dated release notes.
 
 ## Install
 
