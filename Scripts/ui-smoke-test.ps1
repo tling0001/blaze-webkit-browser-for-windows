@@ -72,7 +72,86 @@ try {
     $uiStarted = $true
 
     $windows = @(Invoke-Ui @('list-windows', '--json') | ConvertFrom-Json)
-    $main = $windows | Where-Object { $_.hwnd -and $_.hwnd -ne '0' -and $_.title -match 'WebKit Browser' } | Select-Object -First 1
+    $main = $windows | Where-Object { $_.hwnd -and $_.hwnd -ne '0' -and $_.title -match '^Blaze } | Select-Object -First 1
+    if (-not $main) { throw 'The launched WinUI browser window was not found.' }
+    $hwnd = [string]$main.hwnd
+
+    Test-UI 'WinUI browser window and address control' {
+        $inspection = Invoke-Ui @('inspect', '--interactive', '--json') | ConvertFrom-Json
+        $elements = @(Get-Elements @($inspection.windows | ForEach-Object { $_.elements }))
+        $address = $elements | Where-Object { $_.automationId -eq 'AddressBox' } | Select-Object -First 1
+        if (-not $address) { throw 'AddressBox AutomationId was not found in the WinUI tree.' }
+        Save-Screenshot '01-browser-start.png'
+    }
+
+    Test-UI 'Live WebKit navigation to HTTPS example.com' {
+        Invoke-Ui @('set-value', 'AddressBox', 'https://example.com') | Out-Null
+        Invoke-Ui @('send-keys', 'enter', '--via', 'send-input') | Out-Null
+        Invoke-Ui @('wait-for', 'AddressBox', '--value', 'https://example.com', '-t', '15000') | Out-Null
+
+        $foundTitle = $false
+        for ($attempt = 0; $attempt -lt 20; $attempt++) {
+            $inspection = Invoke-Ui @('inspect', '--interactive', '--json') | ConvertFrom-Json
+            $elements = @(Get-Elements @($inspection.windows | ForEach-Object { $_.elements }))
+            $pageTab = $elements | Where-Object {
+                $_.automationId -like 'BrowserTab_*' -and $_.name -eq 'Example Domain'
+            } | Select-Object -First 1
+            if ($pageTab) { $foundTitle = $true; break }
+            Start-Sleep -Seconds 1
+        }
+        if (-not $foundTitle) { throw 'The WebKit page title "Example Domain" did not appear in the browser tab.' }
+        Save-Screenshot '02-example-domain.png'
+    }
+
+    Test-UI 'Native settings dialog opens with reduced-motion control' {
+        Invoke-Ui @('invoke', 'SettingsButton') | Out-Null
+        Invoke-Ui @('wait-for', 'ReduceMotion', '-t', '5000') | Out-Null
+        $inspection = Invoke-Ui @('inspect', '--interactive', '--json') | ConvertFrom-Json
+        $elements = @(Get-Elements @($inspection.windows | ForEach-Object { $_.elements }))
+        if (-not ($elements | Where-Object { $_.automationId -eq 'ReduceMotion' })) {
+            throw 'The native Settings ContentDialog did not expose the ReduceMotion ToggleSwitch.'
+        }
+        Save-Screenshot '03-blaze-settings-dialog.png'
+        Invoke-Ui @('invoke', 'Close') | Out-Null
+        Invoke-Ui @('wait-for', 'ReduceMotion', '--gone', '-t', '3000') | Out-Null
+    }
+
+    Test-UI 'Tab and settings controls expose AutomationIds' {
+        $inspection = Invoke-Ui @('inspect', '--interactive', '--json') | ConvertFrom-Json
+        $elements = @(Get-Elements @($inspection.windows | ForEach-Object { $_.elements }))
+        foreach ($id in @('BrowserTabStrip', 'BackButton', 'ForwardButton', 'ReloadButton', 'StopButton', 'HomeButton', 'BookmarkButton', 'BookmarksButton', 'HistoryButton', 'DownloadsButton', 'SettingsButton')) {
+            if (-not ($elements | Where-Object { $_.automationId -eq $id })) {
+                throw "Missing AutomationId: $id"
+            }
+        }
+    }
+} catch {
+    $results.Add(@{ name = 'UI smoke setup'; status = 'FAIL'; detail = "$_" })
+    Write-Warning "UI smoke setup failed: $_"
+} finally {
+    try {
+        if ($uiStarted) { Invoke-WinAppChecked @('ui', 'yield') | Out-Null }
+    } catch {
+        $results.Add(@{ name = 'Release UI workflow'; status = 'FAIL'; detail = "$_" })
+    } finally {
+        $env:WINAPP_UI_WORKFLOW_ID = $previousWorkflowId
+    }
+}
+
+$failed = @($results | Where-Object { $_.status -eq 'FAIL' }).Count
+$report = [ordered]@{
+    target = 'local'
+    appPid = $appPid
+    workflowId = $workflowId
+    passed = $results.Count - $failed
+    failed = $failed
+    results = @($results.ToArray())
+    screenshots = @($screenshots.ToArray())
+}
+$report | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath '.\ui-test-results.json' -Encoding utf8
+Write-Host "Passed: $($report.passed) | Failed: $failed | Results: .\ui-test-results.json"
+if ($failed -gt 0) { exit 1 }
+ } | Select-Object -First 1
     if (-not $main) { throw 'The launched WinUI browser window was not found.' }
     $hwnd = [string]$main.hwnd
 
