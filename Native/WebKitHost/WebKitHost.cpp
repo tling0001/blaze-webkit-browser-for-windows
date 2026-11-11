@@ -42,6 +42,8 @@ struct DownloadContext {
     WB_DOWNLOAD_CALLBACK callback { nullptr };
     void* userData { nullptr };
     std::wstring destination;
+    long long bytesWritten { 0 };
+    long long bytesExpected { 0 };
 };
 
 namespace {
@@ -252,20 +254,23 @@ WKStringRef downloadDecideDestination(WKDownloadRef, WKURLResponseRef response, 
 
 void downloadDidWriteData(WKDownloadRef, long long, long long totalBytesWritten, long long totalBytesExpectedToWrite, const void* clientInfo)
 {
-    notifyDownload(const_cast<DownloadContext*>(static_cast<const DownloadContext*>(clientInfo)), 1, totalBytesWritten, totalBytesExpectedToWrite);
+    auto* context = const_cast<DownloadContext*>(static_cast<const DownloadContext*>(clientInfo));
+    context->bytesWritten = totalBytesWritten;
+    context->bytesExpected = totalBytesExpectedToWrite;
+    notifyDownload(context, 1, context->bytesWritten, context->bytesExpected);
 }
 
 void downloadDidFinish(WKDownloadRef, const void* clientInfo)
 {
     auto* context = const_cast<DownloadContext*>(static_cast<const DownloadContext*>(clientInfo));
-    notifyDownload(context, 2, 0, 0);
+    notifyDownload(context, 2, context->bytesWritten, context->bytesExpected);
     delete context;
 }
 
 void downloadDidFail(WKDownloadRef, WKErrorRef, WKDataRef, const void* clientInfo)
 {
     auto* context = const_cast<DownloadContext*>(static_cast<const DownloadContext*>(clientInfo));
-    notifyDownload(context, 3, 0, 0);
+    notifyDownload(context, 3, context->bytesWritten, context->bytesExpected);
     delete context;
 }
 
