@@ -1,5 +1,18 @@
 # Blaze release notes
 
+## [1.0.7] - 2026-11-11
+
+### WebKit SDK distribution
+- Separate the pinned WinCairo engine build from normal browser builds.
+- Publish a versioned x64 SDK release containing WebKit runtime binaries, resources, public headers, import libraries, dependency DLLs and provenance.
+- Validate the SDK archive SHA-256 and pinned WebKit/vcpkg baselines before compiling the native host and WinUI app.
+- Use a short same-volume drive alias for WebKit source, vcpkg and build paths to avoid ICU's Windows object-path limit.
+
+### Popup prompt
+- Use one native dismissal action labelled Ignore; closing the prompt has the same deny-this-request behavior.
+- Add UI smoke coverage for the single Ignore action and wait for settings persistence before asserting it.
+
+
 ## [1.0.6] - 2026-11-11
 
 ### Native popup routing

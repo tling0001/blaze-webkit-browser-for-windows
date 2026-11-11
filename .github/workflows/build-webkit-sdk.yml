@@ -1,0 +1,252 @@
+name: Build versioned WebKit SDK
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/build-webkit-sdk.yml'
+      - 'eng/WebKitSdk.json'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: Blaze-WebKitSDK-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-sdk:
+    name: Build and publish pinned WinCairo SDK (x64)
+    runs-on: windows-latest
+    timeout-minutes: 360
+    env:
+      SDK_REPOSITORY: ${{ vars.WEBKIT_SDK_REPOSITORY || github.repository }}
+    steps:
+      - name: Enable long paths and configure Git
+        shell: pwsh
+        run: |
+          New-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name LongPathsEnabled -PropertyType DWord -Value 1 -Force | Out-Null
+          git config --global core.longpaths true
+          git config --global core.autocrlf input
+
+      - name: Check out Blaze SDK metadata
+        uses: actions/checkout@v5
+        with:
+          path: blaze
+          ref: ${{ github.sha }}
+
+      - name: Read SDK identity and check for an existing immutable release
+        id: sdk
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.WEBKIT_SDK_TOKEN || github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $spec = Get-Content -LiteralPath 'blaze\eng\WebKitSdk.json' -Raw | ConvertFrom-Json
+          "tag=$($spec.releaseTag)" >> $env:GITHUB_OUTPUT
+          "commit=$($spec.webkitCommit)" >> $env:GITHUB_OUTPUT
+          gh release view $spec.releaseTag --repo $env:SDK_REPOSITORY *> $null
+          if ($LASTEXITCODE -eq 0) { "exists=true" >> $env:GITHUB_OUTPUT; Write-Host "SDK release $($spec.releaseTag) already exists; keeping it immutable." }
+          else { "exists=false" >> $env:GITHUB_OUTPUT }
+
+      - name: Check out the pinned WebKit source
+        if: steps.sdk.outputs.exists != 'true'
+        uses: actions/checkout@v5
+        with:
+          repository: WebKit/WebKit
+          ref: ${{ steps.sdk.outputs.commit }}
+          path: w
+          fetch-depth: 1
+        env:
+          GIT_CONFIG_COUNT: 2
+          GIT_CONFIG_KEY_0: core.longpaths
+          GIT_CONFIG_VALUE_0: true
+          GIT_CONFIG_KEY_1: core.autocrlf
+          GIT_CONFIG_VALUE_1: input
+
+      - name: Restore pinned WebKit build cache
+        if: steps.sdk.outputs.exists != 'true'
+        id: webkit-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            w/WebKitBuild/Release
+            w/WebKitLibraries/win
+          key: wincairo-x64-d641dd75af65b0469eff30bb76a97e01e02633fc-7d5f3c6241729acbbb7774f54bf687429aaf6492-9a80b82f283a1d69ffdc64e32536627ae738a65b-windows-latest-shortpath-v1
+
+      - name: Install WinCairo build dependencies
+        if: steps.sdk.outputs.exists != 'true' && steps.webkit-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          choco install -y xampp-81 python311 ruby git cmake gperf llvm ninja --no-progress
+          if ($LASTEXITCODE -ne 0) { throw 'Installing WebKit Windows-port dependencies failed.' }
+
+      - name: Configure WebKit command environment
+        if: steps.sdk.outputs.exists != 'true' && steps.webkit-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $xampp = Get-ChildItem 'C:\' -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -like 'xampp*' } | Select-Object -First 1
+          if (-not $xampp -or -not (Test-Path (Join-Path $xampp.FullName 'perl\bin\perl.exe'))) { throw 'XAMPP/Perl installation was not found.' }
+          $python = (& py -3.11 -c 'import sys; print(sys.executable)').Trim()
+          if ($LASTEXITCODE -ne 0 -or -not $python) { throw 'Python 3.11 is required.' }
+          $pythonDir = Split-Path $python
+          $ninja = Get-Command ninja -ErrorAction Stop
+          $ninjaPath = $ninja.Source
+          if (-not (Test-Path -LiteralPath $ninjaPath -PathType Leaf)) { throw "Ninja executable not found: $ninjaPath" }
+          $env:Path = "$($xampp.FullName)\perl\bin;$($xampp.FullName)\apache\bin;$pythonDir;$pythonDir\Scripts;$(Split-Path $ninjaPath);$env:Path"
+          $env:CC = 'clang-cl'
+          $env:CXX = 'clang-cl'
+          $env:PYTHON = $python
+          perl -v
+          python --version
+          ruby --version
+          cmake --version
+          & $ninjaPath --version
+          clang-cl --version
+          "WEBKIT_PYTHON=$python" >> $env:GITHUB_ENV
+          "WEBKIT_XAMPP=$($xampp.FullName)" >> $env:GITHUB_ENV
+          "WEBKIT_NINJA=$ninjaPath" >> $env:GITHUB_ENV
+
+      - name: Build WebKit on a short same-volume path
+        if: steps.sdk.outputs.exists != 'true' && steps.webkit-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $workspace = $env:GITHUB_WORKSPACE
+          subst W: /D 2>$null
+          subst W: $workspace
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path 'W:\w\Tools\Scripts\build-webkit')) { throw 'Could not create the short W: alias for the complete workspace.' }
+          $sourceRoot = 'W:\w'
+          $spec = Get-Content -LiteralPath 'blaze\eng\WebKitSdk.json' -Raw | ConvertFrom-Json
+          $webkitConfig = Get-Content -LiteralPath (Join-Path $sourceRoot 'vcpkg-configuration.json') -Raw | ConvertFrom-Json
+          $builtin = $webkitConfig.'default-registry'.baseline
+          $requirements = ($webkitConfig.registries | Where-Object { $_.repository -match 'WebKitRequirements' } | Select-Object -First 1).baseline
+          if ($builtin -ne $spec.vcpkgBuiltinBaseline -or $requirements -ne $spec.webkitRequirementsBaseline) { throw 'The checked-out WebKit vcpkg baselines do not match eng\WebKitSdk.json.' }
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $vs = & $vswhere -latest -property installationPath
+          if (-not $vs) { throw 'Visual Studio installation was not found.' }
+          $vcvars = Join-Path $vs 'VC\Auxiliary\Build\vcvars64.bat'
+          if (-not (Test-Path $vcvars)) { throw 'The x64 MSVC environment is unavailable.' }
+          $pythonDir = Split-Path $env:WEBKIT_PYTHON
+          $ninjaDir = Split-Path $env:WEBKIT_NINJA
+          $extraPath = $env:WEBKIT_XAMPP + '\perl\bin;' + $env:WEBKIT_XAMPP + '\apache\bin;' + $pythonDir + ';' + $pythonDir + '\Scripts;' + $ninjaDir
+          $command = 'cd /d "' + $sourceRoot + '" && call "' + $vcvars + '" && set "PATH=' + $extraPath + ';%PATH%" && set "CC=clang-cl" && set "CXX=clang-cl" && where.exe ninja && ninja --version && perl Tools\Scripts\build-webkit --release'
+          cmd.exe /d /s /c $command
+          if ($LASTEXITCODE -ne 0) { throw "Pinned WebKit WinCairo build failed (exit $LASTEXITCODE)." }
+
+      - name: Print WebKit build diagnostics
+        if: failure() && steps.sdk.outputs.exists != 'true'
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $releaseRoot = Join-Path $env:GITHUB_WORKSPACE 'w\WebKitBuild\Release'
+          $manifestLog = Join-Path $releaseRoot 'vcpkg-manifest-install.log'
+          if (Test-Path -LiteralPath $manifestLog -PathType Leaf) { Get-Content -LiteralPath $manifestLog -Tail 300 }
+          $cmakeLogs = @(Get-ChildItem -LiteralPath $releaseRoot -Filter 'CMakeError.log' -Recurse -File -ErrorAction SilentlyContinue)
+          foreach ($log in $cmakeLogs) { Write-Host "========== $($log.FullName) =========="; Get-Content -LiteralPath $log.FullName -Tail 160 }
+
+      - name: Stage complete WebKit SDK and provenance
+        if: steps.sdk.outputs.exists != 'true'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $workspace = $env:GITHUB_WORKSPACE
+          subst W: /D 2>$null
+          subst W: $workspace
+          if ($LASTEXITCODE -ne 0) { throw 'Could not create short W: workspace alias.' }
+          $sourceRoot = 'W:\w'
+          $release = Join-Path $sourceRoot 'WebKitBuild\Release'
+          $stage = Join-Path $workspace 'webkit-sdk'
+          New-Item -ItemType Directory -Path $stage -Force | Out-Null
+          foreach ($required in @((Join-Path $release 'bin64\WebKit2.dll'),(Join-Path $release 'include\WebKit\WKView.h'))) { if (-not (Test-Path $required)) { throw "Missing WebKit output: $required" } }
+          $importLibrary = Get-ChildItem -LiteralPath $release -Filter 'WebKit2.lib' -Recurse -File | Select-Object -First 1
+          if (-not $importLibrary) { throw 'WebKit2.lib was not produced.' }
+          Copy-Item -Path (Join-Path $release 'bin64') -Destination $stage -Recurse -Force
+          Remove-Item -LiteralPath (Join-Path $stage 'bin64\MiniBrowser.exe') -Force -ErrorAction SilentlyContinue
+          Remove-Item -LiteralPath (Join-Path $stage 'bin64\WebKitTestRunner.exe') -Force -ErrorAction SilentlyContinue
+          Get-ChildItem -LiteralPath (Join-Path $stage 'bin64') -Filter '*.pdb' -Recurse -File | Remove-Item -Force
+          Copy-Item -Path (Join-Path $release 'include') -Destination $stage -Recurse -Force
+          $lib64 = Join-Path $release 'lib64'
+          if (Test-Path $lib64) { Copy-Item -Path $lib64 -Destination $stage -Recurse -Force }
+          $runtime = Join-Path $stage 'runtime'
+          New-Item -ItemType Directory -Path $runtime -Force | Out-Null
+          foreach ($folder in @('bin','bin64')) { $source = Join-Path $sourceRoot "WebKitLibraries\win\$folder"; if (Test-Path $source) { Copy-Item -Path (Join-Path $source '*') -Destination $runtime -Recurse -Force } }
+          $thirdPartyLib = Join-Path $sourceRoot 'WebKitLibraries\win\lib'
+          if (Test-Path $thirdPartyLib) { Copy-Item -Path $thirdPartyLib -Destination (Join-Path $stage 'third-party') -Recurse -Force }
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $vs = & $vswhere -latest -property installationPath
+          $crtRoot = Join-Path $vs 'VC\Redist\MSVC'
+          $crt = Get-ChildItem -LiteralPath $crtRoot -Filter 'Microsoft.VC*.CRT' -Directory -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match '\\x64\\Microsoft\.VC[^\\]+\.CRT$' } | Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $crt) { throw 'Visual C++ x64 app-local CRT files were not found.' }
+          Copy-Item -Path (Join-Path $crt.FullName '*.dll') -Destination $runtime -Force
+          $vcpkgExe = Join-Path $vs 'VC\vcpkg\vcpkg.exe'
+          if (-not (Test-Path -LiteralPath $vcpkgExe)) { throw "Visual Studio vcpkg executable was not found: $vcpkgExe" }
+          Push-Location $release
+          try { $dependencies = & $vcpkgExe list; if ($LASTEXITCODE -ne 0 -or -not $dependencies) { throw 'Could not capture the resolved vcpkg dependency list.' } }
+          finally { Pop-Location }
+          $dependencies | Set-Content -LiteralPath (Join-Path $stage 'dependencies.lock.txt') -Encoding utf8
+          $spec = Get-Content -LiteralPath 'blaze\eng\WebKitSdk.json' -Raw | ConvertFrom-Json
+          $manifest = [ordered]@{
+            sdkFormatVersion = [int]$spec.sdkFormatVersion
+            releaseTag = $spec.releaseTag
+            webkitRepository = $spec.webkitRepository
+            webkitCommit = $spec.webkitCommit
+            port = $spec.port
+            architecture = $spec.architecture
+            configuration = $spec.configuration
+            vcpkgBuiltinBaseline = $spec.vcpkgBuiltinBaseline
+            webkitRequirementsRepository = $spec.webkitRequirementsRepository
+            webkitRequirementsBaseline = $spec.webkitRequirementsBaseline
+            vcpkgTriplet = $spec.vcpkgTriplet
+            toolchain = $spec.toolchain
+            visualStudioInstallation = $vs
+            importLibrary = $importLibrary.FullName.Substring($release.Length + 1)
+            runtimeFileCount = (Get-ChildItem -LiteralPath $runtime -File -Recurse).Count
+          }
+          $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $stage 'sdk-manifest.json') -Encoding utf8
+          $zipName = "Blaze-WebKitSDK-$($spec.webkitCommit.Substring(0,8))-x64.zip"
+          $zipPath = Join-Path $workspace $zipName
+          Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zipPath -CompressionLevel Optimal -Force
+          $archiveHash = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
+          $manifest.archiveSha256 = $archiveHash
+          $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $workspace 'sdk-manifest.json') -Encoding utf8
+          "$archiveHash  $zipName" | Set-Content -LiteralPath (Join-Path $workspace 'sdk.sha256') -Encoding ascii
+          @"
+          WebKit WinCairo SDK release $($spec.releaseTag)
+
+          WebKit source: $($spec.webkitRepository)@$($spec.webkitCommit)
+          Architecture: x64
+          Configuration: Release
+          vcpkg baseline: $($spec.vcpkgBuiltinBaseline)
+          WebKitRequirements baseline: $($spec.webkitRequirementsBaseline)
+          Archive includes WebKit runtime binaries/resources, public headers, import libraries,
+          dependency DLLs, app-local Visual C++ runtime DLLs and the resolved vcpkg package list.
+          SHA-256 is recorded in sdk-manifest.json and sdk.sha256.
+          "@ | Set-Content -LiteralPath (Join-Path $workspace 'sdk-release-notes.md') -Encoding utf8
+
+      - name: Publish immutable WebKit SDK release
+        if: steps.sdk.outputs.exists != 'true'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.WEBKIT_SDK_TOKEN || github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $spec = Get-Content -LiteralPath 'blaze\eng\WebKitSdk.json' -Raw | ConvertFrom-Json
+          $zip = Get-ChildItem -LiteralPath $PWD -Filter 'Blaze-WebKitSDK-*.zip' -File | Select-Object -First 1
+          if (-not $zip) { throw 'The WebKit SDK archive was not created.' }
+          gh release create $spec.releaseTag $zip.FullName (Join-Path $PWD 'sdk-manifest.json') (Join-Path $PWD 'sdk.sha256') --repo $env:SDK_REPOSITORY --title $spec.releaseTag --notes-file (Join-Path $PWD 'sdk-release-notes.md') --target main
+          if ($LASTEXITCODE -ne 0) { throw 'Publishing the immutable WebKit SDK GitHub Release failed.' }
+
+      - name: Trigger browser build after a manual SDK rebuild
+        if: github.event_name == 'workflow_dispatch'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run build-windows.yml --repo $env:GITHUB_REPOSITORY --ref main
+          if ($LASTEXITCODE -ne 0) { throw 'Could not dispatch the browser build after the SDK release.' }

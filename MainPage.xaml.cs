@@ -185,8 +185,7 @@ public sealed partial class MainPage : Page
                 Title = "Allow pop-up?",
                 Content = $"{source} wants to open a new browser tab. Only allow pop-ups from sites you trust.",
                 PrimaryButtonText = "Allow",
-                SecondaryButtonText = "Ignore",
-                CloseButtonText = "Cancel",
+                CloseButtonText = "Ignore",
                 DefaultButton = ContentDialogButton.Close,
                 XamlRoot = XamlRoot
             };
@@ -404,7 +403,7 @@ public sealed partial class MainPage : Page
         panel.Children.Add(popupHandling);
         panel.Children.Add(new TextBlock
         {
-            Text = "Automatic shows an Allow, Ignore or Cancel prompt whenever a site requests a new window.",
+            Text = "Automatic asks whether to allow each requested new window. Dismissing the prompt ignores that request.",
             TextWrapping = TextWrapping.Wrap
         });
         panel.Children.Add(new TextBlock

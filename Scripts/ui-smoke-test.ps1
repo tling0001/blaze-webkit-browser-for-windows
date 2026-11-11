@@ -51,6 +51,21 @@ function Save-Screenshot {
     $screenshots.Add([IO.Path]::GetFullPath($path))
 }
 
+function Wait-ForPopupPolicy {
+    param([int]$Expected)
+    $settingsPath = Join-Path $env:LOCALAPPDATA 'Blaze\settings.json'
+    for ($attempt = 0; $attempt -lt 20; $attempt++) {
+        if (Test-Path -LiteralPath $settingsPath) {
+            try {
+                $settings = Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json
+                if ([int]$settings.PopupHandlingMode -eq $Expected) { return }
+            } catch { }
+        }
+        Start-Sleep -Milliseconds 250
+    }
+    throw "Popup policy $Expected was not persisted to settings.json."
+}
+
 function Test-UI {
     param([string]$Name, [scriptblock]$Body)
     try {
@@ -169,16 +184,14 @@ window.addEventListener('load', () => {
         Invoke-Ui @('wait-for', 'ReduceMotion', '--gone', '-t', '3000') | Out-Null
 
         $settingsPath = Join-Path $env:LOCALAPPDATA 'Blaze\settings.json'
-        $savedSettings = Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json
-        if ([int]$savedSettings.PopupHandlingMode -ne 2) { throw 'Always deny was not persisted to settings.json.' }
+        Wait-ForPopupPolicy 2
 
         Invoke-Ui @('invoke', 'SettingsButton') | Out-Null
         Invoke-Ui @('wait-for', 'ReduceMotion', '--value', 'On', '-t', '5000') | Out-Null
         Invoke-Ui @('click', 'PopupModeAlwaysAllow') | Out-Null
         Invoke-Ui @('invoke', 'Primary') | Out-Null
         Invoke-Ui @('wait-for', 'ReduceMotion', '--gone', '-t', '3000') | Out-Null
-        $savedSettings = Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json
-        if ([int]$savedSettings.PopupHandlingMode -ne 1) { throw 'Always allow was not persisted to settings.json.' }
+        Wait-ForPopupPolicy 1
     }
 
     Test-UI 'Always deny rejects a pop-up without creating a tab' {
@@ -229,8 +242,29 @@ window.addEventListener('load', () => {
         Invoke-Ui @('click', 'PopupModeAutomatic') | Out-Null
         Invoke-Ui @('invoke', 'Primary') | Out-Null
         $settingsPath = Join-Path $env:LOCALAPPDATA 'Blaze\settings.json'
-        $savedSettings = Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json
-        if ([int]$savedSettings.PopupHandlingMode -ne 0) { throw 'Automatic was not restored as the final popup policy.' }
+        Wait-ForPopupPolicy 0
+    }
+
+
+    Test-UI 'Ignore dismisses the popup request without opening a tab' {
+        $popupUri = ([Uri]$popupPage).AbsoluteUri
+        Invoke-Ui @('set-value', 'AddressBox', $popupUri) | Out-Null
+        Invoke-Ui @('send-keys', 'enter', '--via', 'send-input') | Out-Null
+        Invoke-Ui @('wait-for', 'PopupPermissionDialog', '-t', '10000') | Out-Null
+        $inspection = Invoke-Ui @('inspect', '--interactive', '--json') | ConvertFrom-Json
+        $elements = @(Get-Elements @($inspection.windows | ForEach-Object { $_.elements }))
+        if ($elements | Where-Object { $_.automationId -eq 'Secondary' }) { throw 'A separate secondary popup action is still exposed.' }
+        if (-not ($elements | Where-Object { $_.automationId -eq 'Close' })) { throw 'The single Ignore dismissal button was not exposed.' }
+        Invoke-Ui @('invoke', 'Close') | Out-Null
+        Invoke-Ui @('wait-for', 'PopupPermissionDialog', '--gone', '-t', '5000') | Out-Null
+        $blocked = $false
+        for ($attempt = 0; $attempt -lt 10; $attempt++) {
+            $inspection = Invoke-Ui @('inspect', '--interactive', '--json') | ConvertFrom-Json
+            $elements = @(Get-Elements @($inspection.windows | ForEach-Object { $_.elements }))
+            if ($elements | Where-Object { $_.automationId -like 'BrowserTab_*' -and $_.name -eq 'Popup blocked' }) { $blocked = $true; break }
+            Start-Sleep -Milliseconds 500
+        }
+        if (-not $blocked) { throw 'Ignoring the popup did not leave the opener in its blocked-popup state.' }
     }
 
     Test-UI 'WebKit JavaScript alert, confirm and prompt use native WinUI dialogs' {

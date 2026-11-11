@@ -6,6 +6,8 @@ on:
     paths-ignore:
       - '**.md'
       - 'docs/**'
+      - '.github/workflows/build-webkit-sdk.yml'
+      - 'eng/WebKitSdk.json'
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -19,192 +21,67 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build-engine:
-    name: Build pinned WinCairo WebKit (x64)
-    runs-on: windows-latest
-    steps:
-      - name: Enable Windows long paths for the WebKit source tree
-        shell: pwsh
-        run: |
-          New-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name LongPathsEnabled -PropertyType DWord -Value 1 -Force | Out-Null
-          git config --global core.longpaths true
-          git config --global core.autocrlf input
-
-      - name: Check out WebKit source at pinned revision
-        uses: actions/checkout@v5
-        with:
-          repository: WebKit/WebKit
-          ref: d641dd75af65b0469eff30bb76a97e01e02633fc
-          path: w
-          fetch-depth: 1
-        env:
-          GIT_CONFIG_COUNT: 2
-          GIT_CONFIG_KEY_0: core.longpaths
-          GIT_CONFIG_VALUE_0: true
-          GIT_CONFIG_KEY_1: core.autocrlf
-          GIT_CONFIG_VALUE_1: input
-
-      - name: Restore cached WebKit build
-        id: webkit-cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            w/WebKitBuild/Release
-            w/WebKitLibraries/win
-          key: wincairo-x64-d641dd75af65b0469eff30bb76a97e01e02633fc-windows-latest-v2
-
-      - name: Install WinCairo build dependencies
-        if: steps.webkit-cache.outputs.cache-hit != 'true'
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          choco install -y xampp-81 python311 ruby git cmake gperf llvm ninja --no-progress
-          if ($LASTEXITCODE -ne 0) { throw 'Installing WebKit Windows-port dependencies failed.' }
-
-      - name: Configure WebKit command environment
-        if: steps.webkit-cache.outputs.cache-hit != 'true'
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $xampp = Get-ChildItem 'C:\' -Directory -ErrorAction SilentlyContinue |
-            Where-Object { $_.Name -like 'xampp*' } | Select-Object -First 1
-          if (-not $xampp -or -not (Test-Path (Join-Path $xampp.FullName 'perl\bin\perl.exe'))) { throw 'XAMPP/Perl installation was not found under C:\xampp.' }
-          $python = (& py -3.11 -c 'import sys; print(sys.executable)').Trim()
-          if ($LASTEXITCODE -ne 0 -or -not $python) { throw 'Python 3.11 is required by the WebKit Windows port.' }
-          $pythonDir = Split-Path $python
-          $ninja = Get-Command ninja -ErrorAction Stop
-          $ninjaPath = $ninja.Source
-          if (-not (Test-Path -LiteralPath $ninjaPath -PathType Leaf)) { throw "Ninja executable was not found: $ninjaPath" }
-          $env:Path = "$($xampp.FullName)\perl\bin;$($xampp.FullName)\apache\bin;$pythonDir;$pythonDir\Scripts;$(Split-Path $ninjaPath);$env:Path"
-          $env:CC = 'clang-cl'
-          $env:CXX = 'clang-cl'
-          $env:PYTHON = $python
-          perl -v
-          python --version
-          ruby --version
-          cmake --version
-          & $ninjaPath --version
-          clang-cl --version
-          "WEBKIT_PYTHON=$python" >> $env:GITHUB_ENV
-          "WEBKIT_XAMPP=$($xampp.FullName)" >> $env:GITHUB_ENV
-          "WEBKIT_NINJA=$ninjaPath" >> $env:GITHUB_ENV
-
-      - name: Build WebKit Windows port
-        if: steps.webkit-cache.outputs.cache-hit != 'true'
-        shell: pwsh
-        working-directory: w
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $sourceRoot = Join-Path $env:GITHUB_WORKSPACE 'w'
-          if (-not (Test-Path -LiteralPath $sourceRoot -PathType Container)) { throw "WebKit source checkout was not found: $sourceRoot" }
-          # Keep source, vcpkg and build paths on the same physical drive.
-          # Mapping only the build output to W: makes Python os.path.relpath fail
-          # when Meson passes source paths from D: to a W: build directory.
-          Push-Location $sourceRoot
-          try {
-            $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
-            $vs = & $vswhere -latest -property installationPath
-            if (-not $vs) { throw 'Visual Studio installation was not found.' }
-            $vcvars = Join-Path $vs 'VC\Auxiliary\Build\vcvars64.bat'
-            if (-not (Test-Path $vcvars)) { throw 'The x64 MSVC environment is unavailable.' }
-            $pythonDir = Split-Path $env:WEBKIT_PYTHON
-            $ninjaDir = Split-Path $env:WEBKIT_NINJA
-            # vcvars64.bat can replace PATH; prepend all required tools after it runs.
-            $extraPath = $env:WEBKIT_XAMPP + '\perl\bin;' + $env:WEBKIT_XAMPP + '\apache\bin;' + $pythonDir + ';' + $pythonDir + '\Scripts;' + $ninjaDir
-            $command = 'cd /d "' + $sourceRoot + '" && call "' + $vcvars + '" && set "PATH=' + $extraPath + ';%PATH%" && set "CC=clang-cl" && set "CXX=clang-cl" && where.exe ninja && ninja --version && perl Tools\Scripts\build-webkit --release'
-            cmd.exe /d /s /c $command
-            $buildExitCode = $LASTEXITCODE
-            if ($buildExitCode -ne 0) { throw "The upstream WebKit Windows-port build failed (exit $buildExitCode)." }
-          } finally {
-            Pop-Location
-          }
-
-      - name: Print WebKit build diagnostics
-        if: failure()
-        continue-on-error: true
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Continue'
-          $releaseRoot = Join-Path $env:GITHUB_WORKSPACE 'w\WebKitBuild\Release'
-          $manifestLog = Join-Path $releaseRoot 'vcpkg-manifest-install.log'
-          if (Test-Path -LiteralPath $manifestLog -PathType Leaf) {
-            Write-Host '========== vcpkg-manifest-install.log (last 250 lines) =========='
-            Get-Content -LiteralPath $manifestLog -Tail 250
-          } else {
-            Write-Warning "vcpkg manifest log was not found: $manifestLog"
-          }
-          $cmakeLogs = @(Get-ChildItem -LiteralPath $releaseRoot -Filter 'CMakeError.log' -Recurse -File -ErrorAction SilentlyContinue)
-          foreach ($log in $cmakeLogs) {
-            Write-Host "========== $($log.FullName) (last 120 lines) =========="
-            Get-Content -LiteralPath $log.FullName -Tail 120
-          }
-
-      - name: Upload WebKit build diagnostics on failure
-        if: failure()
-        continue-on-error: true
-        uses: actions/upload-artifact@v6
-        with:
-          name: WebKitEngine-build-diagnostics
-          path: |
-            w/WebKitBuild/Release/vcpkg-manifest-install.log
-            w/WebKitBuild/Release/**/CMakeError.log
-            w/WebKitBuild/Release/**/CMakeOutput.log
-          if-no-files-found: ignore
-          retention-days: 7
-
-      - name: Verify WebKit runtime and build native WKView host
-        shell: pwsh
-        working-directory: w
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $webkitRoot = Join-Path $PWD 'WebKitBuild\Release'
-          $miniBrowser = Join-Path $webkitRoot 'bin64\MiniBrowser.exe'
-          if (-not (Test-Path $miniBrowser)) { throw 'WebKit build did not produce MiniBrowser.exe.' }
-          $viewHeader = Join-Path $webkitRoot 'include\WebKit\WKView.h'
-          if (-not (Test-Path $viewHeader)) { throw 'WebKit public WKView.h was not produced.' }
-          $importLibrary = Get-ChildItem $webkitRoot -Filter 'WebKit2.lib' -Recurse -File | Select-Object -First 1
-          if (-not $importLibrary) { throw 'WebKit2.lib was not found; cannot link the WKView host.' }
-          cmake -S ..\Native\WebKitHost -B ..\WebKitHostBuild -A x64 -DWEBKIT_ROOT="$webkitRoot"
-          if ($LASTEXITCODE -ne 0) { throw 'CMake configuration for the native WebKit host failed.' }
-          cmake --build ..\WebKitHostBuild --config Release
-          if ($LASTEXITCODE -ne 0) { throw 'Building the native WebKit host failed.' }
-
-      - name: Stage complete x64 WebKit runtime
-        shell: pwsh
-        working-directory: w
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $stage = Join-Path $env:GITHUB_WORKSPACE 'webkit-runtime'
-          New-Item -ItemType Directory -Path $stage -Force | Out-Null
-          Get-ChildItem -LiteralPath 'WebKitBuild\Release\bin64' -Force | Where-Object { $_.Name -notlike 'MiniBrowser*' } | Copy-Item -Destination $stage -Recurse -Force
-          $libraries = 'WebKitLibraries\win\bin'
-          if (Test-Path $libraries) {
-            Copy-Item -Path "$libraries\*" -Destination $stage -Recurse -Force
-          }
-          $hostDll = Get-ChildItem (Join-Path $env:GITHUB_WORKSPACE 'WebKitHostBuild') -Filter 'WebKitHost.dll' -Recurse -File | Select-Object -First 1
-          if (-not $hostDll) { throw 'WebKitHost.dll was not produced.' }
-          Copy-Item $hostDll.FullName -Destination $stage -Force
-          if (-not (Test-Path (Join-Path $stage 'WebKit2.dll'))) { throw 'WebKit2.dll is missing from the staged engine.' }
-          if (-not (Test-Path (Join-Path $stage 'WebKitHost.dll'))) { throw 'WebKitHost.dll is missing from the staged engine.' }
-          Write-Host "Staged $((Get-ChildItem $stage -File -Recurse).Count) runtime files."
-
-      - name: Upload WebKit engine runtime
-        uses: actions/upload-artifact@v6
-        with:
-          name: WebKitEngine-x64
-          path: webkit-runtime/**
-          if-no-files-found: error
-          retention-days: 7
-
   build:
     name: Build and package WinUI browser (x64)
     runs-on: windows-latest
-    needs: [build-engine]
     steps:
       - name: Check out browser source
         uses: actions/checkout@v5
         with:
           ref: ${{ github.sha }}
+
+      - name: Download, validate and stage the pinned WebKit SDK
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.WEBKIT_SDK_TOKEN || github.token }}
+          WEBKIT_SDK_REPOSITORY: ${{ vars.WEBKIT_SDK_REPOSITORY || github.repository }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $spec = Get-Content -LiteralPath 'eng\WebKitSdk.json' -Raw | ConvertFrom-Json
+          $sdkRepository = $env:WEBKIT_SDK_REPOSITORY
+          $sdkTag = $spec.releaseTag
+          $deadline = (Get-Date).AddMinutes(330)
+          Write-Host "Waiting for versioned WebKit SDK $sdkTag from $sdkRepository"
+          while ($true) {
+            gh release view $sdkTag --repo $sdkRepository *> $null
+            if ($LASTEXITCODE -eq 0) { break }
+            if ((Get-Date) -ge $deadline) { throw "WebKit SDK release $sdkTag was not published within 330 minutes. Check Build versioned WebKit SDK." }
+            Start-Sleep -Seconds 30
+          }
+          $download = Join-Path $PWD 'webkit-sdk-download'
+          New-Item -ItemType Directory -Path $download -Force | Out-Null
+          gh release download $sdkTag --repo $sdkRepository --dir $download
+          if ($LASTEXITCODE -ne 0) { throw "Could not download WebKit SDK release $sdkTag." }
+          $manifestPath = Join-Path $download 'sdk-manifest.json'
+          $checksumPath = Join-Path $download 'sdk.sha256'
+          $archives = @(Get-ChildItem -LiteralPath $download -Filter 'Blaze-WebKitSDK-*.zip' -File)
+          if (-not (Test-Path $manifestPath) -or -not (Test-Path $checksumPath) -or $archives.Count -ne 1) { throw 'SDK release must contain one ZIP, sdk-manifest.json and sdk.sha256.' }
+          $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+          if ($manifest.releaseTag -ne $sdkTag -or $manifest.webkitCommit -ne $spec.webkitCommit -or $manifest.architecture -ne 'x64' -or $manifest.port -ne 'WinCairo' -or [int]$manifest.sdkFormatVersion -ne [int]$spec.sdkFormatVersion) { throw 'SDK manifest does not match the pinned source, format or architecture.' }
+          $actualHash = (Get-FileHash -LiteralPath $archives[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          $expectedHash = ([string]$manifest.archiveSha256).ToLowerInvariant()
+          $checksumHash = ((Get-Content -LiteralPath $checksumPath -Raw).Trim() -split '\s+')[0].ToLowerInvariant()
+          if (-not $expectedHash -or $actualHash -ne $expectedHash -or $actualHash -ne $checksumHash) { throw 'WebKit SDK SHA-256 verification failed.' }
+          $sdkRoot = Join-Path $PWD 'webkit-sdk'
+          Expand-Archive -LiteralPath $archives[0].FullName -DestinationPath $sdkRoot -Force
+          $embeddedManifest = Get-Content -LiteralPath (Join-Path $sdkRoot 'sdk-manifest.json') -Raw | ConvertFrom-Json
+          if ($embeddedManifest.webkitCommit -ne $spec.webkitCommit -or $embeddedManifest.vcpkgBuiltinBaseline -ne $spec.vcpkgBuiltinBaseline -or $embeddedManifest.webkitRequirementsBaseline -ne $spec.webkitRequirementsBaseline) { throw 'Embedded SDK provenance does not match eng\WebKitSdk.json.' }
+          foreach ($required in @('include\WebKit\WKView.h','bin64\WebKit2.dll','dependencies.lock.txt')) { if (-not (Test-Path (Join-Path $sdkRoot $required))) { throw "SDK is incomplete: missing $required." } }
+          if (-not ((Test-Path (Join-Path $sdkRoot 'lib64\WebKit2.lib')) -or (Test-Path (Join-Path $sdkRoot 'bin64\WebKit2.lib')))) { throw 'SDK does not contain WebKit2.lib.' }
+          cmake -S Native\WebKitHost -B WebKitHostBuild -A x64 "-DWEBKIT_ROOT=$sdkRoot"
+          if ($LASTEXITCODE -ne 0) { throw 'CMake configuration for the native WebKit host failed.' }
+          cmake --build WebKitHostBuild --config Release
+          if ($LASTEXITCODE -ne 0) { throw 'Building the native WebKit host against the versioned SDK failed.' }
+          $runtime = Join-Path $PWD 'webkit-runtime'
+          New-Item -ItemType Directory -Path $runtime -Force | Out-Null
+          Copy-Item -Path (Join-Path $sdkRoot 'bin64\*') -Destination $runtime -Recurse -Force
+          if (Test-Path (Join-Path $sdkRoot 'runtime')) { Copy-Item -Path (Join-Path $sdkRoot 'runtime\*') -Destination $runtime -Recurse -Force }
+          $hostDll = Get-ChildItem -LiteralPath 'WebKitHostBuild' -Filter 'WebKitHost.dll' -Recurse -File | Select-Object -First 1
+          if (-not $hostDll) { throw 'WebKitHost.dll was not produced.' }
+          Copy-Item -LiteralPath $hostDll.FullName -Destination $runtime -Force
+          Copy-Item -LiteralPath $manifestPath -Destination (Join-Path $runtime 'webkit-sdk-manifest.json') -Force
+          foreach ($required in @('WebKit2.dll','WebKitHost.dll')) { if (-not (Test-Path (Join-Path $runtime $required))) { throw "Staged runtime is missing $required." } }
+          Write-Host "Validated SDK $sdkTag ($actualHash); staged $((Get-ChildItem $runtime -File -Recurse).Count) runtime files."
 
       - name: Set up .NET 10
         uses: actions/setup-dotnet@v5
