@@ -1,0 +1,14 @@
+LIBRARY WebKitHost
+EXPORTS
+    WB_Create
+    WB_Destroy
+    WB_SetBounds
+    WB_Navigate
+    WB_GoBack
+    WB_GoForward
+    WB_Reload
+    WB_Stop
+    WB_CanGoBack
+    WB_CanGoForward
+    WB_GetCurrentUrl
+    WB_GetTitle
