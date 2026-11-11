@@ -50,8 +50,13 @@ function Save-Screenshot {
 
 function Test-UI {
     param([string]$Name, [scriptblock]$Body)
-    & $Body | Out-Null
-    $results.Add(@{ name = $Name; status = 'PASS' })
+    try {
+        & $Body | Out-Null
+        $results.Add(@{ name = $Name; status = 'PASS' })
+    } catch {
+        $results.Add(@{ name = $Name; status = 'FAIL'; detail = "$_" })
+        Write-Warning "$Name failed: $_"
+    }
 }
 
 try {
@@ -105,22 +110,29 @@ try {
             }
         }
     }
+} catch {
+    $results.Add(@{ name = 'UI smoke setup'; status = 'FAIL'; detail = "$_" })
+    Write-Warning "UI smoke setup failed: $_"
 } finally {
     try {
         if ($uiStarted) { Invoke-WinAppChecked @('ui', 'yield') | Out-Null }
+    } catch {
+        $results.Add(@{ name = 'Release UI workflow'; status = 'FAIL'; detail = "$_" })
     } finally {
         $env:WINAPP_UI_WORKFLOW_ID = $previousWorkflowId
     }
 }
 
+$failed = @($results | Where-Object { $_.status -eq 'FAIL' }).Count
 $report = [ordered]@{
     target = 'local'
     appPid = $appPid
     workflowId = $workflowId
-    passed = $results.Count
-    failed = 0
+    passed = $results.Count - $failed
+    failed = $failed
     results = @($results.ToArray())
     screenshots = @($screenshots.ToArray())
 }
 $report | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath '.\ui-test-results.json' -Encoding utf8
-Write-Host "Passed: $($report.passed) | Failed: 0 | Results: .\ui-test-results.json"
+Write-Host "Passed: $($report.passed) | Failed: $failed | Results: .\ui-test-results.json"
+if ($failed -gt 0) { exit 1 }
