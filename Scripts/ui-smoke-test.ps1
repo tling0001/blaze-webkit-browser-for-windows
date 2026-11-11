@@ -194,6 +194,45 @@ window.addEventListener('load', () => {
         Wait-ForPopupPolicy 1
     }
 
+    Test-UI 'Home page and search engine settings persist and drive address searches' {
+        $settingsPath = Join-Path $env:LOCALAPPDATA 'Blaze\settings.json'
+        Invoke-Ui @('invoke', 'SettingsButton') | Out-Null
+        Invoke-Ui @('wait-for', 'HomePage', '-t', '5000') | Out-Null
+        Invoke-Ui @('set-value', 'HomePage', 'https://example.org') | Out-Null
+        Invoke-Ui @('click', 'SearchEngineBing') | Out-Null
+        Save-Screenshot '10-home-search-settings.png'
+        Invoke-Ui @('invoke', 'Primary') | Out-Null
+        Invoke-Ui @('wait-for', 'HomePage', '--gone', '-t', '3000') | Out-Null
+
+        $saved = $false
+        for ($attempt = 0; $attempt -lt 20; $attempt++) {
+            if (Test-Path -LiteralPath $settingsPath) {
+                try {
+                    $settings = Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json
+                    if ($settings.HomePage -eq 'https://example.org' -and [int]$settings.SearchEngine -eq 1) {
+                        $saved = $true
+                        break
+                    }
+                } catch { }
+            }
+            Start-Sleep -Milliseconds 250
+        }
+        if (-not $saved) { throw 'The home page and Bing search preference were not persisted.' }
+
+        Invoke-Ui @('invoke', 'HomeButton') | Out-Null
+        Invoke-Ui @('wait-for', 'AddressBox', '--value', 'https://example.org/', '-t', '10000') | Out-Null
+        Invoke-Ui @('set-value', 'AddressBox', 'Blaze search smoke test') | Out-Null
+        Invoke-Ui @('send-keys', 'enter', '--via', 'send-input') | Out-Null
+        Invoke-Ui @('wait-for', 'AddressBox', '--value', 'https://www.bing.com/search?q=Blaze%20search%20smoke%20test', '-t', '5000') | Out-Null
+
+        Invoke-Ui @('invoke', 'SettingsButton') | Out-Null
+        Invoke-Ui @('wait-for', 'HomePage', '-t', '5000') | Out-Null
+        Invoke-Ui @('set-value', 'HomePage', 'https://www.google.com') | Out-Null
+        Invoke-Ui @('click', 'SearchEngineGoogle') | Out-Null
+        Invoke-Ui @('invoke', 'Primary') | Out-Null
+        Invoke-Ui @('wait-for', 'HomePage', '--gone', '-t', '3000') | Out-Null
+    }
+
     Test-UI 'Always deny rejects a pop-up without creating a tab' {
         $popupUri = ([Uri]$popupPage).AbsoluteUri
         Invoke-Ui @('set-value', 'AddressBox', $popupUri) | Out-Null
