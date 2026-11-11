@@ -39,6 +39,7 @@
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
@@ -50,11 +51,12 @@
             <Button x:Name="BackButton" Grid.Column="0" Content="Back" Click="OnBackClick" AutomationProperties.Name="Go back" />
             <Button x:Name="ForwardButton" Grid.Column="1" Content="Forward" Click="OnForwardClick" AutomationProperties.Name="Go forward" />
             <Button Grid.Column="2" Content="Reload" Click="OnReloadClick" AutomationProperties.Name="Reload page" />
-            <Button Grid.Column="3" Content="Home" Click="OnHomeClick" AutomationProperties.Name="Go to home page" />
+            <Button Grid.Column="3" Content="Stop" Click="OnStopClick" AutomationProperties.Name="Stop loading" />
+            <Button Grid.Column="4" Content="Home" Click="OnHomeClick" AutomationProperties.Name="Go to home page" />
 
             <AutoSuggestBox
                 x:Name="AddressBox"
-                Grid.Column="4"
+                Grid.Column="5"
                 MinWidth="180"
                 HorizontalAlignment="Stretch"
                 VerticalAlignment="Center"
@@ -66,11 +68,11 @@
                 </AutoSuggestBox.QueryIcon>
             </AutoSuggestBox>
 
-            <Button x:Name="BookmarkButton" Grid.Column="5" Content="Bookmark" Click="OnBookmarkClick" AutomationProperties.Name="Add or remove bookmark" />
-            <Button Grid.Column="6" Content="Saved" Click="OnBookmarksClick" AutomationProperties.Name="Open bookmarks" />
-            <Button Grid.Column="7" Content="History" Click="OnHistoryClick" AutomationProperties.Name="Open browsing history" />
-            <Button Grid.Column="8" Content="Downloads" Click="OnDownloadsClick" AutomationProperties.Name="Open downloads" />
-            <Button Grid.Column="9" Content="Settings" Click="OnSettingsClick" AutomationProperties.Name="Open browser settings" />
+            <Button x:Name="BookmarkButton" Grid.Column="6" Content="Bookmark" Click="OnBookmarkClick" AutomationProperties.Name="Add or remove bookmark" />
+            <Button Grid.Column="7" Content="Saved" Click="OnBookmarksClick" AutomationProperties.Name="Open bookmarks" />
+            <Button Grid.Column="8" Content="History" Click="OnHistoryClick" AutomationProperties.Name="Open browsing history" />
+            <Button Grid.Column="9" Content="Downloads" Click="OnDownloadsClick" AutomationProperties.Name="Open downloads" />
+            <Button Grid.Column="10" Content="Settings" Click="OnSettingsClick" AutomationProperties.Name="Open browser settings" />
         </Grid>
 
         <Grid
