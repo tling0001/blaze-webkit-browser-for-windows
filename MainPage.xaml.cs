@@ -1,10 +1,8 @@
-using Microsoft.UI.Dispatching;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Input;
-using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
 using Windows.Foundation;
 using Windows.UI.ViewManagement;
@@ -42,6 +40,7 @@ public sealed partial class MainPage : Page
         await ViewModel.InitializeAsync();
         ApplyMotionPreferences();
         if (!_nativeCallbackHandle.IsAllocated)
+            // Native download and JavaScript result callbacks can outlive a WKView; retain this bridge for the app process lifetime.
             _nativeCallbackHandle = GCHandle.Alloc(this);
         foreach (var tab in ViewModel.Tabs)
             AddTabItem(tab);
