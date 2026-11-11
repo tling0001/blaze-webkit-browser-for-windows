@@ -1,4 +1,6 @@
 using Microsoft.UI.Dispatching;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
@@ -18,6 +20,9 @@ public sealed partial class MainPage : Page
     private DispatcherQueueTimer? _stateTimer;
     private bool _initialized;
     private bool _engineAvailable;
+    private GCHandle _nativeCallbackHandle;
+    private static readonly WebKitNative.DownloadCallback DownloadCallbackHandler = OnNativeDownload;
+    private static readonly WebKitNative.PermissionCallback PermissionCallbackHandler = OnNativePermission;
 
     public MainPage()
     {
@@ -31,6 +36,8 @@ public sealed partial class MainPage : Page
         _initialized = true;
 
         await ViewModel.InitializeAsync();
+        if (!_nativeCallbackHandle.IsAllocated)
+            _nativeCallbackHandle = GCHandle.Alloc(this);
         foreach (var tab in ViewModel.Tabs)
             AddTabItem(tab);
 
@@ -155,22 +162,35 @@ public sealed partial class MainPage : Page
 
     private void OnDownloadsClick(object sender, RoutedEventArgs e)
     {
-        _ = ShowDownloadsStatusAsync();
-    }
-
-    private async Task ShowDownloadsStatusAsync()
-    {
-        var dialog = new ContentDialog
+        var flyout = new MenuFlyout();
+        if (ViewModel.Downloads.Count == 0)
+            flyout.Items.Add(new MenuFlyoutItem { Text = "No downloads yet", IsEnabled = false });
+        else
         {
-            Title = "Downloads",
-            Content = "The native WebKit download client is the next engine integration task. No downloads are currently tracked by this build.",
-            CloseButtonText = "Close",
-            XamlRoot = XamlRoot
-        };
-        await dialog.ShowAsync();
+            foreach (var download in ViewModel.Downloads.Take(20))
+            {
+                var item = new MenuFlyoutItem
+                {
+                    Text = $"{download.FileName} — {download.ProgressText}",
+                    IsEnabled = download.Status == "Completed" && File.Exists(download.FilePath)
+                };
+                item.Click += (_, _) => Process.Start(new ProcessStartInfo(download.FilePath) { UseShellExecute = true });
+                flyout.Items.Add(item);
+            }
+        }
+
+        flyout.Items.Add(new MenuFlyoutSeparator());
+        var openFolder = new MenuFlyoutItem { Text = "Open Downloads folder" };
+        openFolder.Click += (_, _) => Process.Start(new ProcessStartInfo(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) + "\\Downloads") { UseShellExecute = true });
+        flyout.Items.Add(openFolder);
+        if (sender is FrameworkElement element)
+            flyout.ShowAt(element);
     }
 
-    private async void OnSettingsClick(object sender, RoutedEventArgs e)
+    private async void OnSettingsClick(object sender, RoutedEventArgs e) => await ShowSettingsDialogAsync();
+
+    private async Task ShowSettingsDialogAsync()
     {
         var position = new ComboBox
         {
@@ -179,57 +199,85 @@ public sealed partial class MainPage : Page
             SelectedIndex = ViewModel.Settings.TabBarAboveToolbar ? 0 : 1,
             MinWidth = 260
         };
-        var javaScript = new ToggleSwitch
-        {
-            Header = "Enable JavaScript",
-            IsOn = ViewModel.Settings.JavaScriptEnabled
-        };
-        var images = new ToggleSwitch
-        {
-            Header = "Load images automatically",
-            IsOn = ViewModel.Settings.LoadImagesAutomatically
-        };
-        var clearData = new Button
-        {
-            Content = "Clear cookies, caches and site storage",
-            HorizontalAlignment = HorizontalAlignment.Left
-        };
-        clearData.Click += (_, _) =>
-        {
-            foreach (var tab in ViewModel.Tabs)
-                if (tab.NativeHandle != IntPtr.Zero)
-                    WebKitNative.ClearWebsiteData(tab.NativeHandle);
-            ViewModel.History.Clear();
-            _ = ViewModel.SaveAsync();
-        };
-
-        var panel = new StackPanel { Spacing = 14, MinWidth = 320 };
+        var javaScript = new ToggleSwitch { Header = "Enable JavaScript", IsOn = ViewModel.Settings.JavaScriptEnabled };
+        var images = new ToggleSwitch { Header = "Load images automatically", IsOn = ViewModel.Settings.LoadImagesAutomatically };
+        var panel = new StackPanel { Spacing = 12, MinWidth = 340 };
         panel.Children.Add(position);
         panel.Children.Add(javaScript);
         panel.Children.Add(images);
         panel.Children.Add(new TextBlock
         {
-            Text = "Privacy",
+            Text = "Site permissions",
+            FontSize = 16,
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
         });
-        panel.Children.Add(clearData);
+
+        var permissionControls = new List<(SitePermissionEntry Site, ToggleSwitch Location, ToggleSwitch Notifications)>();
+        if (ViewModel.SitePermissions.Count == 0)
+            panel.Children.Add(new TextBlock { Text = "No sites have requested location or notification access." });
+        else
+        {
+            foreach (var site in ViewModel.SitePermissions)
+            {
+                panel.Children.Add(new TextBlock
+                {
+                    Text = site.Origin,
+                    FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                    TextWrapping = TextWrapping.Wrap
+                });
+                var location = new ToggleSwitch { Header = "Allow location", IsOn = site.GeolocationAllowed };
+                var notifications = new ToggleSwitch { Header = "Allow notifications", IsOn = site.NotificationsAllowed };
+                permissionControls.Add((site, location, notifications));
+                panel.Children.Add(location);
+                panel.Children.Add(notifications);
+            }
+        }
+        panel.Children.Add(new TextBlock
+        {
+            Text = "Camera and microphone requests are denied until a device-selection permission flow is available.",
+            TextWrapping = TextWrapping.Wrap
+        });
 
         var dialog = new ContentDialog
         {
             Title = "Settings",
             Content = panel,
             PrimaryButtonText = "Save",
+            SecondaryButtonText = "Clear browsing data",
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Primary,
             XamlRoot = XamlRoot
         };
 
-        if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+        var result = await dialog.ShowAsync();
+        if (result == ContentDialogResult.Secondary)
+        {
+            var confirmation = new ContentDialog
+            {
+                Title = "Clear browsing data?",
+                Content = "This removes cookies, caches, local storage, service workers, indexed databases and browsing history for the open WebKit profiles. You may be signed out of websites.",
+                PrimaryButtonText = "Clear data",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Close,
+                XamlRoot = XamlRoot
+            };
+            if (await confirmation.ShowAsync() == ContentDialogResult.Primary)
+            {
+                foreach (var tab in ViewModel.Tabs)
+                    if (tab.NativeHandle != IntPtr.Zero)
+                        WebKitNative.ClearWebsiteData(tab.NativeHandle);
+                await ViewModel.ClearHistoryAsync();
+            }
+            return;
+        }
+        if (result != ContentDialogResult.Primary)
             return;
 
         ViewModel.Settings.TabBarAboveToolbar = position.SelectedIndex == 0;
         ViewModel.Settings.JavaScriptEnabled = javaScript.IsOn;
         ViewModel.Settings.LoadImagesAutomatically = images.IsOn;
+        foreach (var control in permissionControls)
+            ViewModel.ApplySitePermission(control.Site, control.Location.IsOn, control.Notifications.IsOn);
         foreach (var tab in ViewModel.Tabs)
         {
             if (tab.NativeHandle == IntPtr.Zero)
@@ -240,6 +288,44 @@ public sealed partial class MainPage : Page
         ApplyTabBarPlacement();
         LayoutNativeViews();
         await ViewModel.SaveAsync();
+    }
+
+    private async void HandlePermissionRequest(string origin, int permissionType)
+    {
+        ViewModel.RecordPermissionRequest(origin, permissionType);
+        var description = permissionType switch
+        {
+            0 => $"{origin} requested your location. The request was blocked. You can allow this site in Settings.",
+            1 => $"{origin} requested permission to send notifications. The request was blocked. You can allow this site in Settings.",
+            _ => $"{origin} requested camera or microphone access. It remains blocked because device selection is not yet implemented."
+        };
+        var dialog = new ContentDialog
+        {
+            Title = "Site permission blocked",
+            Content = description,
+            PrimaryButtonText = permissionType == 2 ? "Close" : "Manage permissions",
+            CloseButtonText = "Dismiss",
+            DefaultButton = ContentDialogButton.Close,
+            XamlRoot = XamlRoot
+        };
+        if (await dialog.ShowAsync() == ContentDialogResult.Primary && permissionType != 2)
+            await ShowSettingsDialogAsync();
+    }
+
+    private static void OnNativeDownload(string filePath, int status, long bytesWritten, long totalBytesExpected, IntPtr userData)
+    {
+        if (GCHandle.FromIntPtr(userData).Target is MainPage page)
+            App.DispatcherQueue.TryEnqueue(() => page.ViewModel.UpdateDownload(filePath, status, bytesWritten, totalBytesExpected));
+    }
+
+    private static int OnNativePermission(string origin, int permissionType, IntPtr userData)
+    {
+        if (GCHandle.FromIntPtr(userData).Target is not MainPage page)
+            return 0;
+        var allowed = page.ViewModel.IsPermissionAllowed(origin, permissionType);
+        if (!allowed)
+            App.DispatcherQueue.TryEnqueue(() => page.HandlePermissionRequest(origin, permissionType));
+        return allowed ? 1 : 0;
     }
 
     private void OnStateTimerTick(DispatcherQueueTimer sender, object args)
@@ -318,8 +404,12 @@ public sealed partial class MainPage : Page
             tab.NativeHandle = WebKitNative.Create(App.WindowHandle, x, y, Math.Max(1, width), Math.Max(1, height), tab.Url);
             if (tab.NativeHandle == IntPtr.Zero)
                 throw new InvalidOperationException("WKViewCreate did not return a native view.");
+            var callbackHandle = GCHandle.ToIntPtr(_nativeCallbackHandle);
+            WebKitNative.SetDownloadCallback(tab.NativeHandle, DownloadCallbackHandler, callbackHandle);
+            WebKitNative.SetPermissionCallback(tab.NativeHandle, PermissionCallbackHandler, callbackHandle);
             WebKitNative.SetJavaScriptEnabled(tab.NativeHandle, ViewModel.Settings.JavaScriptEnabled);
             WebKitNative.SetLoadsImagesAutomatically(tab.NativeHandle, ViewModel.Settings.LoadImagesAutomatically);
+            WebKitNative.Navigate(tab.NativeHandle, tab.Url);
             _engineAvailable = true;
             EngineError.IsOpen = false;
         }
