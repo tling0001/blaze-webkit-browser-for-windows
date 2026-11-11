@@ -51,6 +51,7 @@ jobs:
           $null = & gh release view $spec.releaseTag --repo $env:SDK_REPOSITORY 2>$null
           if ($LASTEXITCODE -eq 0) { "exists=true" >> $env:GITHUB_OUTPUT; Write-Host "SDK release $($spec.releaseTag) already exists; keeping it immutable." }
           else { "exists=false" >> $env:GITHUB_OUTPUT; Write-Host "SDK release $($spec.releaseTag) is not published yet; building it now." }
+          $global:LASTEXITCODE = 0
 
       - name: Check out the pinned WebKit source
         if: steps.sdk.outputs.exists != 'true'

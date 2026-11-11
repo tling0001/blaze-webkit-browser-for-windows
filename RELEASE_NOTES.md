@@ -1,5 +1,11 @@
 # Blaze release notes
 
+## [1.0.9] - 2026-11-11
+
+### CI reliability
+- Explicitly reset PowerShell's inherited native exit code after the expected missing-SDK release check so the SDK bootstrap job can continue to the pinned WebKit build.
+
+
 ## [1.0.8] - 2026-11-11
 
 ### CI reliability
