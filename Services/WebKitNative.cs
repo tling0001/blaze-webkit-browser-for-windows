@@ -67,6 +67,12 @@ internal static class WebKitNative
     [UnmanagedFunctionPointer(CallingConvention.Cdecl, CharSet = CharSet.Unicode)]
     internal delegate void JavaScriptDialogCallback(int dialogType, [MarshalAs(UnmanagedType.LPWStr)] string origin, [MarshalAs(UnmanagedType.LPWStr)] string message, [MarshalAs(UnmanagedType.LPWStr)] string defaultValue, IntPtr listener, IntPtr userData);
 
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    internal delegate int NewPageCallback(IntPtr view, IntPtr userData);
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    internal delegate void ClosePageCallback(IntPtr view, IntPtr userData);
+
     [DllImport(Library, EntryPoint = "WB_SetDownloadCallback", CallingConvention = CallingConvention.Cdecl)]
     internal static extern void SetDownloadCallback(IntPtr view, DownloadCallback callback, IntPtr userData);
 
@@ -75,6 +81,9 @@ internal static class WebKitNative
 
     [DllImport(Library, EntryPoint = "WB_SetJavaScriptDialogCallback", CallingConvention = CallingConvention.Cdecl)]
     internal static extern void SetJavaScriptDialogCallback(IntPtr view, JavaScriptDialogCallback callback, IntPtr userData);
+
+    [DllImport(Library, EntryPoint = "WB_SetPopupCallbacks", CallingConvention = CallingConvention.Cdecl)]
+    internal static extern void SetPopupCallbacks(IntPtr view, NewPageCallback newPageCallback, ClosePageCallback closePageCallback, IntPtr userData);
 
     [DllImport(Library, EntryPoint = "WB_ResolveJavaScriptDialog", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Unicode)]
     internal static extern void ResolveJavaScriptDialog(IntPtr listener, int dialogType, [MarshalAs(UnmanagedType.Bool)] bool accepted, string? response);
