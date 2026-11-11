@@ -16,12 +16,18 @@
 #include <WebKit/WKDownloadClient.h>
 #include <WebKit/WKNavigationResponseRef.h>
 #include <WebKit/WKURLResponse.h>
+#include <WebKit/WKURL.h>
+#include <WebKit/WKSecurityOriginRef.h>
 #include <WebKit/WKGeolocationPermissionRequest.h>
 #include <WebKit/WKNotificationPermissionRequest.h>
 #include <WebKit/WKUserMediaPermissionRequest.h>
 
 #include <algorithm>
 #include <new>
+#include <string>
+#include <vector>
+#include <cwchar>
+#include <system_error>
 #include <filesystem>
 #include <ShlObj.h>
 #include <string>
