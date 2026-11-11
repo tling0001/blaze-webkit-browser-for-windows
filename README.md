@@ -21,6 +21,7 @@ The upstream WinCairo port is an x64 development/testing port rather than a regu
 - Native child-window hosting for WebKit WKView; no WebView2 or Chromium fallback
 - Address/search, back/forward/reload/stop/home
 - Multiple tabs with per-tab native WebKit views and shared website data store/context
+- JavaScript `window.open()` and `target="_blank"` open a new native browser tab; `window.close()` closes the owning tab
 - Persistent sessions, browsing history and bookmarks
 - Downloads into the Windows Downloads folder with progress and completion tracking
 - Per-site geolocation and notification permission decisions; camera/microphone are denied until device-selection support exists
@@ -29,6 +30,7 @@ The upstream WinCairo port is an x64 development/testing port rather than a regu
 - Persistent Reduce motion preference; WinUI transitions are suppressed when enabled
 - Native WinUI `ContentDialog`, `MenuFlyout`, `TabView`, `AutoSuggestBox`, `ToggleSwitch` and `Button` controls
 - Native WinUI dialogs for WebKit JavaScript alert, confirm, prompt and before-unload requests
+- Popup lifecycle handled by WebKit's `WKPageUIClientV13` `createNewPage` and `close` callbacks
 
 ## Build and release
 
@@ -42,6 +44,8 @@ See [`.github/workflows/build-windows.yml`](.github/workflows/build-windows.yml)
 6. Build the per-user `Blaze-Setup.exe` installer with Inno Setup.
 7. Run WinApp UI automation against live WebKit navigation.
 8. Publish the installer, signed MSIX payload, public test certificate and install guide as a versioned GitHub Release.
+
+Popup/new-window tab creation and JavaScript tab closure are implemented; certificate exception UI, camera/microphone device selection and broader security hardening remain in progress. The complete WinCairo build and clean-machine installation still require successful CI validation.
 
 The project `Version` property is the single release-version source. Blaze uses normal product versions: `1.0.0`, `1.0.1` through `1.0.9`, then `1.1.0` and onward. Use [`Scripts/bump-version.ps1`](Scripts/bump-version.ps1) to increment the patch number, roll `1.0.9` to `1.1.0`, update the four-part Windows package version, and add dated release notes.
 
