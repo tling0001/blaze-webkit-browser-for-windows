@@ -541,8 +541,8 @@ WB_VIEW_HANDLE WB_Create(HWND parent, int x, int y, int width, int height, const
         return nullptr;
     }
 
-    if (initialUrl && *initialUrl)
-        WB_Navigate(result, initialUrl);
+    // The WinUI host installs native callbacks before starting the first navigation.
+    (void)initialUrl;
     return result;
 }
 
