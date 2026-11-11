@@ -25,6 +25,7 @@
             AutomationProperties.Name="Browser tabs"
             AutomationProperties.AutomationId="BrowserTabStrip" />
 
+        <!-- Native WinUI buttons use Segoe Fluent glyphs, visible labels and accessible names. -->
         <Grid
             x:Name="Toolbar"
             Grid.Row="1"
