@@ -62,6 +62,36 @@ jobs:
           }
           $xml.Save($project.FullName)
 
+          $manifestPath = Join-Path $PWD 'Package.appxmanifest'
+          [xml]$manifest = Get-Content -LiteralPath $manifestPath -Raw
+          $identity = $manifest.SelectSingleNode("/*[local-name()='Package']/*[local-name()='Identity']")
+          if (-not $identity) { throw 'The WinUI package manifest has no Identity element.' }
+          $identity.SetAttribute('Version', '2026.11.0.1')
+          $packageDisplayName = $manifest.SelectSingleNode("/*[local-name()='Package']/*[local-name()='Properties']/*[local-name()='DisplayName']")
+          if ($packageDisplayName) { $packageDisplayName.InnerText = 'WebKit Browser' }
+          $publisherDisplayName = $manifest.SelectSingleNode("/*[local-name()='Package']/*[local-name()='Properties']/*[local-name()='PublisherDisplayName']")
+          if ($publisherDisplayName) { $publisherDisplayName.InnerText = 'WebKit Browser contributors' }
+          $visualElements = $manifest.SelectSingleNode("//*[local-name()='VisualElements']")
+          if ($visualElements) {
+            $visualElements.SetAttribute('DisplayName', 'WebKit Browser')
+            $visualElements.SetAttribute('Description', 'A native Windows browser powered by WebKit.')
+          }
+          $capabilities = $manifest.SelectSingleNode("/*[local-name()='Package']/*[local-name()='Capabilities']")
+          if (-not $capabilities) { throw 'The WinUI package manifest has no Capabilities element.' }
+          $internetCapability = $manifest.SelectSingleNode("//*[local-name()='Capability' and @Name='internetClient']")
+          if (-not $internetCapability) {
+            $internetCapability = $manifest.CreateElement('Capability', 'http://schemas.microsoft.com/appx/manifest/foundation/windows10')
+            $internetCapability.SetAttribute('Name', 'internetClient')
+            [void]$capabilities.AppendChild($internetCapability)
+          }
+          foreach ($unusedCapability in @($manifest.SelectNodes("//*[local-name()='Capability' and @Name='systemAIModels']"))) {
+            [void]$unusedCapability.ParentNode.RemoveChild($unusedCapability)
+          }
+          $root = $manifest.DocumentElement
+          $root.SetAttribute('IgnorableNamespaces', (($root.GetAttribute('IgnorableNamespaces') -replace '\s*systemai', '').Trim()))
+          $root.RemoveAttribute('xmlns:systemai')
+          $manifest.Save($manifestPath)
+
           dotnet add $project.FullName package Microsoft.Windows.SDK.BuildTools.WinUIAnalyzer
           if ($LASTEXITCODE -ne 0) { throw 'Could not add the WinUI analyzer package.' }
 
