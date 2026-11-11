@@ -7,6 +7,7 @@ using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
 using Windows.Foundation;
+using Windows.UI.ViewManagement;
 using WebKitBrowser.Models;
 using WebKitBrowser.Services;
 using WebKitBrowser.ViewModels;
@@ -216,7 +217,7 @@ public sealed partial class MainPage : Page
 
     private TransitionCollection CreateEntranceTransitions()
     {
-        if (ViewModel.Settings.ReduceMotion)
+        if (ViewModel.Settings.ReduceMotion || !new UISettings().AnimationsEnabled)
             return [];
 
         return [new EntranceThemeTransition { IsStaggeringEnabled = false }];
