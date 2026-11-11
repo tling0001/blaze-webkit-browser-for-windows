@@ -65,9 +65,9 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $xampp = Get-ChildItem 'C:\tools' -Directory -ErrorAction SilentlyContinue |
+          $xampp = Get-ChildItem 'C:\' -Directory -ErrorAction SilentlyContinue |
             Where-Object { $_.Name -like 'xampp*' } | Select-Object -First 1
-          if (-not $xampp) { throw 'XAMPP/Perl installation was not found.' }
+          if (-not $xampp -or -not (Test-Path (Join-Path $xampp.FullName 'perl\bin\perl.exe'))) { throw 'XAMPP/Perl installation was not found under C:\xampp.' }
           $python = (& py -3.11 -c 'import sys; print(sys.executable)').Trim()
           if ($LASTEXITCODE -ne 0 -or -not $python) { throw 'Python 3.11 is required by the WebKit Windows port.' }
           $pythonDir = Split-Path $python
@@ -183,6 +183,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'WinUI Gallery address-search lookup failed.' }
           winapp find-ui "RadioButtons settings options"
           if ($LASTEXITCODE -ne 0) { throw 'WinUI Gallery RadioButtons lookup failed.' }
+          winapp find-ui "ContentDialog native dialog animations"
+          if ($LASTEXITCODE -ne 0) { throw 'WinUI Gallery ContentDialog pattern lookup failed.' }
 
       - name: Restore WinUI project
         shell: pwsh
@@ -220,6 +222,12 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'AutomationProperties.SetAutomationId API verification failed.' }
           winapp find-api members AutomationProperties --filter SetName --json --project-dir .
           if ($LASTEXITCODE -ne 0) { throw 'AutomationProperties.SetName API verification failed.' }
+          winapp find-api check-property UIElement Transitions --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'UIElement.Transitions API verification failed.' }
+          winapp find-api check-property ContentDialog ContentTransitions XamlRoot --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'ContentDialog transition and XamlRoot API verification failed.' }
+          winapp find-api check-property EntranceThemeTransition IsStaggeringEnabled --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'EntranceThemeTransition API verification failed.' }
 
       - name: Download pinned WebKit engine runtime
         uses: actions/download-artifact@v6
@@ -264,7 +272,7 @@ jobs:
 
           $releaseDir = Join-Path $PWD 'release-assets'
           New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
-          Copy-Item -LiteralPath $packagePath -Destination (Join-Path $releaseDir "WebKitBrowser-$version-x64.msix") -Force
+          Copy-Item -LiteralPath $packagePath -Destination (Join-Path $releaseDir "Blaze-$version-x64.msix") -Force
 
           $certificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new((Resolve-Path 'devcert.pfx').Path, 'password')
           [System.IO.File]::WriteAllBytes((Join-Path $releaseDir 'WebKitBrowser-signing.cer'), $certificate.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert))
@@ -279,6 +287,21 @@ jobs:
 
           This is a testing build of the upstream WinCairo WebKit port.
           "@ | Set-Content -LiteralPath (Join-Path $releaseDir 'INSTALL.txt') -Encoding utf8
+
+      - name: Build Blaze EXE installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          choco install innosetup --yes --no-progress
+          if ($LASTEXITCODE -ne 0) { throw 'Inno Setup installation failed.' }
+          $iscc = Get-ChildItem 'C:\Program Files (x86)\Inno Setup*' -Filter 'ISCC.exe' -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $iscc) { throw 'Inno Setup compiler ISCC.exe was not found.' }
+          $env:BLAZE_VERSION = $version
+          & $iscc.FullName /Qp Installer\Blaze.iss
+          if ($LASTEXITCODE -ne 0) { throw 'Building Blaze-Setup.exe failed.' }
+          $installer = Join-Path $PWD "release-assets\Blaze-Setup-$version-x64.exe"
+          if (-not (Test-Path -LiteralPath $installer -PathType Leaf)) { throw 'Blaze EXE installer was not produced.' }
+          Write-Host "Created $installer"
 
       - name: Run WinApp UI smoke test against live WebKit
         shell: pwsh
@@ -348,9 +371,9 @@ jobs:
           VERSION: ${{ steps.release_meta.outputs.version }}
         shell: bash
         run: |
-          mapfile -d '' assets < <(find release-assets -maxdepth 1 -type f \( -name '*.msix' -o -name '*.cer' -o -name 'INSTALL.txt' \) -print0)
-          if [ "${#assets[@]}" -lt 3 ]; then
-            echo "Expected the signed MSIX, public certificate and install guide." >&2
+          mapfile -d '' assets < <(find release-assets -maxdepth 1 -type f \( -name '*.exe' -o -name '*.msix' -o -name '*.cer' -o -name 'INSTALL.txt' \) -print0)
+          if [ "${#assets[@]}" -lt 4 ]; then
+            echo "Expected the Blaze EXE installer, signed MSIX, public certificate and install guide." >&2
             find release-assets -maxdepth 2 -type f -print >&2
             exit 1
           fi
