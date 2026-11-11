@@ -73,7 +73,7 @@ try {
     $uiStarted = $true
 
     $windows = @(Invoke-Ui @('list-windows', '--json') | ConvertFrom-Json)
-    $main = $windows | Where-Object { $_.hwnd -and $_.hwnd -ne '0' -and $_.title -match '^Blaze | Select-Object -First 1
+    $main = $windows | Where-Object { $_.hwnd -and $_.hwnd -ne '0' -and $_.title -eq 'Blaze' } | Select-Object -First 1
     if (-not $main) { throw 'The launched WinUI browser window was not found.' }
     $hwnd = [string]$main.hwnd
 
