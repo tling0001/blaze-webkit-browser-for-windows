@@ -14,7 +14,7 @@ permissions:
 
 concurrency:
   group: Blaze-WebKitSDK-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   build-sdk:
@@ -68,15 +68,39 @@ jobs:
           GIT_CONFIG_KEY_1: core.autocrlf
           GIT_CONFIG_VALUE_1: input
 
+      - name: Create a short physical WebKit checkout
+        if: steps.sdk.outputs.exists != 'true'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $checkout = Join-Path $env:GITHUB_WORKSPACE 'w'
+          $sourceRoot = Join-Path $env:RUNNER_TEMP 'webkit'
+          $workspaceDrive = [IO.Path]::GetPathRoot($env:GITHUB_WORKSPACE)
+          $tempDrive = [IO.Path]::GetPathRoot($env:RUNNER_TEMP)
+          if (-not [string]::Equals($workspaceDrive, $tempDrive, [StringComparison]::OrdinalIgnoreCase)) {
+            throw "WebKit source and runner temp must be on the same volume (workspace=$workspaceDrive, temp=$tempDrive)."
+          }
+          if (Test-Path -LiteralPath $sourceRoot) { Remove-Item -LiteralPath $sourceRoot -Recurse -Force }
+          # Keep actions/checkout's own worktree intact for its post-job credential cleanup.
+          # A local shared clone gives WebKit a genuinely short physical path without a SUBST alias.
+          git clone --shared --no-checkout --local $checkout $sourceRoot
+          if ($LASTEXITCODE -ne 0) { throw 'Creating the short physical WebKit worktree failed.' }
+          $spec = Get-Content -LiteralPath 'blaze\eng\WebKitSdk.json' -Raw | ConvertFrom-Json
+          git -C $sourceRoot checkout --detach $spec.webkitCommit
+          if ($LASTEXITCODE -ne 0) { throw 'Checking out the pinned WebKit commit into the short worktree failed.' }
+          if (-not (Test-Path -LiteralPath (Join-Path $sourceRoot 'Tools\Scripts\build-webkit'))) { throw 'The short physical WebKit checkout is incomplete.' }
+          "WEBKIT_SOURCE_ROOT=$sourceRoot" >> $env:GITHUB_ENV
+          Write-Host "WebKit source and all generated build paths will use the physical path $sourceRoot"
+
       - name: Restore pinned WebKit build cache
         if: steps.sdk.outputs.exists != 'true'
         id: webkit-cache
         uses: actions/cache@v4
         with:
           path: |
-            w/WebKitBuild/Release
-            w/WebKitLibraries/win
-          key: wincairo-x64-d641dd75af65b0469eff30bb76a97e01e02633fc-7d5f3c6241729acbbb7774f54bf687429aaf6492-9a80b82f283a1d69ffdc64e32536627ae738a65b-windows-latest-shortpath-v1
+            ${{ runner.temp }}/webkit/WebKitBuild/Release
+            ${{ runner.temp }}/webkit/WebKitLibraries/win
+          key: wincairo-x64-d641dd75af65b0469eff30bb76a97e01e02633fc-7d5f3c6241729acbbb7774f54bf687429aaf6492-9a80b82f283a1d69ffdc64e32536627ae738a65b-windows-latest-physical-shortpath-v2
 
       - name: Install WinCairo build dependencies
         if: steps.sdk.outputs.exists != 'true' && steps.webkit-cache.outputs.cache-hit != 'true'
@@ -146,7 +170,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Continue'
-          $releaseRoot = Join-Path $env:GITHUB_WORKSPACE 'w\WebKitBuild\Release'
+          $releaseRoot = Join-Path $env:WEBKIT_SOURCE_ROOT 'WebKitBuild\Release'
           $manifestLog = Join-Path $releaseRoot 'vcpkg-manifest-install.log'
           if (Test-Path -LiteralPath $manifestLog -PathType Leaf) { Get-Content -LiteralPath $manifestLog -Tail 300 }
           $cmakeLogs = @(Get-ChildItem -LiteralPath $releaseRoot -Filter 'CMakeError.log' -Recurse -File -ErrorAction SilentlyContinue)
