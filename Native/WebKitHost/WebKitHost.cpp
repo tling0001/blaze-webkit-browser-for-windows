@@ -493,6 +493,13 @@ WB_VIEW_HANDLE createNativeView(HWND parent, int x, int y, int width, int height
     }
 
     auto page = WKViewGetPage(nativeView);
+    if (!page) {
+        WKViewSetIsInWindow(nativeView, false);
+        WKRelease(nativeView);
+        delete result;
+        return nullptr;
+    }
+
     result->navigationClient.base.version = 3;
     result->navigationClient.base.clientInfo = result;
     result->navigationClient.navigationActionDidBecomeDownload = navigationActionDidBecomeDownload;
