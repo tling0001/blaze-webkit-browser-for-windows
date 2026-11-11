@@ -22,6 +22,10 @@ jobs:
     name: Build pinned WinCairo WebKit (x64)
     runs-on: windows-latest
     steps:
+      - name: Enable Windows long paths for the WebKit source tree
+        shell: pwsh
+        run: git config --global core.longpaths true
+
       - name: Check out WebKit source at pinned revision
         uses: actions/checkout@v5
         with:
@@ -29,6 +33,10 @@ jobs:
           ref: d641dd75af65b0469eff30bb76a97e01e02633fc
           path: webkit-src
           fetch-depth: 1
+        env:
+          GIT_CONFIG_COUNT: 1
+          GIT_CONFIG_KEY_0: core.longpaths
+          GIT_CONFIG_VALUE_0: true
 
       - name: Restore cached WebKit build
         id: webkit-cache
@@ -187,50 +195,54 @@ jobs:
           name: WebKitEngine-x64
           path: webkit-runtime
 
-      - name: Read version and publish WinUI browser
+      - name: Generate release signing certificate
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          winapp cert generate --manifest .\Package.appxmanifest
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path 'devcert.pfx')) { throw 'WinApp CLI could not generate the package signing certificate.' }
+
+      - name: Package and sign the WinUI browser
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $version = (Get-Content VERSION -Raw).Trim()
           if ($version -notmatch '^\d{4}\.\d+\.\d+-port\.\d+$') { throw "Invalid release version: $version" }
-          $numericVersion = $version -replace '-port\.', '.'
-          $output = Join-Path $PWD 'publish\win-x64'
-          New-Item -ItemType Directory -Path $output -Force | Out-Null
-          dotnet publish WebKitBrowser.csproj --configuration Release --no-restore --runtime win-x64 --self-contained true -p:WindowsAppSDKSelfContained=true -p:Version=$version -p:AssemblyVersion=$numericVersion -p:FileVersion=$numericVersion -o $output
-          if ($LASTEXITCODE -ne 0) { throw 'WinUI publish failed.' }
-          Copy-Item -Path 'webkit-runtime\*' -Destination $output -Recurse -Force
-          if (-not (Test-Path (Join-Path $output 'WebKitBrowser.exe'))) { throw 'Published WinUI executable is missing.' }
-          if (-not (Test-Path (Join-Path $output 'WebKitHost.dll'))) { throw 'Published native WebKit host is missing.' }
-          if (-not (Test-Path (Join-Path $output 'WebKit2.dll'))) { throw 'Published WebKit engine is missing.' }
-          $pri = @(Get-ChildItem $output -Filter '*.pri' -File)
-          if ($pri.Count -eq 0) { throw 'WinUI PRI resource index is missing from publish output.' }
-          Write-Host "Verified version $version with $((Get-ChildItem $output -File -Recurse).Count) published files."
 
-      - name: Install Inno Setup
-        shell: pwsh
-        run: |
-          choco install innosetup --yes --no-progress
-          if ($LASTEXITCODE -ne 0) { throw 'Inno Setup installation failed.' }
+          $output = & winapp package .\WebKitBrowser.csproj --arch x64 --cert .\devcert.pfx --self-contained 2>&1
+          $exitCode = $LASTEXITCODE
+          $output | ForEach-Object { Write-Host $_ }
+          if ($exitCode -ne 0) { throw 'WinApp CLI MSIX packaging failed.' }
 
-      - name: Build per-user x64 installer
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $iscc = Get-ChildItem "${env:ProgramFiles(x86)}\Inno Setup 6" -Filter 'ISCC.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $iscc) { throw 'Inno Setup compiler was not found.' }
-          $version = (Get-Content VERSION -Raw).Trim()
-          & $iscc "/DArchitecture=x64" "/DAppVersion=$version" "/DSourceDir=$PWD\publish\win-x64" "installer\WebKitBrowser.iss"
-          if ($LASTEXITCODE -ne 0) { throw 'Inno Setup failed.' }
-          $installer = "installer-output\WebKitBrowser-$version-x64-Setup.exe"
-          if (-not (Test-Path $installer)) { throw "Installer missing: $installer" }
+          $outputText = $output -join [Environment]::NewLine
+          $reported = [regex]::Matches($outputText, '(?i)(?:[A-Z]:\\|\.\\|/)[^\r\n"'']+\.msix(?:bundle)?')
+          if ($reported.Count -eq 0) { throw 'WinApp CLI did not report an MSIX artifact path; refusing to guess an output directory.' }
+          $packagePath = $reported[$reported.Count - 1].Value.Trim().Trim('"', "'", ' ', '.', ':')
+          if (-not (Test-Path -LiteralPath $packagePath)) { throw "Reported MSIX package does not exist: $packagePath" }
 
-      - name: Upload installer and published runtime
+          $releaseDir = Join-Path $PWD 'release-assets'
+          New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
+          Copy-Item -LiteralPath $packagePath -Destination (Join-Path $releaseDir "WebKitBrowser-$version-x64.msix") -Force
+
+          $certificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new((Resolve-Path 'devcert.pfx').Path, 'password')
+          [System.IO.File]::WriteAllBytes((Join-Path $releaseDir 'WebKitBrowser-signing.cer'), $certificate.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert))
+          $certificate.Dispose()
+
+          @"
+          WebKit Browser $version (x64)
+
+          1. Import WebKitBrowser-signing.cer into the Current User Trusted People certificate store.
+          2. Install WebKitBrowser-$version-x64.msix with App Installer or Add-AppxPackage.
+          3. The certificate file contains only the public certificate. The private signing key is not included.
+
+          This is a testing build of the upstream WinCairo WebKit port.
+          "@ | Set-Content -LiteralPath (Join-Path $releaseDir 'INSTALL.txt') -Encoding utf8
+
+      - name: Upload signed MSIX and public signing certificate
         uses: actions/upload-artifact@v4
         with:
           name: WebKitBrowser-Windows-x64
-          path: |
-            installer-output/*.exe
-            publish/win-x64/**
+          path: release-assets/*
           if-no-files-found: error
           retention-days: 14
 
