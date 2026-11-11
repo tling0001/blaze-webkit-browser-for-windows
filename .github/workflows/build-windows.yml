@@ -310,7 +310,7 @@ jobs:
           @"
           Blaze $version (x64)
 
-          1. Import Blaze-signing.cer into the Current User Trusted People certificate store.
+          1. Import Blaze-signing.cer into the Current User Trusted Root and Trusted People certificate stores.
           2. Install Blaze-$version-x64.msix with App Installer or Add-AppxPackage.
           3. The certificate file contains only the public certificate. The private signing key is not included.
 
