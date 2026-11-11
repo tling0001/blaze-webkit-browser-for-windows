@@ -15,6 +15,7 @@ public partial class MainPageViewModel : ObservableObject
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
     private readonly ConcurrentDictionary<string, SitePermissionEntry> _permissionIndex = new(StringComparer.OrdinalIgnoreCase);
+    private readonly SemaphoreSlim _saveGate = new(1, 1);
     private readonly string _dataDirectory = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "Blaze");
@@ -248,20 +249,28 @@ public partial class MainPageViewModel : ObservableObject
 
     public async Task SaveAsync()
     {
-        Directory.CreateDirectory(_dataDirectory);
-        var selectedIndex = SelectedTab is null ? 0 : Math.Max(0, Tabs.IndexOf(SelectedTab));
-        var session = new SessionState
+        await _saveGate.WaitAsync();
+        try
         {
-            TabUrls = Tabs.Select(tab => tab.Url).ToList(),
-            SelectedIndex = selectedIndex
-        };
+            Directory.CreateDirectory(_dataDirectory);
+            var selectedIndex = SelectedTab is null ? 0 : Math.Max(0, Tabs.IndexOf(SelectedTab));
+            var session = new SessionState
+            {
+                TabUrls = Tabs.Select(tab => tab.Url).ToList(),
+                SelectedIndex = selectedIndex
+            };
 
-        await WriteAsync("settings.json", Settings);
-        await WriteAsync("bookmarks.json", Bookmarks.ToList());
-        await WriteAsync("history.json", History.ToList());
-        await WriteAsync("downloads.json", Downloads.ToList());
-        await WriteAsync("permissions.json", SitePermissions.ToList());
-        await WriteAsync("session.json", session);
+            await WriteAsync("settings.json", Settings);
+            await WriteAsync("bookmarks.json", Bookmarks.ToList());
+            await WriteAsync("history.json", History.ToList());
+            await WriteAsync("downloads.json", Downloads.ToList());
+            await WriteAsync("permissions.json", SitePermissions.ToList());
+            await WriteAsync("session.json", session);
+        }
+        finally
+        {
+            _saveGate.Release();
+        }
     }
 
     private async Task<T?> ReadAsync<T>(string fileName)
@@ -284,11 +293,13 @@ public partial class MainPageViewModel : ObservableObject
         }
     }
 
-    private Task WriteAsync<T>(string fileName, T value)
+    private async Task WriteAsync<T>(string fileName, T value)
     {
         var path = Path.Combine(_dataDirectory, fileName);
+        var temporaryPath = path + ".tmp";
         var json = JsonSerializer.Serialize(value, JsonOptions);
-        return File.WriteAllTextAsync(path, json);
+        await File.WriteAllTextAsync(temporaryPath, json);
+        File.Move(temporaryPath, path, overwrite: true);
     }
 
     private static string NormalizeAddress(string input)
