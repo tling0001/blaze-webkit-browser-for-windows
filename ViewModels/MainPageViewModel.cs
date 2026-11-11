@@ -61,7 +61,11 @@ public partial class MainPageViewModel : ObservableObject
         foreach (var historyItem in savedHistory)
             History.Add(historyItem);
         foreach (var download in savedDownloads)
+        {
+            if (download.Status is "Starting" or "Downloading")
+                download.Status = "Interrupted";
             Downloads.Add(download);
+        }
         foreach (var permission in savedPermissions)
         {
             SitePermissions.Add(permission);
