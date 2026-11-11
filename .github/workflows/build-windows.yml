@@ -1,4 +1,4 @@
-name: Build WebKit Browser
+name: Build Blaze
 
 on:
   push:
@@ -228,6 +228,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'ContentDialog transition and XamlRoot API verification failed.' }
           winapp find-api check-property EntranceThemeTransition IsStaggeringEnabled --json --project-dir .
           if ($LASTEXITCODE -ne 0) { throw 'EntranceThemeTransition API verification failed.' }
+          winapp find-api check-property UISettings AnimationsEnabled --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'Windows UISettings animation preference API verification failed.' }
 
       - name: Download pinned WebKit engine runtime
         uses: actions/download-artifact@v6
@@ -314,7 +316,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: WebKitBrowser-UI-smoke-test
+          name: Blaze-UI-smoke-test
           path: |
             ui-test-results.json
             ui-test-artifacts/**
@@ -324,7 +326,7 @@ jobs:
       - name: Upload signed MSIX and public signing certificate
         uses: actions/upload-artifact@v6
         with:
-          name: WebKitBrowser-Windows-x64
+          name: Blaze-Windows-x64
           path: release-assets/*
           if-no-files-found: error
           retention-days: 14
@@ -362,7 +364,7 @@ jobs:
           Path(destination).write_text("\n\n".join(selected).strip() + "\n", encoding="utf-8")
           PY
 
-      - name: Download MSIX release artifacts
+      - name: Download Blaze release artifacts
         uses: actions/download-artifact@v6
         with:
           name: WebKitBrowser-Windows-x64
