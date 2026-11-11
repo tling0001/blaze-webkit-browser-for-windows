@@ -193,6 +193,8 @@ bool acquireSharedEngine()
 
         sharedDataStore = store;
         sharedContext = context;
+        // Route every script-created window request through the native WinUI popup policy.
+        WKPreferencesSetJavaScriptCanOpenWindowsAutomatically(preferences, true);
         sharedPreferences = preferences;
         WKContextSetCacheModel(sharedContext, kWKCacheModelPrimaryWebBrowser);
 

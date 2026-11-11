@@ -1,5 +1,11 @@
 # Blaze release notes
 
+## [1.0.6] - 2026-11-11
+
+### Native popup routing
+- Enable WebKit's `JavaScriptCanOpenWindowsAutomatically` preference so script-created window requests reach the native WinUI policy instead of being silently blocked by the engine default.
+- Keep the final decision in the browser: Automatic prompts, Always allow opens a tab, and Always deny rejects the request.
+
 ## [1.0.5] - 2026-11-11
 
 ### Popup settings accessibility and coverage
