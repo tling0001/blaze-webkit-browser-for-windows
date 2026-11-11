@@ -1,5 +1,13 @@
 namespace WebKitBrowser.Models;
 
+public enum BrowserSearchEngine
+{
+    Google,
+    Bing,
+    DuckDuckGo,
+    Brave
+}
+
 public enum PopupHandlingMode
 {
     Ask,
@@ -15,6 +23,7 @@ public sealed class BrowserSettings
     public bool ReduceMotion { get; set; } = false;
     public PopupHandlingMode PopupHandlingMode { get; set; } = PopupHandlingMode.Ask;
     public string HomePage { get; set; } = "https://www.google.com";
+    public BrowserSearchEngine SearchEngine { get; set; } = BrowserSearchEngine.Google;
 }
 
 public sealed class BookmarkEntry
