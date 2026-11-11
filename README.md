@@ -20,6 +20,7 @@ The upstream WinCairo port is an x64 development/testing port rather than a regu
 - Official WinApp CLI WinUI MVVM scaffold
 - Native child-window hosting for WebKit WKView; no WebView2 or Chromium fallback
 - Address/search, back/forward/reload/stop/home
+- Configurable home page and default Google, Bing, DuckDuckGo or Brave Search provider
 - Multiple tabs with per-tab native WebKit views and shared website data store/context
 - Configurable pop-up handling: automatic permission prompts, always allow, or always deny
 - JavaScript `window.open()` and `target="_blank"` open a new native browser tab; `window.close()` closes the owning tab
