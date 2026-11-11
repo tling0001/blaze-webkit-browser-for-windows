@@ -1,0 +1,60 @@
+name: Bootstrap WinUI 3 project
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: winui-bootstrap-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  scaffold:
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install WinApp CLI
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $command = Get-Command winapp -ErrorAction SilentlyContinue
+          if (-not $command) {
+            winget install --id Microsoft.WinAppCli --exact --silent --accept-package-agreements --accept-source-agreements
+          }
+          $env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User')
+          winapp --version
+
+      - name: Scaffold official WinUI MVVM template
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (Get-ChildItem -Path . -Filter *.csproj -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1) {
+            Write-Host 'A project already exists; refusing to overwrite it.'
+            exit 1
+          }
+          winapp new --name WebKitBrowser --template winui-mvvm --template-version latest --use-defaults
+          if (-not (Test-Path 'WebKitBrowser')) {
+            throw 'WinApp CLI did not create the expected WebKitBrowser directory.'
+          }
+          Get-ChildItem 'WebKitBrowser' -Force | ForEach-Object {
+            Move-Item -LiteralPath $_.FullName -Destination . -Force
+          }
+          Remove-Item 'WebKitBrowser' -Force
+
+      - name: Commit generated project
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          if (-not (git diff --cached --quiet)) {
+            git commit -m 'Bootstrap official WinUI 3 MVVM project'
+            git push
+          } else {
+            Write-Host 'No generated changes to commit.'
+          }
