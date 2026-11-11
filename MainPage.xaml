@@ -46,8 +46,8 @@
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
 
-            <Button Grid.Column="0" Content="Back" Click="OnBackClick" AutomationProperties.Name="Go back" />
-            <Button Grid.Column="1" Content="Forward" Click="OnForwardClick" AutomationProperties.Name="Go forward" />
+            <Button x:Name="BackButton" Grid.Column="0" Content="Back" Click="OnBackClick" AutomationProperties.Name="Go back" />
+            <Button x:Name="ForwardButton" Grid.Column="1" Content="Forward" Click="OnForwardClick" AutomationProperties.Name="Go forward" />
             <Button Grid.Column="2" Content="Reload" Click="OnReloadClick" AutomationProperties.Name="Reload page" />
             <Button Grid.Column="3" Content="Home" Click="OnHomeClick" AutomationProperties.Name="Go to home page" />
 
@@ -58,7 +58,7 @@
                 HorizontalAlignment="Stretch"
                 VerticalAlignment="Center"
                 PlaceholderText="Search or enter address"
-                QueryIcon="Find"
+                QueryIcon="{x:Bind ViewModel.StatusMessage}"
                 QuerySubmitted="OnAddressQuerySubmitted"
                 AutomationProperties.Name="Address and search" />
 
