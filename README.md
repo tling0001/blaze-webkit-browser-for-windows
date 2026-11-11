@@ -42,7 +42,7 @@ See [`.github/workflows/build-windows.yml`](.github/workflows/build-windows.yml)
 4. Restore and validate the WinUI project with WinApp CLI and `winapp find-api`.
 5. Compile and package the self-contained WinUI application.
 6. Build the per-user `Blaze-Setup.exe` installer with Inno Setup.
-7. Run WinApp UI automation against live WebKit navigation.
+7. Run WinApp UI automation against live WebKit navigation, popup-tab creation and JavaScript tab closure.
 8. Publish the installer, signed MSIX payload, public test certificate and install guide as a versioned GitHub Release.
 
 Popup/new-window tab creation and JavaScript tab closure are implemented; certificate exception UI, camera/microphone device selection and broader security hardening remain in progress. The complete WinCairo build and clean-machine installation still require successful CI validation.
