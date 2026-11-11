@@ -55,7 +55,7 @@ jobs:
           if (-not $project) { throw 'The official template did not produce a .csproj.' }
           [xml]$xml = Get-Content -LiteralPath $project.FullName -Raw
           $group = $xml.Project.PropertyGroup | Select-Object -First 1
-          foreach ($entry in @(@('Version','2026.11.0-port.1'),@('AssemblyVersion','2026.11.0.1'),@('FileVersion','2026.11.0.1'),@('InformationalVersion','2026.11.0-port.1'),@('Platforms','x64'),@('RuntimeIdentifiers','win-x64'),@('WindowsPackageType','None'),@('WindowsAppSDKSelfContained','true'),@('SelfContained','true'),@('Nullable','enable'),@('ImplicitUsings','enable'))) {
+          foreach ($entry in @(@('Version','2026.11.0-port.1'),@('AssemblyVersion','2026.11.0.1'),@('FileVersion','2026.11.0.1'),@('InformationalVersion','2026.11.0-port.1'),@('Platforms','x64'),@('RuntimeIdentifiers','win-x64'),@('WindowsPackageType','MSIX'),@('AppxPackageVersion','2026.11.0.1'),@('RuntimeIdentifier','win-x64'),@('AppxPackageSigningEnabled','true'),@('PublishTrimmed','false'),@('WindowsAppSDKSelfContained','true'),@('SelfContained','true'),@('Nullable','enable'),@('ImplicitUsings','enable'))) {
             $node = $xml.SelectSingleNode("/Project/PropertyGroup/*[local-name()='$($entry[0])']")
             if (-not $node) { $node = $xml.CreateElement($entry[0]); [void]$group.AppendChild($node) }
             $node.InnerText = $entry[1]
