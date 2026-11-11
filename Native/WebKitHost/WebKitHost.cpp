@@ -12,6 +12,7 @@
 #include <WebKit/WKWebsiteDataStoreConfigurationRef.h>
 
 #include <algorithm>
+#include <new>
 #include <string>
 #include <vector>
 
