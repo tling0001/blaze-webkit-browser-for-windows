@@ -79,12 +79,7 @@ public partial class MainPageViewModel : ObservableObject
 
         Tabs.RemoveAt(index);
         if (ReferenceEquals(SelectedTab, tab))
-        {
-            if (Tabs.Count == 0)
-                AddTab();
-            else
-                SelectedTab = Tabs[Math.Min(index, Tabs.Count - 1)];
-        }
+            SelectedTab = Tabs.Count > 0 ? Tabs[Math.Min(index, Tabs.Count - 1)] : null;
     }
 
     [RelayCommand]
