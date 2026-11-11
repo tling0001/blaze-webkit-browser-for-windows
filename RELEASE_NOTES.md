@@ -33,6 +33,6 @@
 - Add motion-aware WinUI transitions and a persistent Reduce motion preference.
 - Package the app as a signed MSIX with a per-user EXE installer and GitHub Actions build workflow.
 
-### Current limitations
-- Popup/new-window handling, certificate exception UI, camera/microphone device selection and broader security hardening remain in progress.
+### Limitations at the 1.0.0 baseline
+- Popup/new-window handling, certificate exception UI, camera/microphone device selection and broader security hardening were not yet implemented.
 - The upstream WinCairo build and complete clean-machine installation still require successful CI validation.
