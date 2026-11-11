@@ -24,7 +24,9 @@ jobs:
     steps:
       - name: Enable Windows long paths for the WebKit source tree
         shell: pwsh
-        run: git config --global core.longpaths true
+        run: |
+          git config --global core.longpaths true
+          git config --global core.autocrlf input
 
       - name: Check out WebKit source at pinned revision
         uses: actions/checkout@v5
@@ -161,6 +163,8 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw 'WinApp CLI installation failed.' }
           }
           $env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User')
+          $command = Get-Command winapp -ErrorAction Stop
+          Add-Content -LiteralPath $env:GITHUB_PATH -Value (Split-Path $command.Source)
           winapp --version
 
       - name: Discover WinUI tab and input patterns
@@ -204,12 +208,25 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'ContentDialog property verification failed.' }
           winapp find-api members AppWindow --filter Resize --json --project-dir .
           if ($LASTEXITCODE -ne 0) { throw 'AppWindow Resize API verification failed.' }
+          winapp find-api check-property TabViewItem IsClosable --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'TabViewItem IsClosable API verification failed.' }
+          winapp find-api members AutomationProperties --filter SetAutomationId --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'AutomationProperties.SetAutomationId API verification failed.' }
+          winapp find-api members AutomationProperties --filter SetName --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'AutomationProperties.SetName API verification failed.' }
 
       - name: Download pinned WebKit engine runtime
         uses: actions/download-artifact@v6
         with:
           name: WebKitEngine-x64
           path: webkit-runtime
+
+      - name: Compile WinUI app and include WebKit runtime
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet build WebKitBrowser.csproj --configuration Release --no-restore -p:Platform=x64 -p:RuntimeIdentifier=win-x64
+          if ($LASTEXITCODE -ne 0) { throw 'WinUI app compilation failed.' }
 
       - name: Generate release signing certificate
         shell: pwsh
@@ -256,8 +273,23 @@ jobs:
           This is a testing build of the upstream WinCairo WebKit port.
           "@ | Set-Content -LiteralPath (Join-Path $releaseDir 'INSTALL.txt') -Encoding utf8
 
+      - name: Run WinApp UI smoke test against live WebKit
+        shell: pwsh
+        run: .\Scripts\ui-smoke-test.ps1
+
+      - name: Upload UI smoke test screenshots
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: WebKitBrowser-UI-smoke-test
+          path: |
+            ui-test-results.json
+            ui-test-artifacts/**
+          if-no-files-found: warn
+          retention-days: 14
+
       - name: Upload signed MSIX and public signing certificate
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: WebKitBrowser-Windows-x64
           path: release-assets/*
@@ -298,7 +330,7 @@ jobs:
           PY
 
       - name: Download MSIX release artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
         with:
           name: WebKitBrowser-Windows-x64
           path: release-assets
