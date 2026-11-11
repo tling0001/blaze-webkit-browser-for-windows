@@ -37,7 +37,7 @@ See [.github/workflows/build-windows.yml](.github/workflows/build-windows.yml). 
 4. Runs WinUI Gallery/API discovery checks and packages the app using winapp package.
 5. Publishes a signed x64 MSIX, public test certificate, and install instructions as a versioned GitHub Release.
 
-Use [Scripts/bump-version.ps1](Scripts/bump-version.ps1) to increment the -port.N version, update the numeric MSIX identity version, and add a dated release-note entry.
+The WinUI project Version property is the single release-version source, matching the Classwire release convention. Use [Scripts/bump-version.ps1](Scripts/bump-version.ps1) to increment its -port.N suffix, update the numeric MSIX identity version, and add a dated release-note entry.
 
 ## Development notes
 
