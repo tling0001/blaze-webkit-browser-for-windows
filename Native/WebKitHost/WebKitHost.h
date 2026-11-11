@@ -10,6 +10,8 @@
 using WB_DOWNLOAD_CALLBACK = void (__cdecl*)(const wchar_t* filePath, int status, long long bytesWritten, long long totalBytesExpected, void* userData);
 using WB_PERMISSION_CALLBACK = int (__cdecl*)(const wchar_t* origin, int permissionType, void* userData);
 using WB_JAVASCRIPT_DIALOG_CALLBACK = void (__cdecl*)(int dialogType, const wchar_t* origin, const wchar_t* message, const wchar_t* defaultValue, void* listener, void* userData);
+using WB_NEW_PAGE_CALLBACK = int (__cdecl*)(WB_VIEW_HANDLE view, void* userData);
+using WB_CLOSE_PAGE_CALLBACK = void (__cdecl*)(WB_VIEW_HANDLE view, void* userData);
 
 struct WB_VIEW;
 using WB_VIEW_HANDLE = WB_VIEW*;
@@ -32,4 +34,5 @@ WB_API void WB_ClearWebsiteData(WB_VIEW_HANDLE view);
 WB_API void WB_SetDownloadCallback(WB_VIEW_HANDLE view, WB_DOWNLOAD_CALLBACK callback, void* userData);
 WB_API void WB_SetPermissionCallback(WB_VIEW_HANDLE view, WB_PERMISSION_CALLBACK callback, void* userData);
 WB_API void WB_SetJavaScriptDialogCallback(WB_VIEW_HANDLE view, WB_JAVASCRIPT_DIALOG_CALLBACK callback, void* userData);
+WB_API void WB_SetPopupCallbacks(WB_VIEW_HANDLE view, WB_NEW_PAGE_CALLBACK newPageCallback, WB_CLOSE_PAGE_CALLBACK closePageCallback, void* userData);
 WB_API void WB_ResolveJavaScriptDialog(void* listener, int dialogType, BOOL accepted, const wchar_t* response);
