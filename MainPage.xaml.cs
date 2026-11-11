@@ -364,7 +364,7 @@ public sealed partial class MainPage : Page
         await ViewModel.SaveAsync();
     }
 
-    private async void HandlePermissionRequest(string origin, int permissionType)
+    private async Task HandlePermissionRequestAsync(string origin, int permissionType)
     {
         ViewModel.RecordPermissionRequest(origin, permissionType);
         var description = permissionType switch
@@ -382,8 +382,15 @@ public sealed partial class MainPage : Page
             DefaultButton = ContentDialogButton.Close,
             XamlRoot = XamlRoot
         };
-        if (await ShowDialogAsync(dialog) == ContentDialogResult.Primary && permissionType != 2)
-            await ShowSettingsDialogAsync();
+        try
+        {
+            if (await ShowDialogAsync(dialog) == ContentDialogResult.Primary && permissionType != 2)
+                await ShowSettingsDialogAsync();
+        }
+        catch (Exception ex)
+        {
+            ViewModel.StatusMessage = $"The permission dialog could not be displayed: {ex.Message}";
+        }
     }
 
     private async Task HandleJavaScriptDialogAsync(int dialogType, string origin, string message, string defaultValue, IntPtr listener)
@@ -464,7 +471,7 @@ public sealed partial class MainPage : Page
             return 0;
         var allowed = page.ViewModel.IsPermissionAllowed(origin, permissionType);
         if (!allowed)
-            App.DispatcherQueue.TryEnqueue(() => page.HandlePermissionRequest(origin, permissionType));
+            App.DispatcherQueue.TryEnqueue(() => _ = page.HandlePermissionRequestAsync(origin, permissionType));
         return allowed ? 1 : 0;
     }
 
