@@ -52,3 +52,12 @@ _ReSharper*/
 # Generated files
 Generated\ Files/
 *_wpftmp.csproj
+
+# Local signing material and generated browser runtime
+*.pfx
+*.cer
+webkit-runtime/
+WebKitHostBuild/
+release-assets/
+ui-test-artifacts/
+ui-test-results.json
