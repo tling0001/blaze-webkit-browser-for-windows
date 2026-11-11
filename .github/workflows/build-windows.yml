@@ -326,8 +326,9 @@ jobs:
           $iscc = Get-ChildItem 'C:\Program Files (x86)\Inno Setup*' -Filter 'ISCC.exe' -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $iscc) { throw 'Inno Setup compiler ISCC.exe was not found.' }
           [xml]$project = Get-Content -LiteralPath 'WebKitBrowser.csproj' -Raw
-          $version = $project.Project.PropertyGroup.Version
-          if (-not $version) { throw 'Blaze project version was not found.' }
+          $versionNode = $project.SelectSingleNode("/*[local-name()='Project']/*[local-name()='PropertyGroup']/*[local-name()='Version']")
+          if (-not $versionNode) { throw 'Blaze project version was not found.' }
+          $version = $versionNode.InnerText.Trim()
           $env:BLAZE_VERSION = $version
           & $iscc.FullName /Qp Installer\Blaze.iss
           if ($LASTEXITCODE -ne 0) { throw 'Building Blaze-Setup.exe failed.' }
@@ -394,7 +395,7 @@ jobs:
       - name: Download Blaze release artifacts
         uses: actions/download-artifact@v6
         with:
-          name: WebKitBrowser-Windows-x64
+          name: Blaze-Windows-x64
           path: release-assets
 
       - name: Publish GitHub Release
