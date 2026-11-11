@@ -26,8 +26,9 @@ $project.Save($projectPath)
 
 $manifestPath = Join-Path $PSScriptRoot '..\Package.appxmanifest'
 [xml]$manifest = Get-Content -LiteralPath $manifestPath -Raw
-$identity = $manifest.Package.Identity
-$identity.Version = $numericVersion
+$identity = $manifest.SelectSingleNode("/*[local-name()='Package']/*[local-name()='Identity']")
+if (-not $identity) { throw 'Package identity was not found in Package.appxmanifest.' }
+$identity.SetAttribute('Version', $numericVersion)
 $manifest.Save($manifestPath)
 
 $today = Get-Date -Format 'yyyy-MM-dd'
