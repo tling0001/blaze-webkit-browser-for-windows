@@ -413,7 +413,7 @@ public sealed partial class MainPage : Page
         var dialog = new ContentDialog
         {
             Title = $"JavaScript {kind}",
-            Content = content,
+            Content = new ScrollViewer { Content = content, MaxHeight = 620 },
             PrimaryButtonText = "OK",
             CloseButtonText = isAlert ? null : "Cancel",
             DefaultButton = isAlert ? ContentDialogButton.Primary : ContentDialogButton.Close,
