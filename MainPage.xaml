@@ -44,6 +44,7 @@
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
 
             <Button x:Name="BackButton" Grid.Column="0" Content="Back" Click="OnBackClick" AutomationProperties.Name="Go back" />
@@ -65,10 +66,11 @@
                 </AutoSuggestBox.QueryIcon>
             </AutoSuggestBox>
 
-            <Button Grid.Column="5" Content="Bookmark" Click="OnBookmarkClick" AutomationProperties.Name="Add or remove bookmark" />
-            <Button Grid.Column="6" Content="History" Click="OnHistoryClick" AutomationProperties.Name="Open browsing history" />
-            <Button Grid.Column="7" Content="Downloads" Click="OnDownloadsClick" AutomationProperties.Name="Open downloads" />
-            <Button Grid.Column="8" Content="Settings" Click="OnSettingsClick" AutomationProperties.Name="Open browser settings" />
+            <Button x:Name="BookmarkButton" Grid.Column="5" Content="Bookmark" Click="OnBookmarkClick" AutomationProperties.Name="Add or remove bookmark" />
+            <Button Grid.Column="6" Content="Saved" Click="OnBookmarksClick" AutomationProperties.Name="Open bookmarks" />
+            <Button Grid.Column="7" Content="History" Click="OnHistoryClick" AutomationProperties.Name="Open browsing history" />
+            <Button Grid.Column="8" Content="Downloads" Click="OnDownloadsClick" AutomationProperties.Name="Open downloads" />
+            <Button Grid.Column="9" Content="Settings" Click="OnSettingsClick" AutomationProperties.Name="Open browser settings" />
         </Grid>
 
         <Grid
