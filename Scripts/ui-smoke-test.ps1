@@ -88,7 +88,7 @@ try {
     Test-UI 'Live WebKit navigation to HTTPS example.com' {
         Invoke-Ui @('set-value', 'AddressBox', 'https://example.com') | Out-Null
         Invoke-Ui @('send-keys', 'enter', '--via', 'send-input') | Out-Null
-        Invoke-Ui @('wait-for', 'AddressBox', '--value', 'https://example.com', '-t', '15000') | Out-Null
+        Invoke-Ui @('wait-for', 'AddressBox', '--value', 'https://example.com/', '-t', '15000') | Out-Null
 
         $foundTitle = $false
         for ($attempt = 0; $attempt -lt 20; $attempt++) {
