@@ -112,6 +112,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'WinUI Gallery address-search lookup failed.' }
           winapp find-ui "RadioButtons settings options"
           if ($LASTEXITCODE -ne 0) { throw 'WinUI Gallery RadioButtons lookup failed.' }
+          winapp find-ui "TextBox form field with visible header"
+          if ($LASTEXITCODE -ne 0) { throw 'WinUI Gallery TextBox pattern lookup failed.' }
           winapp find-ui "FontIcon Segoe Fluent Icons toolbar Button"
           if ($LASTEXITCODE -ne 0) { throw 'WinUI Gallery Fluent icon-button lookup failed.' }
           winapp find-ui "ContentDialog native dialog animations"
@@ -143,6 +145,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'AutoSuggestBox QuerySubmitted verification failed.' }
           winapp find-api check-property RadioButtons SelectedIndex ItemsSource --json --project-dir .
           if ($LASTEXITCODE -ne 0) { throw 'RadioButtons property verification failed.' }
+          winapp find-api check-property TextBox Header Text PlaceholderText --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'TextBox settings-field property verification failed.' }
           winapp find-api check-property ItemsControl Items --json --project-dir .
           if ($LASTEXITCODE -ne 0) { throw 'RadioButtons item collection verification failed.' }
           winapp find-api check-property RadioButton Content --json --project-dir .
