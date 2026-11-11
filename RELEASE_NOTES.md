@@ -6,7 +6,9 @@
 - Repair the Windows Actions workflow's PowerShell product-version validation so the YAML parses and packaging can run.
 
 ### Browser development
-- Continue the native WebKit popup and new-window integration work.
+- Handle JavaScript `window.open()` and `target="_blank"` through WebKit's native `createNewPage` callback, creating a new tab that shares the opener's WebKit page configuration and website data store.
+- Route JavaScript `window.close()` back to the owning WinUI tab, while preserving at least one browser tab.
+- Extend the live WebKit UI smoke test to exercise popup creation and closure.
 
 ## [1.0.1] - 2026-11-11
 
