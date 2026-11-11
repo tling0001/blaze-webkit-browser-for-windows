@@ -61,3 +61,6 @@ WebKitHostBuild/
 release-assets/
 ui-test-artifacts/
 ui-test-results.json
+webkit-src/
+WebKitBuild/
+WebKitLibraries/
