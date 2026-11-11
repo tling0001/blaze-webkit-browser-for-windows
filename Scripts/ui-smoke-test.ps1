@@ -11,6 +11,7 @@ $appPid = 0
 $results = [Collections.Generic.List[object]]::new()
 $screenshots = [Collections.Generic.List[string]]::new()
 $uiStarted = $false
+$dialogPage = Join-Path $env:TEMP "blaze-js-dialog-$workflowId.html"
 
 function Invoke-WinAppChecked {
     param([string[]]$Arguments)
@@ -117,7 +118,6 @@ try {
     }
 
     Test-UI 'WebKit JavaScript alert, confirm and prompt use native WinUI dialogs' {
-        $dialogPage = Join-Path $env:TEMP "blaze-js-dialog-$workflowId.html"
         @'
 <!doctype html>
 <html>
