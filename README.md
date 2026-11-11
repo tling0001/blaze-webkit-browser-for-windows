@@ -28,6 +28,7 @@ The upstream WinCairo port is an x64 development/testing port rather than a regu
 - Tab strip placement preference (above or below the navigation toolbar)
 - Persistent Reduce motion preference; WinUI transitions are suppressed when enabled
 - Native WinUI `ContentDialog`, `MenuFlyout`, `TabView`, `AutoSuggestBox`, `ToggleSwitch` and `Button` controls
+- Native WinUI dialogs for WebKit JavaScript alert, confirm, prompt and before-unload requests
 
 ## Build and release
 
@@ -61,5 +62,5 @@ For manual installation, see [`INSTALL.md`](INSTALL.md).
 
 - Upstream WinCairo release cadence and security servicing are not equivalent to WebKit's regularly released Apple/Igalia ports.
 - Camera and microphone access is denied; device picker and per-device permission model are not yet implemented.
-- Popup/new-window handling, JavaScript dialog UX, certificate exception UI, and broader browser security hardening still need implementation and testing.
+- Popup/new-window handling, certificate exception UI, and broader browser security hardening still need implementation and testing.
 - A successful GitHub Actions build, UI smoke test and clean Windows installation are required before calling the package usable.
