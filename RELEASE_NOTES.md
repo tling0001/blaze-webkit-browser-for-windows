@@ -1,5 +1,12 @@
 # Blaze release notes
 
+## [1.1.2] - 2026-11-11
+
+### Browser settings
+- Add editable home-page and default search-engine preferences.
+- Route address-bar searches through the selected Google, Bing, DuckDuckGo or Brave Search provider.
+- Persist the selected preferences alongside the existing browser settings.
+
 ## [1.1.1] - 2026-11-11
 
 ### Build reliability
