@@ -26,7 +26,7 @@ public sealed partial class MainWindow : Window
         SetTitleBar(AppTitleBar);
 
         AppWindow.SetIcon("Assets/AppIcon.ico");
-        AppWindow.Title = "WebKit Browser";
+        AppWindow.Title = "Blaze";
         var hwnd = Win32Interop.GetWindowFromWindowId(AppWindow.Id);
         var scale = GetDpiForWindow(hwnd) / 96.0;
         AppWindow.Resize(new SizeInt32((int)Math.Ceiling(1360 * scale), (int)Math.Ceiling(900 * scale)));
