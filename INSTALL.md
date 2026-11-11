@@ -1,18 +1,22 @@
-# Installing a testing MSIX build
+# Installing Blaze
 
-Each GitHub Release includes the signed MSIX, the matching public CER, and this install guide.
+Each GitHub Release includes a recommended `Blaze-Setup-<version>-x64.exe` installer, a signed MSIX payload, and the matching public test certificate.
 
-The release uses a test signing certificate, not a production publisher certificate.
+## Recommended: EXE installer
 
-1. Download the MSIX and matching CER from the same release.
-2. Open PowerShell as your normal user and trust the test certificate for this user:
+1. Download `Blaze-Setup-<version>-x64.exe` from the GitHub Release.
+2. Run it as your normal Windows user. It does not request administrator elevation.
+3. The setup wizard imports the release's public test certificate into the current-user certificate stores and installs the signed WinUI package.
+4. Launch **Blaze** from Start.
 
-   Import-Certificate -FilePath .\WebKitBrowser-signing.cer -CertStoreLocation Cert:\CurrentUser\TrustedPeople
+## Manual MSIX installation
 
-3. Install the package:
+If you prefer to install the package manually, download the MSIX and matching CER from the same release:
 
-   Add-AppxPackage -Path .\WebKitBrowser-<version>-x64.msix
+```powershell
+Import-Certificate -FilePath .\Blaze-signing.cer -CertStoreLocation Cert:\CurrentUser\Root
+Import-Certificate -FilePath .\Blaze-signing.cer -CertStoreLocation Cert:\CurrentUser\TrustedPeople
+Add-AppxPackage -Path .\Blaze-<version>-x64.msix
+```
 
-4. Launch WebKit Browser from Start.
-
-The private PFX key is not included in releases. Do not import this test certificate into the machine-wide Trusted Root store. To remove the app, uninstall WebKit Browser from Windows Settings > Apps > Installed apps. Remove the test certificate from Current User > Trusted People if it is no longer needed.
+The private PFX signing key is never included in releases. This is a testing certificate for Blaze builds only. Remove Blaze from Windows Settings > Apps > Installed apps. If you no longer use testing builds, remove the matching certificate from Current User > Trusted Root Certification Authorities and Current User > Trusted People.
