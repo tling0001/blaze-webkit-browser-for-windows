@@ -3,12 +3,15 @@
 #include <WebKit/WebKit2_C.h>
 #include <WebKit/WKContextConfigurationRef.h>
 #include <WebKit/WKPage.h>
+#include <WebKit/WKPagePrivate.h>
+#include <WebKit/WKPreferencesRefPrivate.h>
 #include <WebKit/WKPageConfigurationRef.h>
 #include <WebKit/WKContext.h>
 #include <WebKit/WKPreferencesRef.h>
 #include <WebKit/WKURL.h>
 #include <WebKit/WKView.h>
 #include <WebKit/WKWebsiteDataStoreRef.h>
+#include <WebKit/WKHTTPCookieStore.h>
 #include <WebKit/WKWebsiteDataStoreConfigurationRef.h>
 #include <WebKit/WKPageNavigationClient.h>
 #include <WebKit/WKPageUIClient.h>
