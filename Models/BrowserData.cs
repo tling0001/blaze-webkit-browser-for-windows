@@ -5,6 +5,7 @@ public sealed class BrowserSettings
     public bool TabBarAboveToolbar { get; set; } = true;
     public bool JavaScriptEnabled { get; set; } = true;
     public bool LoadImagesAutomatically { get; set; } = true;
+    public bool ReduceMotion { get; set; } = false;
     public string HomePage { get; set; } = "https://www.google.com";
 }
 
