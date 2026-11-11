@@ -40,6 +40,7 @@ jobs:
             exit 1
           }
           winapp new --name WebKitBrowser --template winui-mvvm --template-version latest --use-defaults
+          if ($LASTEXITCODE -ne 0) { throw 'winapp new failed.' }
           if (-not (Test-Path 'WebKitBrowser')) {
             throw 'WinApp CLI did not create the expected WebKitBrowser directory.'
           }
@@ -47,6 +48,22 @@ jobs:
             Move-Item -LiteralPath $_.FullName -Destination . -Force
           }
           Remove-Item 'WebKitBrowser' -Force
+
+          $project = Get-ChildItem -Path . -Filter '*.csproj' -Recurse |
+            Where-Object { $_.FullName -notmatch '\\(bin|obj)\\' } |
+            Select-Object -First 1
+          if (-not $project) { throw 'The official template did not produce a .csproj.' }
+          [xml]$xml = Get-Content -LiteralPath $project.FullName -Raw
+          $group = $xml.Project.PropertyGroup | Select-Object -First 1
+          foreach ($entry in @(@('Version','2026.11.0-port.1'),@('AssemblyVersion','2026.11.0.1'),@('FileVersion','2026.11.0.1'),@('InformationalVersion','2026.11.0-port.1'),@('Platforms','x64'),@('RuntimeIdentifiers','win-x64'),@('WindowsPackageType','None'),@('WindowsAppSDKSelfContained','true'),@('SelfContained','true'),@('Nullable','enable'),@('ImplicitUsings','enable'))) {
+            $node = $xml.SelectSingleNode("/Project/PropertyGroup/*[local-name()='$($entry[0])']")
+            if (-not $node) { $node = $xml.CreateElement($entry[0]); [void]$group.AppendChild($node) }
+            $node.InnerText = $entry[1]
+          }
+          $xml.Save($project.FullName)
+
+          dotnet add $project.FullName package Microsoft.Windows.SDK.BuildTools.WinUIAnalyzer
+          if ($LASTEXITCODE -ne 0) { throw 'Could not add the WinUI analyzer package.' }
 
       - name: Commit generated project
         shell: pwsh
@@ -57,7 +74,15 @@ jobs:
           git add -A
           if (-not (git diff --cached --quiet)) {
             git commit -m 'Bootstrap official WinUI 3 MVVM project'
-            git push
+            $pushed = $false
+            for ($attempt = 1; $attempt -le 5; $attempt++) {
+              git pull --rebase origin main
+              if ($LASTEXITCODE -ne 0) { throw 'Could not rebase the generated scaffold onto main.' }
+              git push
+              if ($LASTEXITCODE -eq 0) { $pushed = $true; break }
+              Start-Sleep -Seconds (2 * $attempt)
+            }
+            if (-not $pushed) { throw 'Could not push scaffold after five non-fast-forward retries.' }
           } else {
             Write-Host 'No generated changes to commit.'
           }
