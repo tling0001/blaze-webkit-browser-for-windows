@@ -117,7 +117,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $stage = Join-Path $env:GITHUB_WORKSPACE 'webkit-runtime'
           New-Item -ItemType Directory -Path $stage -Force | Out-Null
-          Copy-Item -Path 'WebKitBuild\Release\bin64\*' -Destination $stage -Recurse -Force
+          Get-ChildItem -LiteralPath 'WebKitBuild\Release\bin64' -Force | Where-Object { $_.Name -notlike 'MiniBrowser*' } | Copy-Item -Destination $stage -Recurse -Force
           $libraries = 'WebKitLibraries\win\bin'
           if (Test-Path $libraries) {
             Copy-Item -Path "$libraries\*" -Destination $stage -Recurse -Force
@@ -130,7 +130,7 @@ jobs:
           Write-Host "Staged $((Get-ChildItem $stage -File -Recurse).Count) runtime files."
 
       - name: Upload WebKit engine runtime
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: WebKitEngine-x64
           path: webkit-runtime/**
@@ -206,7 +206,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'AppWindow Resize API verification failed.' }
 
       - name: Download pinned WebKit engine runtime
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
         with:
           name: WebKitEngine-x64
           path: webkit-runtime
@@ -234,7 +234,8 @@ jobs:
           $outputText = $output -join [Environment]::NewLine
           $reported = [regex]::Matches($outputText, '(?i)(?:[A-Z]:\\|\.\\|/)[^\r\n"'']+\.msix(?:bundle)?')
           if ($reported.Count -eq 0) { throw 'WinApp CLI did not report an MSIX artifact path; refusing to guess an output directory.' }
-          $packagePath = $reported[$reported.Count - 1].Value.Trim().Trim('"', "'", ' ', '.', ':')
+          $packagePath = $reported[$reported.Count - 1].Value.Trim()
+          $packagePath = $packagePath.Trim([char[]]@('"', "'", ' ', '.', ':'))
           if (-not (Test-Path -LiteralPath $packagePath)) { throw "Reported MSIX package does not exist: $packagePath" }
 
           $releaseDir = Join-Path $PWD 'release-assets'
