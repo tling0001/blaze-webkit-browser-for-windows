@@ -129,6 +129,7 @@ window.addEventListener('load', () => {
     if (confirm('Blaze confirmation test')) {
         const value = prompt('Blaze prompt test', 'initial value');
         document.body.dataset.dialogResult = value || '';
+        document.title = value || 'empty response';
     }
 });
 </script>
@@ -154,6 +155,17 @@ window.addEventListener('load', () => {
         Save-Screenshot '06-javascript-prompt.png'
         Invoke-Ui @('invoke', 'Primary') | Out-Null
         Invoke-Ui @('wait-for', 'JavaScriptDialog_prompt', '--gone', '-t', '5000') | Out-Null
+        $promptResultFound = $false
+        for ($attempt = 0; $attempt -lt 10; $attempt++) {
+            $inspection = Invoke-Ui @('inspect', '--interactive', '--json') | ConvertFrom-Json
+            $elements = @(Get-Elements @($inspection.windows | ForEach-Object { $_.elements }))
+            if ($elements | Where-Object { $_.automationId -like 'BrowserTab_*' -and $_.name -eq 'Blaze prompt passed' }) {
+                $promptResultFound = $true
+                break
+            }
+            Start-Sleep -Milliseconds 500
+        }
+        if (-not $promptResultFound) { throw 'The WebKit prompt did not receive the response entered in the native WinUI TextBox.' }
     }
 
     Test-UI 'Tab and settings controls expose AutomationIds' {
