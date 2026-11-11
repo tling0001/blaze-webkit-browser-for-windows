@@ -223,12 +223,18 @@ void decideNotificationPermission(WKPageRef, WKSecurityOriginRef origin, WKNotif
     else WKNotificationPermissionRequestDeny(request);
 }
 
-void denyUserMediaPermission(WKPageRef, WKFrameRef, WKSecurityOriginRef, WKSecurityOriginRef, WKUserMediaPermissionRequestRef request, const void*)
+void denyUserMediaPermission(WKPageRef, WKFrameRef, WKSecurityOriginRef, WKSecurityOriginRef topLevelOrigin, WKUserMediaPermissionRequestRef request, const void* clientInfo)
 {
+    auto* view = const_cast<WB_VIEW*>(static_cast<const WB_VIEW*>(clientInfo));
+    auto originString = WKSecurityOriginCopyToString(topLevelOrigin);
+    auto text = fromWKString(originString);
+    if (originString) WKRelease(originString);
+    if (view->permissionCallback)
+        view->permissionCallback(text.c_str(), 2, view->permissionUserData);
     WKUserMediaPermissionRequestDeny(request, kWKPermissionDenied);
 }
 
-WB_VIEW_HANDLE WB_Create(HWND parent, int x, int y, int width, int height, const wchar_t* initialUrl)
+WB_VIEW_HANDLE WB_Create(HWND parent, int x, int y, int width, int height, const wchar_t*)
 {
     if (!parent || !IsWindow(parent) || width <= 0 || height <= 0)
         return nullptr;
@@ -303,8 +309,6 @@ WB_VIEW_HANDLE WB_Create(HWND parent, int x, int y, int width, int height, const
 
     SetWindowPos(nativeWindow, nullptr, x, y, width, height, SWP_NOZORDER | SWP_NOACTIVATE);
     ShowWindow(nativeWindow, SW_SHOW);
-    if (initialUrl && *initialUrl)
-        WB_Navigate(result, initialUrl);
     return result;
 }
 
