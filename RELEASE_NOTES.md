@@ -3,7 +3,8 @@
 ## [1.0.2] - 2026-11-11
 
 ### Build reliability
-- Repair the Windows Actions workflow's PowerShell product-version validation so the YAML parses and packaging can run.
+- Repair the Windows Actions workflow's PowerShell product-version validation and remove duplicated packaging/release fragments so the YAML parses as one pipeline.
+- Run CI when workflow files change, so future workflow edits are validated.
 
 ### Browser development
 - Handle JavaScript `window.open()` and `target="_blank"` through WebKit's native `createNewPage` callback, creating a new tab that shares the opener's WebKit page configuration and website data store.
