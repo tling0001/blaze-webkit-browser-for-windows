@@ -85,13 +85,21 @@ public sealed partial class MainPage : Page
     private void OnTabCloseRequested(TabView sender, TabViewTabCloseRequestedEventArgs args)
     {
         if (args.Tab is TabViewItem item && _tabItems.TryGetValue(item, out var tab))
-            CloseNativeTab(tab.NativeHandle);
+            CloseBrowserTab(tab);
     }
 
     private void CloseNativeTab(IntPtr nativeHandle)
     {
+        if (nativeHandle == IntPtr.Zero)
+            return;
         var tab = ViewModel.Tabs.FirstOrDefault(candidate => candidate.NativeHandle == nativeHandle);
-        if (tab is null)
+        if (tab is not null)
+            CloseBrowserTab(tab);
+    }
+
+    private void CloseBrowserTab(BrowserTab tab)
+    {
+        if (!ViewModel.Tabs.Contains(tab))
             return;
 
         var item = FindTabItem(tab);
