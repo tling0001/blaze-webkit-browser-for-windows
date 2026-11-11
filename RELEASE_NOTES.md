@@ -1,5 +1,12 @@
 # Blaze release notes
 
+## [1.1.0] - 2026-11-11
+
+### WebKit SDK consumption
+- Remove the obsolete short-lived Actions artifact download from normal browser builds; the validated versioned SDK release is now the single source for the WebKit runtime and native host inputs.
+- Keep normal builds independent of the engine-build workflow after the SDK release is published.
+
+
 ## [1.0.9] - 2026-11-11
 
 ### CI reliability
