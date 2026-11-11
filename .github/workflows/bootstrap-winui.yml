@@ -32,9 +32,13 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          if (Get-ChildItem -Path . -Filter *.csproj -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1) {
-            Write-Host 'A project already exists; refusing to overwrite it.'
-            exit 1
+          $existingProject = Get-ChildItem -Path . -Filter *.csproj -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($existingProject) {
+            if ((Get-Content $existingProject.FullName -Raw) -notmatch '<UseWinUI>true</UseWinUI>' -or -not (Test-Path 'MainWindow.xaml')) {
+              throw 'An existing project was found, but it is not the expected WinUI 3 scaffold.'
+            }
+            Write-Host 'The official WinUI 3 project already exists and has been verified; no files will be overwritten.'
+            exit 0
           }
           winapp new --name WebKitBrowser --template winui-mvvm --template-version latest --use-defaults
           if ($LASTEXITCODE -ne 0) { throw 'winapp new failed.' }
