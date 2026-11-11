@@ -104,12 +104,65 @@ void releaseSharedEngine()
     sharedDataStore = nullptr;
 }
 
+bool configurePersistentWebsiteDataStore(WKWebsiteDataStoreConfigurationRef configuration)
+{
+    PWSTR localAppData = nullptr;
+    if (FAILED(SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_CREATE, nullptr, &localAppData)) || !localAppData)
+        return false;
+
+    std::filesystem::path root = std::filesystem::path(localAppData) / L"WebKitBrowser" / L"WebKitData";
+    CoTaskMemFree(localAppData);
+
+    struct DirectorySetting {
+        const wchar_t* name;
+        void (*set)(WKWebsiteDataStoreConfigurationRef, WKStringRef);
+    };
+    const DirectorySetting settings[] = {
+        { L"General", WKWebsiteDataStoreConfigurationSetGeneralStorageDirectory },
+        { L"NetworkCache", WKWebsiteDataStoreConfigurationSetNetworkCacheDirectory },
+        { L"IndexedDB", WKWebsiteDataStoreConfigurationSetIndexedDBDatabaseDirectory },
+        { L"LocalStorage", WKWebsiteDataStoreConfigurationSetLocalStorageDirectory },
+        { L"CacheStorage", WKWebsiteDataStoreConfigurationSetCacheStorageDirectory },
+        { L"ServiceWorkers", WKWebsiteDataStoreConfigurationSetServiceWorkerRegistrationDirectory },
+        { L"ResourceLoadStatistics", WKWebsiteDataStoreConfigurationSetResourceLoadStatisticsDirectory },
+        { L"MediaKeys", WKWebsiteDataStoreConfigurationSetMediaKeysStorageDirectory },
+        { L"WebSQL", WKWebsiteDataStoreConfigurationSetWebSQLDatabaseDirectory }
+    };
+
+    std::error_code error;
+    for (const auto& setting : settings) {
+        auto directory = root / setting.name;
+        std::filesystem::create_directories(directory, error);
+        if (error)
+            return false;
+        const auto utf8 = toUtf8(directory.wstring().c_str());
+        auto wkPath = WKStringCreateWithUTF8CString(utf8.c_str());
+        if (!wkPath)
+            return false;
+        setting.set(configuration, wkPath);
+        WKRelease(wkPath);
+    }
+
+    auto cookieDirectory = root / L"Cookies";
+    std::filesystem::create_directories(cookieDirectory, error);
+    if (error)
+        return false;
+    const auto cookiePath = toUtf8((cookieDirectory / L"Cookies.binarycookies").wstring().c_str());
+    auto wkCookiePath = WKStringCreateWithUTF8CString(cookiePath.c_str());
+    if (!wkCookiePath)
+        return false;
+    WKWebsiteDataStoreConfigurationSetCookieStorageFile(configuration, wkCookiePath);
+    WKRelease(wkCookiePath);
+    return true;
+}
+
 bool acquireSharedEngine()
 {
     if (!sharedDataStore || !sharedContext || !sharedPreferences) {
         auto storeConfiguration = WKWebsiteDataStoreConfigurationCreate();
         auto contextConfiguration = WKContextConfigurationCreate();
-        auto store = storeConfiguration ? WKWebsiteDataStoreCreateWithConfiguration(storeConfiguration) : nullptr;
+        const bool storageConfigured = storeConfiguration && configurePersistentWebsiteDataStore(storeConfiguration);
+        auto store = storageConfigured ? WKWebsiteDataStoreCreateWithConfiguration(storeConfiguration) : nullptr;
         auto context = contextConfiguration ? WKContextCreateWithConfiguration(contextConfiguration) : nullptr;
         auto preferences = WKPreferencesCreate();
 
