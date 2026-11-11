@@ -15,3 +15,5 @@ EXPORTS
     WB_SetJavaScriptEnabled
     WB_SetLoadsImagesAutomatically
     WB_ClearWebsiteData
+    WB_SetDownloadCallback
+    WB_SetPermissionCallback
