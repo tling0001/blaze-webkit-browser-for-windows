@@ -1,5 +1,13 @@
 # Blaze release notes
 
+## [1.0.2] - 2026-11-11
+
+### Build reliability
+- Repair the Windows Actions workflow's PowerShell product-version validation so the YAML parses and packaging can run.
+
+### Browser development
+- Continue the native WebKit popup and new-window integration work.
+
 ## [1.0.1] - 2026-11-11
 
 ### Build and packaging reliability
