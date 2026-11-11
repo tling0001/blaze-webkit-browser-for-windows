@@ -111,7 +111,7 @@ public partial class MainPageViewModel : ObservableObject
     {
         if (SelectedTab is null || string.IsNullOrWhiteSpace(address))
             return;
-        var url = NormalizeAddress(address.Trim());
+        var url = NormalizeAddress(address.Trim(), Settings);
         SelectedTab.Navigate(url);
         AddressText = url;
     }
@@ -302,7 +302,7 @@ public partial class MainPageViewModel : ObservableObject
         File.Move(temporaryPath, path, overwrite: true);
     }
 
-    private static string NormalizeAddress(string input)
+    private static string NormalizeAddress(string input, BrowserSettings settings)
     {
         if (Uri.TryCreate(input, UriKind.Absolute, out var absolute) &&
             (absolute.Scheme == Uri.UriSchemeHttp || absolute.Scheme == Uri.UriSchemeHttps ||
@@ -310,7 +310,17 @@ public partial class MainPageViewModel : ObservableObject
             return absolute.ToString();
 
         if (input.Contains(' ') || !input.Contains('.'))
-            return "https://www.google.com/search?q=" + Uri.EscapeDataString(input);
+        {
+            var query = Uri.EscapeDataString(input);
+            var searchUrl = settings.SearchEngine switch
+            {
+                BrowserSearchEngine.Bing => "https://www.bing.com/search?q=",
+                BrowserSearchEngine.DuckDuckGo => "https://duckduckgo.com/?q=",
+                BrowserSearchEngine.Brave => "https://search.brave.com/search?q=",
+                _ => "https://www.google.com/search?q="
+            };
+            return searchUrl + query;
+        }
 
         return "https://" + input;
     }
