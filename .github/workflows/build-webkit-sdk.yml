@@ -44,12 +44,13 @@ jobs:
           GH_TOKEN: ${{ secrets.WEBKIT_SDK_TOKEN || github.token }}
         run: |
           $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $false
           $spec = Get-Content -LiteralPath 'blaze\eng\WebKitSdk.json' -Raw | ConvertFrom-Json
           "tag=$($spec.releaseTag)" >> $env:GITHUB_OUTPUT
           "commit=$($spec.webkitCommit)" >> $env:GITHUB_OUTPUT
-          gh release view $spec.releaseTag --repo $env:SDK_REPOSITORY *> $null
+          $null = & gh release view $spec.releaseTag --repo $env:SDK_REPOSITORY 2>$null
           if ($LASTEXITCODE -eq 0) { "exists=true" >> $env:GITHUB_OUTPUT; Write-Host "SDK release $($spec.releaseTag) already exists; keeping it immutable." }
-          else { "exists=false" >> $env:GITHUB_OUTPUT }
+          else { "exists=false" >> $env:GITHUB_OUTPUT; Write-Host "SDK release $($spec.releaseTag) is not published yet; building it now." }
 
       - name: Check out the pinned WebKit source
         if: steps.sdk.outputs.exists != 'true'

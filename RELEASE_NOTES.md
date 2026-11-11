@@ -1,5 +1,12 @@
 # Blaze release notes
 
+## [1.0.8] - 2026-11-11
+
+### CI reliability
+- Handle the expected non-zero GitHub CLI result when the versioned WebKit SDK release does not exist yet, without terminating the PowerShell preflight or browser wait loop.
+- Keep the SDK build and normal browser build independently runnable while the first engine artifact is being created.
+
+
 ## [1.0.7] - 2026-11-11
 
 ### WebKit SDK distribution

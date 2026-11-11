@@ -37,13 +37,14 @@ jobs:
           WEBKIT_SDK_REPOSITORY: ${{ vars.WEBKIT_SDK_REPOSITORY || github.repository }}
         run: |
           $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $false
           $spec = Get-Content -LiteralPath 'eng\WebKitSdk.json' -Raw | ConvertFrom-Json
           $sdkRepository = $env:WEBKIT_SDK_REPOSITORY
           $sdkTag = $spec.releaseTag
           $deadline = (Get-Date).AddMinutes(330)
           Write-Host "Waiting for versioned WebKit SDK $sdkTag from $sdkRepository"
           while ($true) {
-            gh release view $sdkTag --repo $sdkRepository *> $null
+            $null = & gh release view $sdkTag --repo $sdkRepository 2>$null
             if ($LASTEXITCODE -eq 0) { break }
             if ((Get-Date) -ge $deadline) { throw "WebKit SDK release $sdkTag was not published within 330 minutes. Check Build versioned WebKit SDK." }
             Start-Sleep -Seconds 30
