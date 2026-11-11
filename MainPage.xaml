@@ -3,10 +3,6 @@
     x:Class="WebKitBrowser.MainPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-    xmlns:local="using:WebKitBrowser"
-    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-    mc:Ignorable="d"
     Loaded="OnLoaded"
     Unloaded="OnUnloaded">
 
@@ -48,11 +44,43 @@
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
 
-            <Button x:Name="BackButton" Grid.Column="0" Content="Back" Click="OnBackClick" AutomationProperties.Name="Go back" AutomationProperties.AutomationId="BackButton"  VerticalAlignment="Center" />
-            <Button x:Name="ForwardButton" Grid.Column="1" Content="Forward" Click="OnForwardClick" AutomationProperties.Name="Go forward" AutomationProperties.AutomationId="ForwardButton"  VerticalAlignment="Center" />
-            <Button Grid.Column="2" Content="Reload" Click="OnReloadClick" AutomationProperties.Name="Reload page" AutomationProperties.AutomationId="ReloadButton"  VerticalAlignment="Center" />
-            <Button Grid.Column="3" Content="Stop" Click="OnStopClick" AutomationProperties.Name="Stop loading" AutomationProperties.AutomationId="StopButton"  VerticalAlignment="Center" />
-            <Button Grid.Column="4" Content="Home" Click="OnHomeClick" AutomationProperties.Name="Go to home page" AutomationProperties.AutomationId="HomeButton"  VerticalAlignment="Center" />
+            <Button
+                x:Name="BackButton"
+                Grid.Column="0"
+                Content="Back"
+                Click="OnBackClick"
+                VerticalAlignment="Center"
+                AutomationProperties.Name="Go back"
+                AutomationProperties.AutomationId="BackButton" />
+            <Button
+                x:Name="ForwardButton"
+                Grid.Column="1"
+                Content="Forward"
+                Click="OnForwardClick"
+                VerticalAlignment="Center"
+                AutomationProperties.Name="Go forward"
+                AutomationProperties.AutomationId="ForwardButton" />
+            <Button
+                Grid.Column="2"
+                Content="Reload"
+                Click="OnReloadClick"
+                VerticalAlignment="Center"
+                AutomationProperties.Name="Reload page"
+                AutomationProperties.AutomationId="ReloadButton" />
+            <Button
+                Grid.Column="3"
+                Content="Stop"
+                Click="OnStopClick"
+                VerticalAlignment="Center"
+                AutomationProperties.Name="Stop loading"
+                AutomationProperties.AutomationId="StopButton" />
+            <Button
+                Grid.Column="4"
+                Content="Home"
+                Click="OnHomeClick"
+                VerticalAlignment="Center"
+                AutomationProperties.Name="Go to home page"
+                AutomationProperties.AutomationId="HomeButton" />
 
             <AutoSuggestBox
                 x:Name="AddressBox"
@@ -68,11 +96,42 @@
                 </AutoSuggestBox.QueryIcon>
             </AutoSuggestBox>
 
-            <Button x:Name="BookmarkButton" Grid.Column="6" Content="Bookmark" Click="OnBookmarkClick" AutomationProperties.Name="Add or remove bookmark" AutomationProperties.AutomationId="BookmarkButton"  VerticalAlignment="Center" />
-            <Button Grid.Column="7" Content="Saved" Click="OnBookmarksClick" AutomationProperties.Name="Open bookmarks" AutomationProperties.AutomationId="BookmarksButton"  VerticalAlignment="Center" />
-            <Button Grid.Column="8" Content="History" Click="OnHistoryClick" AutomationProperties.Name="Open browsing history" AutomationProperties.AutomationId="HistoryButton"  VerticalAlignment="Center" />
-            <Button Grid.Column="9" Content="Downloads" Click="OnDownloadsClick" AutomationProperties.Name="Open downloads" AutomationProperties.AutomationId="DownloadsButton"  VerticalAlignment="Center" />
-            <Button Grid.Column="10" Content="Settings" Click="OnSettingsClick" AutomationProperties.Name="Open browser settings" AutomationProperties.AutomationId="SettingsButton"  VerticalAlignment="Center" />
+            <Button
+                x:Name="BookmarkButton"
+                Grid.Column="6"
+                Content="Bookmark"
+                Click="OnBookmarkClick"
+                VerticalAlignment="Center"
+                AutomationProperties.Name="Add or remove bookmark"
+                AutomationProperties.AutomationId="BookmarkButton" />
+            <Button
+                Grid.Column="7"
+                Content="Saved"
+                Click="OnBookmarksClick"
+                VerticalAlignment="Center"
+                AutomationProperties.Name="Open bookmarks"
+                AutomationProperties.AutomationId="BookmarksButton" />
+            <Button
+                Grid.Column="8"
+                Content="History"
+                Click="OnHistoryClick"
+                VerticalAlignment="Center"
+                AutomationProperties.Name="Open browsing history"
+                AutomationProperties.AutomationId="HistoryButton" />
+            <Button
+                Grid.Column="9"
+                Content="Downloads"
+                Click="OnDownloadsClick"
+                VerticalAlignment="Center"
+                AutomationProperties.Name="Open downloads"
+                AutomationProperties.AutomationId="DownloadsButton" />
+            <Button
+                Grid.Column="10"
+                Content="Settings"
+                Click="OnSettingsClick"
+                VerticalAlignment="Center"
+                AutomationProperties.Name="Open browser settings"
+                AutomationProperties.AutomationId="SettingsButton" />
         </Grid>
 
         <Grid
