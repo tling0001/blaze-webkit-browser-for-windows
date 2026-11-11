@@ -58,6 +58,18 @@ internal static class WebKitNative
     [DllImport(Library, EntryPoint = "WB_ClearWebsiteData", CallingConvention = CallingConvention.Cdecl)]
     internal static extern void ClearWebsiteData(IntPtr view);
 
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl, CharSet = CharSet.Unicode)]
+    internal delegate void DownloadCallback([MarshalAs(UnmanagedType.LPWStr)] string filePath, int status, long bytesWritten, long totalBytesExpected, IntPtr userData);
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl, CharSet = CharSet.Unicode)]
+    internal delegate int PermissionCallback([MarshalAs(UnmanagedType.LPWStr)] string origin, int permissionType, IntPtr userData);
+
+    [DllImport(Library, EntryPoint = "WB_SetDownloadCallback", CallingConvention = CallingConvention.Cdecl)]
+    internal static extern void SetDownloadCallback(IntPtr view, DownloadCallback callback, IntPtr userData);
+
+    [DllImport(Library, EntryPoint = "WB_SetPermissionCallback", CallingConvention = CallingConvention.Cdecl)]
+    internal static extern void SetPermissionCallback(IntPtr view, PermissionCallback callback, IntPtr userData);
+
     internal static string GetCurrentUrl(IntPtr view) => ReadString(GetCurrentUrlNative, view);
     internal static string GetTitle(IntPtr view) => ReadString(GetTitleNative, view);
 
