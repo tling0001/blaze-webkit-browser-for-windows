@@ -3,7 +3,6 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
-using System.Numerics;
 using Windows.Foundation;
 using WebKitBrowser.Models;
 using WebKitBrowser.Services;
@@ -53,9 +52,11 @@ public sealed partial class MainPage : Page
         _stateTimer?.Stop();
         _stateTimer = null;
         _ = ViewModel.SaveAsync();
+        foreach (var tab in ViewModel.Tabs)
+            DestroyNativeView(tab);
     }
 
-    private void OnAddTabButtonClick(TabView sender, object args)
+    private void OnAddTabButtonClick(TabView sender, TabViewAddTabButtonClickEventArgs args)
     {
         var tab = ViewModel.AddTab();
         var item = AddTabItem(tab);
@@ -209,7 +210,7 @@ public sealed partial class MainPage : Page
         panel.Children.Add(new TextBlock
         {
             Text = "Privacy",
-            Style = (Style)Application.Current.Resources["SubtitleTextBlockStyle"]
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
         });
         panel.Children.Add(clearData);
 
@@ -368,8 +369,7 @@ public sealed partial class MainPage : Page
 
     private void UpdateNavigationButtons()
     {
-        // Native back/forward state is reflected by the selected tab model.
-        if (ViewModel.SelectedTab is null)
-            return;
+        BackButton.IsEnabled = ViewModel.SelectedTab?.CanGoBack == true;
+        ForwardButton.IsEnabled = ViewModel.SelectedTab?.CanGoForward == true;
     }
 }
