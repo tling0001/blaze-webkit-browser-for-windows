@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "WebKitBrowser (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "WebKitBrowser (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}
