@@ -14,14 +14,14 @@ The C++ bridge links against WebKit's public C API:
 - `WKPageConfigurationCreate`, `WKPageConfigurationSetContext`, `WKPageConfigurationSetPreferences`, and `WKPageConfigurationSetWebsiteDataStore` configure each page.
 - `WKPageSetPageNavigationClient` installs `WKPageNavigationClientV3` callbacks for downloads initiated by navigation, response handling, and context menus.
 - `WKDownloadSetClient` installs `WKDownloadClientV0` to select a safe destination and report progress, completion, and failure.
-- `WKPageSetPageUIClient` installs `WKPageUIClientV13` permission callbacks. Geolocation and notification decisions are per-origin; user-media requests are denied until a proper device-selection flow is implemented.
+- `WKPageSetPageUIClient` installs `WKPageUIClientV13` callbacks. Geolocation and notification decisions are per-origin; JavaScript alert, confirm, prompt and before-unload callbacks are completed asynchronously by native WinUI `ContentDialog` surfaces; user-media requests are denied until a proper device-selection flow is implemented.
 - `WKWebsiteDataStoreConfigurationCreate` plus the `WKWebsiteDataStoreConfigurationSet*Directory` functions establish persistent profile storage.
 
 The bridge is implemented in `Native/WebKitHost`. C# calls its small C ABI through `Services/WebKitNative.cs`. The WinUI layer owns browser chrome and view models; C++ owns WKView handles and WebKit callback structures.
 
 ## Multi-tab profile model
 
-All tabs share one `WKContextRef`, `WKPreferencesRef`, and persistent `WKWebsiteDataStoreRef`, so cookies and site data are shared between tabs. Profile data is stored below `%LOCALAPPDATA%\WebKitBrowser\WebKitData`. Each tab has its own WKView/page and native child HWND. Closing a tab releases its WKView; the shared context is released when the last view closes.
+All tabs share one `WKContextRef`, `WKPreferencesRef`, and persistent `WKWebsiteDataStoreRef`, so cookies and site data are shared between tabs. Profile data is stored below `%LOCALAPPDATA%\Blaze\WebKitData`. Each tab has its own WKView/page and native child HWND. Closing a tab releases its WKView; the shared context is released when the last view closes.
 
 Downloads are written to the Windows Downloads known folder. Suggested filenames are sanitized, path components are stripped, and collisions receive a numeric suffix. Download callbacks copy their callback/user-data values into a per-download context so a tab can close without invalidating an in-flight download callback.
 
