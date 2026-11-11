@@ -58,9 +58,12 @@
                 HorizontalAlignment="Stretch"
                 VerticalAlignment="Center"
                 PlaceholderText="Search or enter address"
-                QueryIcon="{x:Bind ViewModel.StatusMessage}"
                 QuerySubmitted="OnAddressQuerySubmitted"
-                AutomationProperties.Name="Address and search" />
+                AutomationProperties.Name="Address and search">
+                <AutoSuggestBox.QueryIcon>
+                    <SymbolIcon Symbol="Find" />
+                </AutoSuggestBox.QueryIcon>
+            </AutoSuggestBox>
 
             <Button Grid.Column="5" Content="Bookmark" Click="OnBookmarkClick" AutomationProperties.Name="Add or remove bookmark" />
             <Button Grid.Column="6" Content="History" Click="OnHistoryClick" AutomationProperties.Name="Open browsing history" />
