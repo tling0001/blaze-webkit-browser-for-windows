@@ -94,8 +94,8 @@ jobs:
           $vcvars = Join-Path $vs 'VC\Auxiliary\Build\vcvars64.bat'
           if (-not (Test-Path $vcvars)) { throw 'The x64 MSVC environment is unavailable.' }
           $pythonDir = Split-Path $env:WEBKIT_PYTHON
-          $extraPath = $env:WEBKIT_XAMPP + '\perl\bin;' + $env:WEBKIT_XAMPP + '\apache\bin;' + $pythonDir + ';' + $pythonDir + '\Scripts'
-          $command = 'call "' + $vcvars + '" && set "CC=clang-cl" && set "CXX=clang-cl" && set "PATH=%PATH%;' + $extraPath + '" && perl Tools\Scripts\build-webkit --release'
+          $extraPath = $env:WEBKIT_XAMPP + '\perl\bin;' + $env:WEBKIT_XAMPP + '\apache\bin;' + $pythonDir + ';' + $pythonDir + '\Scripts;%PATH%'
+          $command = 'set "PATH=' + $extraPath + '" && call "' + $vcvars + '" && set "CC=clang-cl" && set "CXX=clang-cl" && perl Tools\Scripts\build-webkit --release'
           cmd.exe /d /s /c $command
           if ($LASTEXITCODE -ne 0) { throw 'The upstream WebKit Windows-port build failed.' }
 
