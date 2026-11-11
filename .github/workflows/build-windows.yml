@@ -90,16 +90,39 @@ jobs:
         working-directory: webkit-src
         run: |
           $ErrorActionPreference = 'Stop'
-          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
-          $vs = & $vswhere -latest -property installationPath
-          if (-not $vs) { throw 'Visual Studio installation was not found.' }
-          $vcvars = Join-Path $vs 'VC\Auxiliary\Build\vcvars64.bat'
-          if (-not (Test-Path $vcvars)) { throw 'The x64 MSVC environment is unavailable.' }
-          $pythonDir = Split-Path $env:WEBKIT_PYTHON
-          $extraPath = $env:WEBKIT_XAMPP + '\perl\bin;' + $env:WEBKIT_XAMPP + '\apache\bin;' + $pythonDir + ';' + $pythonDir + '\Scripts;%PATH%'
-          $command = 'set "PATH=' + $extraPath + '" && call "' + $vcvars + '" && set "CC=clang-cl" && set "CXX=clang-cl" && perl Tools\Scripts\build-webkit --release'
-          cmd.exe /d /s /c $command
-          if ($LASTEXITCODE -ne 0) { throw 'The upstream WebKit Windows-port build failed.' }
+          $sourceRoot = Join-Path $env:GITHUB_WORKSPACE 'webkit-src'
+          if (Test-Path 'W:\') { throw 'The short WebKit build drive W: is already in use.' }
+          subst W: $sourceRoot
+          if ($LASTEXITCODE -ne 0) { throw 'Could not map the WebKit source tree to the short W: drive.' }
+          Push-Location 'W:\'
+          try {
+            $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+            $vs = & $vswhere -latest -property installationPath
+            if (-not $vs) { throw 'Visual Studio installation was not found.' }
+            $vcvars = Join-Path $vs 'VC\Auxiliary\Build\vcvars64.bat'
+            if (-not (Test-Path $vcvars)) { throw 'The x64 MSVC environment is unavailable.' }
+            $pythonDir = Split-Path $env:WEBKIT_PYTHON
+            $extraPath = $env:WEBKIT_XAMPP + '\perl\bin;' + $env:WEBKIT_XAMPP + '\apache\bin;' + $pythonDir + ';' + $pythonDir + '\Scripts;%PATH%'
+            $command = 'set "PATH=' + $extraPath + '" && call "' + $vcvars + '" && set "CC=clang-cl" && set "CXX=clang-cl" && perl Tools\Scripts\build-webkit --release'
+            cmd.exe /d /s /c $command
+            if ($LASTEXITCODE -ne 0) { throw 'The upstream WebKit Windows-port build failed.' }
+          } finally {
+            Pop-Location
+            subst W: /d
+            if ($LASTEXITCODE -ne 0) { Write-Warning 'The temporary WebKit drive mapping could not be removed.' }
+          }
+
+      - name: Upload WebKit build diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: WebKitEngine-build-diagnostics
+          path: |
+            webkit-src/WebKitBuild/Release/vcpkg-manifest-install.log
+            webkit-src/WebKitBuild/Release/**/CMakeError.log
+            webkit-src/WebKitBuild/Release/**/CMakeOutput.log
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Verify WebKit runtime and build native WKView host
         shell: pwsh
