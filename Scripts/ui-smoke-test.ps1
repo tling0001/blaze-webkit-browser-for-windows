@@ -24,8 +24,9 @@ function Invoke-WinAppChecked {
 }
 
 function Invoke-Ui {
-    param([string[]]$Arguments)
-    Invoke-WinAppChecked (@('ui') + $Arguments + @('-a', "$appPid"))
+    param([string[]]$Arguments, [string]$Window)
+    $selector = if ($Window) { @('-w', $Window) } else { @('-a', "$appPid") }
+    Invoke-WinAppChecked (@('ui') + $Arguments + $selector)
 }
 
 function Get-Elements {
@@ -41,7 +42,7 @@ function Get-Elements {
 function Save-Screenshot {
     param([string]$Name)
     $path = Join-Path $ArtifactDirectory $Name
-    Invoke-Ui @('screenshot', '--output', $path) | Out-Null
+    Invoke-Ui @('screenshot', '--output', $path) -Window $hwnd | Out-Null
     if (-not (Test-Path -LiteralPath $path -PathType Leaf) -or (Get-Item -LiteralPath $path).Length -eq 0) {
         throw "Screenshot was not delivered: $path"
     }
@@ -64,7 +65,7 @@ try {
     New-Item -ItemType Directory -Force -Path $ArtifactDirectory | Out-Null
 
     $launch = (Invoke-WinAppChecked @('run', '.', '--detach', '--json') | ConvertFrom-Json)
-    if ($launch.Error -or -not $launch.ProcessId -or [int]$launch.ProcessId -le 0) {
+    if ($launch.Error -or -not $launch.ProcessId -or [int]$launch.ProcessId -le 0 -or ($launch.ProcessScope -and $launch.ProcessScope -ne 'local')) {
         throw "WinApp CLI did not return an app process ID. $($launch.Error)"
     }
     $appPid = [int]$launch.ProcessId
@@ -115,7 +116,7 @@ try {
     Write-Warning "UI smoke setup failed: $_"
 } finally {
     try {
-        if ($uiStarted) { Invoke-Ui @('yield') | Out-Null }
+        if ($uiStarted) { Invoke-WinAppChecked @('ui', 'yield') | Out-Null }
     } catch {
         $results.Add(@{ name = 'Release UI workflow'; status = 'FAIL'; detail = "$_" })
     } finally {
