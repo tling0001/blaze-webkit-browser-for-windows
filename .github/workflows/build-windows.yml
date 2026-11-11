@@ -171,6 +171,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'WinUI Gallery tab-pattern lookup failed.' }
           winapp find-ui "AutoSuggestBox address search"
           if ($LASTEXITCODE -ne 0) { throw 'WinUI Gallery address-search lookup failed.' }
+          winapp find-ui "RadioButtons settings options"
+          if ($LASTEXITCODE -ne 0) { throw 'WinUI Gallery RadioButtons lookup failed.' }
 
       - name: Restore WinUI project
         shell: pwsh
@@ -186,8 +188,22 @@ jobs:
           $ErrorActionPreference = 'Stop'
           winapp find-api TabView --json --project-dir .
           if ($LASTEXITCODE -ne 0) { throw 'TabView API lookup failed.' }
-          winapp find-api AutoSuggestBox --json --project-dir .
-          if ($LASTEXITCODE -ne 0) { throw 'AutoSuggestBox API lookup failed.' }
+          winapp find-api check-property TabView IsAddTabButtonVisible CanReorderTabs --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'TabView property verification failed.' }
+          winapp find-api members TabView --filter AddTabButtonClick --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'TabView add-tab event verification failed.' }
+          winapp find-api members TabView --filter TabCloseRequested --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'TabView close event verification failed.' }
+          winapp find-api check-property AutoSuggestBox QueryIcon --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'AutoSuggestBox QueryIcon verification failed.' }
+          winapp find-api members AutoSuggestBox --filter QuerySubmitted --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'AutoSuggestBox QuerySubmitted verification failed.' }
+          winapp find-api check-property RadioButtons SelectedIndex ItemsSource --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'RadioButtons property verification failed.' }
+          winapp find-api check-property ContentDialog XamlRoot DefaultButton --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'ContentDialog property verification failed.' }
+          winapp find-api members AppWindow --filter Resize --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'AppWindow Resize API verification failed.' }
 
       - name: Download pinned WebKit engine runtime
         uses: actions/download-artifact@v4
