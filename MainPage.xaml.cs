@@ -313,8 +313,8 @@ public sealed partial class MainPage : Page
         ViewModel.RecordPermissionRequest(origin, permissionType);
         var description = permissionType switch
         {
-            0 => $"{origin} requested your location. The request was blocked. You can allow this site in Settings.",
-            1 => $"{origin} requested permission to send notifications. The request was blocked. You can allow this site in Settings.",
+            0 => $"{origin} requested your location. The request was blocked. You can allow this site in Settings, then reload the page.",
+            1 => $"{origin} requested permission to send notifications. The request was blocked. You can allow this site in Settings, then reload the page.",
             _ => $"{origin} requested camera or microphone access. It remains blocked because device selection is not yet implemented."
         };
         var dialog = new ContentDialog
@@ -353,7 +353,8 @@ public sealed partial class MainPage : Page
             return;
 
         tab.RefreshNativeState();
-        AddressBox.Text = tab.Url;
+        if (AddressBox.FocusState == FocusState.Unfocused)
+            AddressBox.Text = tab.Url;
         if (!string.Equals(tab.LastRecordedUrl, tab.Url, StringComparison.Ordinal))
         {
             ViewModel.RecordNavigation(tab);
