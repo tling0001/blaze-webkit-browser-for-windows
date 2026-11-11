@@ -508,6 +508,7 @@ public sealed partial class MainPage : Page
         try
         {
             if (GCHandle.FromIntPtr(userData).Target is MainPage page
+                && page._initialized && !page._isPageUnloading
                 && App.DispatcherQueue.TryEnqueue(() => page.AttachPopupTab(nativeHandle)))
                 return 1;
         }
