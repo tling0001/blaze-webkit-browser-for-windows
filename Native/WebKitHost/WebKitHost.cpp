@@ -630,8 +630,7 @@ void WB_ResolveJavaScriptDialog(void* listener, int dialogType, BOOL accepted, c
         WKStringRef value = nullptr;
         if (accepted && response) {
             const auto utf8 = toUtf8(response);
-            if (!utf8.empty())
-                value = WKStringCreateWithUTF8CString(utf8.c_str());
+            value = WKStringCreateWithUTF8CString(utf8.c_str());
         }
         WKPageRunJavaScriptPromptResultListenerCall(reinterpret_cast<WKPageRunJavaScriptPromptResultListenerRef>(listener), value);
         if (value) WKRelease(value);
