@@ -370,6 +370,22 @@ public sealed partial class MainPage : Page
             ItemsSource = new[] { "Above toolbar", "Below toolbar" },
             SelectedIndex = ViewModel.Settings.TabBarAboveToolbar ? 0 : 1
         };
+        var homePage = new TextBox
+        {
+            Header = "Home page",
+            Text = ViewModel.Settings.HomePage,
+            PlaceholderText = "https://example.com"
+        };
+        var searchEngine = new RadioButtons
+        {
+            Header = "Search engine",
+            ItemsSource = new[] { "Google", "Bing", "DuckDuckGo", "Brave Search" },
+            SelectedIndex = (int)ViewModel.Settings.SearchEngine
+        };
+        AutomationProperties.SetAutomationId(homePage, "HomePage");
+        AutomationProperties.SetName(homePage, "Home page");
+        AutomationProperties.SetAutomationId(searchEngine, "SearchEngine");
+        AutomationProperties.SetName(searchEngine, "Search engine");
         var javaScript = new ToggleSwitch { Header = "Enable JavaScript", IsOn = ViewModel.Settings.JavaScriptEnabled };
         var images = new ToggleSwitch { Header = "Load images automatically", IsOn = ViewModel.Settings.LoadImagesAutomatically };
         var reduceMotion = new ToggleSwitch { Header = "Reduce motion", IsOn = ViewModel.Settings.ReduceMotion };
@@ -397,6 +413,8 @@ public sealed partial class MainPage : Page
         AutomationProperties.SetName(popupHandling, "Pop-up windows");
         var panel = new StackPanel { Spacing = 12, MinWidth = 340 };
         panel.Children.Add(position);
+        panel.Children.Add(homePage);
+        panel.Children.Add(searchEngine);
         panel.Children.Add(javaScript);
         panel.Children.Add(images);
         panel.Children.Add(reduceMotion);
@@ -477,6 +495,9 @@ public sealed partial class MainPage : Page
             return;
 
         ViewModel.Settings.TabBarAboveToolbar = position.SelectedIndex == 0;
+        if (!string.IsNullOrWhiteSpace(homePage.Text))
+            ViewModel.Settings.HomePage = homePage.Text.Trim();
+        ViewModel.Settings.SearchEngine = (BrowserSearchEngine)Math.Clamp(searchEngine.SelectedIndex, 0, 3);
         ViewModel.Settings.JavaScriptEnabled = javaScript.IsOn;
         ViewModel.Settings.LoadImagesAutomatically = images.IsOn;
         ViewModel.Settings.ReduceMotion = reduceMotion.IsOn;
