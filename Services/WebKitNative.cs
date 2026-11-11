@@ -64,11 +64,20 @@ internal static class WebKitNative
     [UnmanagedFunctionPointer(CallingConvention.Cdecl, CharSet = CharSet.Unicode)]
     internal delegate int PermissionCallback([MarshalAs(UnmanagedType.LPWStr)] string origin, int permissionType, IntPtr userData);
 
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl, CharSet = CharSet.Unicode)]
+    internal delegate void JavaScriptDialogCallback(int dialogType, [MarshalAs(UnmanagedType.LPWStr)] string origin, [MarshalAs(UnmanagedType.LPWStr)] string message, [MarshalAs(UnmanagedType.LPWStr)] string defaultValue, IntPtr listener, IntPtr userData);
+
     [DllImport(Library, EntryPoint = "WB_SetDownloadCallback", CallingConvention = CallingConvention.Cdecl)]
     internal static extern void SetDownloadCallback(IntPtr view, DownloadCallback callback, IntPtr userData);
 
     [DllImport(Library, EntryPoint = "WB_SetPermissionCallback", CallingConvention = CallingConvention.Cdecl)]
     internal static extern void SetPermissionCallback(IntPtr view, PermissionCallback callback, IntPtr userData);
+
+    [DllImport(Library, EntryPoint = "WB_SetJavaScriptDialogCallback", CallingConvention = CallingConvention.Cdecl)]
+    internal static extern void SetJavaScriptDialogCallback(IntPtr view, JavaScriptDialogCallback callback, IntPtr userData);
+
+    [DllImport(Library, EntryPoint = "WB_ResolveJavaScriptDialog", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Unicode)]
+    internal static extern void ResolveJavaScriptDialog(IntPtr listener, int dialogType, [MarshalAs(UnmanagedType.Bool)] bool accepted, string? response);
 
     internal static string GetCurrentUrl(IntPtr view) => ReadString(GetCurrentUrlNative, view);
     internal static string GetTitle(IntPtr view) => ReadString(GetTitleNative, view);
