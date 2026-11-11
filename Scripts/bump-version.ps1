@@ -13,6 +13,23 @@ if ($current -notmatch '^(?<base>\d{4}\.\d+\.\d+-port\.)(?<number>\d+)$') {
 $next = "$($Matches.base)$([int]$Matches.number + 1)"
 Set-Content -LiteralPath $versionPath -Value $next -NoNewline
 
+$projectPath = Join-Path $PSScriptRoot '..\WebKitBrowser.csproj'
+[xml]$project = Get-Content -LiteralPath $projectPath -Raw
+$numericVersion = $next -replace '-port\.', '.'
+$propertyGroup = $project.Project.PropertyGroup | Select-Object -First 1
+foreach ($pair in @(@('Version', $next), @('InformationalVersion', $next), @('AssemblyVersion', $numericVersion), @('FileVersion', $numericVersion), @('AppxPackageVersion', $numericVersion))) {
+    $node = $project.SelectSingleNode("/Project/PropertyGroup/*[local-name()='$($pair[0])']")
+    if (-not $node) { $node = $project.CreateElement($pair[0]); [void]$propertyGroup.AppendChild($node) }
+    $node.InnerText = $pair[1]
+}
+$project.Save($projectPath)
+
+$manifestPath = Join-Path $PSScriptRoot '..\Package.appxmanifest'
+[xml]$manifest = Get-Content -LiteralPath $manifestPath -Raw
+$identity = $manifest.Package.Identity
+$identity.Version = $numericVersion
+$manifest.Save($manifestPath)
+
 $today = Get-Date -Format 'yyyy-MM-dd'
 $note = $Notes.Trim()
 if ([string]::IsNullOrWhiteSpace($note)) { throw 'Release notes must not be empty.' }
