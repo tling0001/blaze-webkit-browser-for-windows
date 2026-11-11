@@ -1,4 +1,4 @@
-name: Build Windows browser
+name: Build WebKit Browser
 
 on:
   push:
@@ -11,55 +11,283 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
-  group: windows-build-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build:
+  build-engine:
+    name: Build pinned WinCairo WebKit (x64)
     runs-on: windows-latest
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Set up .NET SDK
-        uses: actions/setup-dotnet@v4
+      - name: Check out WebKit source at pinned revision
+        uses: actions/checkout@v5
         with:
-          dotnet-version: |
-            8.0.x
-            10.0.x
+          repository: WebKit/WebKit
+          ref: d641dd75af65b0469eff30bb76a97e01e02633fc
+          path: webkit-src
+          fetch-depth: 1
 
-      - name: Locate WinUI project
-        id: project
+      - name: Restore cached WebKit build
+        id: webkit-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            webkit-src/WebKitBuild/Release
+            webkit-src/WebKitLibraries/win
+          key: wincairo-x64-d641dd75af65b0469eff30bb76a97e01e02633fc-windows-2025-v1
+
+      - name: Install WinCairo build dependencies
+        if: steps.webkit-cache.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $projects = @(Get-ChildItem -Path . -Filter *.csproj -Recurse |
-            Where-Object { $_.FullName -notmatch '\\(bin|obj)\\' })
-          if ($projects.Count -eq 0) {
-            throw 'No WinUI .csproj found. Run the Bootstrap WinUI 3 project workflow first.'
+          choco install -y xampp-81 python311 ruby git cmake gperf llvm ninja --no-progress
+          if ($LASTEXITCODE -ne 0) { throw 'Installing WebKit Windows-port dependencies failed.' }
+
+      - name: Configure WebKit command environment
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $xampp = Get-ChildItem 'C:\tools' -Directory -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -like 'xampp*' } | Select-Object -First 1
+          if (-not $xampp) { throw 'XAMPP/Perl installation was not found.' }
+          $python = (& py -3.11 -c 'import sys; print(sys.executable)').Trim()
+          if ($LASTEXITCODE -ne 0 -or -not $python) { throw 'Python 3.11 is required by the WebKit Windows port.' }
+          $pythonDir = Split-Path $python
+          $env:Path = "$($xampp.FullName)\perl\bin;$($xampp.FullName)\apache\bin;$pythonDir;$pythonDir\Scripts;$env:Path"
+          $env:CC = 'clang-cl'
+          $env:CXX = 'clang-cl'
+          $env:PYTHON = $python
+          perl -v
+          python --version
+          ruby --version
+          cmake --version
+          ninja --version
+          clang-cl --version
+          "WEBKIT_PYTHON=$python" >> $env:GITHUB_ENV
+          "WEBKIT_XAMPP=$($xampp.FullName)" >> $env:GITHUB_ENV
+
+      - name: Build WebKit Windows port
+        if: steps.webkit-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        working-directory: webkit-src
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $vs = & $vswhere -latest -property installationPath
+          if (-not $vs) { throw 'Visual Studio installation was not found.' }
+          $vcvars = Join-Path $vs 'VC\Auxiliary\Build\vcvars64.bat'
+          if (-not (Test-Path $vcvars)) { throw 'The x64 MSVC environment is unavailable.' }
+          $command = 'call "' + $vcvars + '" && set CC=clang-cl && set CXX=clang-cl && set PATH="' + $env:WEBKIT_XAMPP + '\perl\bin;' + $env:WEBKIT_XAMPP + '\apache\bin;' + (Split-Path $env:WEBKIT_PYTHON) + ';' + $env:PATH + '" && perl Tools\Scripts\build-webkit --release'
+          cmd.exe /d /s /c $command
+          if ($LASTEXITCODE -ne 0) { throw 'The upstream WebKit Windows-port build failed.' }
+
+      - name: Verify WebKit runtime and build native WKView host
+        shell: pwsh
+        working-directory: webkit-src
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $webkitRoot = Join-Path $PWD 'WebKitBuild\Release'
+          $miniBrowser = Join-Path $webkitRoot 'bin64\MiniBrowser.exe'
+          if (-not (Test-Path $miniBrowser)) { throw 'WebKit build did not produce MiniBrowser.exe.' }
+          $viewHeader = Join-Path $webkitRoot 'include\WebKit\WKView.h'
+          if (-not (Test-Path $viewHeader)) { throw 'WebKit public WKView.h was not produced.' }
+          $importLibrary = Get-ChildItem $webkitRoot -Filter 'WebKit2.lib' -Recurse -File | Select-Object -First 1
+          if (-not $importLibrary) { throw 'WebKit2.lib was not found; cannot link the WKView host.' }
+          cmake -S ..\Native\WebKitHost -B ..\WebKitHostBuild -A x64 -DWEBKIT_ROOT="$webkitRoot"
+          if ($LASTEXITCODE -ne 0) { throw 'CMake configuration for the native WebKit host failed.' }
+          cmake --build ..\WebKitHostBuild --config Release
+          if ($LASTEXITCODE -ne 0) { throw 'Building the native WebKit host failed.' }
+
+      - name: Stage complete x64 WebKit runtime
+        shell: pwsh
+        working-directory: webkit-src
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $stage = Join-Path $env:GITHUB_WORKSPACE 'webkit-runtime'
+          New-Item -ItemType Directory -Path $stage -Force | Out-Null
+          Copy-Item -Path 'WebKitBuild\Release\bin64\*' -Destination $stage -Recurse -Force
+          $libraries = 'WebKitLibraries\win\bin'
+          if (Test-Path $libraries) {
+            Copy-Item -Path "$libraries\*" -Destination $stage -Recurse -Force
           }
-          $project = $projects | Where-Object { (Get-Content $_.FullName -Raw) -match '<UseWinUI>true</UseWinUI>' } | Select-Object -First 1
-          if (-not $project) {
-            throw 'No project with <UseWinUI>true</UseWinUI> was found. Refusing to build a non-WinUI app.'
+          $hostDll = Get-ChildItem (Join-Path $env:GITHUB_WORKSPACE 'WebKitHostBuild') -Filter 'WebKitHost.dll' -Recurse -File | Select-Object -First 1
+          if (-not $hostDll) { throw 'WebKitHost.dll was not produced.' }
+          Copy-Item $hostDll.FullName -Destination $stage -Force
+          if (-not (Test-Path (Join-Path $stage 'WebKit2.dll'))) { throw 'WebKit2.dll is missing from the staged engine.' }
+          if (-not (Test-Path (Join-Path $stage 'WebKitHost.dll'))) { throw 'WebKitHost.dll is missing from the staged engine.' }
+          Write-Host "Staged $((Get-ChildItem $stage -File -Recurse).Count) runtime files."
+
+      - name: Upload WebKit engine runtime
+        uses: actions/upload-artifact@v4
+        with:
+          name: WebKitEngine-x64
+          path: webkit-runtime/**
+          if-no-files-found: error
+          retention-days: 7
+
+  build:
+    name: Build and package WinUI browser (x64)
+    runs-on: windows-latest
+    needs: [build-engine]
+    steps:
+      - name: Check out browser source
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.sha || 'main' }}
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Install WinApp CLI
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not (Get-Command winapp -ErrorAction SilentlyContinue)) {
+            winget install --id Microsoft.WinAppCli --exact --silent --accept-package-agreements --accept-source-agreements
+            if ($LASTEXITCODE -ne 0) { throw 'WinApp CLI installation failed.' }
           }
-          "path=$($project.FullName)" >> $env:GITHUB_OUTPUT
+          $env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User')
+          winapp --version
 
-      - name: Restore
-        run: dotnet restore "${{ steps.project.outputs.path }}"
+      - name: Discover WinUI tab and input patterns
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          winapp find-ui "TabView document tabs"
+          if ($LASTEXITCODE -ne 0) { throw 'WinUI Gallery tab-pattern lookup failed.' }
+          winapp find-ui "AutoSuggestBox address search"
+          if ($LASTEXITCODE -ne 0) { throw 'WinUI Gallery address-search lookup failed.' }
 
-      - name: Build x64
-        run: dotnet build "${{ steps.project.outputs.path }}" --configuration Release --no-restore -p:Platform=x64
+      - name: Restore WinUI project
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not (Test-Path 'WebKitBrowser.csproj')) { throw 'Official WinUI scaffold is missing.' }
+          dotnet restore WebKitBrowser.csproj -r win-x64
+          if ($LASTEXITCODE -ne 0) { throw 'WinUI restore failed.' }
 
-      - name: Upload build output
+      - name: Verify WinUI APIs against restored references
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          winapp find-api TabView --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'TabView API lookup failed.' }
+          winapp find-api AutoSuggestBox --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'AutoSuggestBox API lookup failed.' }
+
+      - name: Download pinned WebKit engine runtime
+        uses: actions/download-artifact@v4
+        with:
+          name: WebKitEngine-x64
+          path: webkit-runtime
+
+      - name: Read version and publish WinUI browser
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = (Get-Content VERSION -Raw).Trim()
+          if ($version -notmatch '^\d{4}\.\d+\.\d+-port\.\d+$') { throw "Invalid release version: $version" }
+          $numericVersion = $version -replace '-port\.', '.'
+          $output = Join-Path $PWD 'publish\win-x64'
+          New-Item -ItemType Directory -Path $output -Force | Out-Null
+          dotnet publish WebKitBrowser.csproj --configuration Release --no-restore --runtime win-x64 --self-contained true -p:WindowsAppSDKSelfContained=true -p:Version=$version -p:AssemblyVersion=$numericVersion -p:FileVersion=$numericVersion -o $output
+          if ($LASTEXITCODE -ne 0) { throw 'WinUI publish failed.' }
+          Copy-Item -Path 'webkit-runtime\*' -Destination $output -Recurse -Force
+          if (-not (Test-Path (Join-Path $output 'WebKitBrowser.exe'))) { throw 'Published WinUI executable is missing.' }
+          if (-not (Test-Path (Join-Path $output 'WebKitHost.dll'))) { throw 'Published native WebKit host is missing.' }
+          if (-not (Test-Path (Join-Path $output 'WebKit2.dll'))) { throw 'Published WebKit engine is missing.' }
+          $pri = @(Get-ChildItem $output -Filter '*.pri' -File)
+          if ($pri.Count -eq 0) { throw 'WinUI PRI resource index is missing from publish output.' }
+          Write-Host "Verified version $version with $((Get-ChildItem $output -File -Recurse).Count) published files."
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          choco install innosetup --yes --no-progress
+          if ($LASTEXITCODE -ne 0) { throw 'Inno Setup installation failed.' }
+
+      - name: Build per-user x64 installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $iscc = Get-ChildItem "${env:ProgramFiles(x86)}\Inno Setup 6" -Filter 'ISCC.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $iscc) { throw 'Inno Setup compiler was not found.' }
+          $version = (Get-Content VERSION -Raw).Trim()
+          & $iscc "/DArchitecture=x64" "/DAppVersion=$version" "/DSourceDir=$PWD\publish\win-x64" "installer\WebKitBrowser.iss"
+          if ($LASTEXITCODE -ne 0) { throw 'Inno Setup failed.' }
+          $installer = "installer-output\WebKitBrowser-$version-x64-Setup.exe"
+          if (-not (Test-Path $installer)) { throw "Installer missing: $installer" }
+
+      - name: Upload installer and published runtime
         uses: actions/upload-artifact@v4
         with:
           name: WebKitBrowser-Windows-x64
           path: |
-            **/AppPackages/**
-            **/bin/x64/Release/**
-            **/bin/Release/**
+            installer-output/*.exe
+            publish/win-x64/**
           if-no-files-found: error
           retention-days: 14
+
+  release:
+    name: Publish versioned GitHub Release
+    if: ${{ github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch') }}
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out release metadata
+        uses: actions/checkout@v5
+        with:
+          ref: main
+
+      - name: Read version and matching release notes
+        id: release_meta
+        shell: bash
+        run: |
+          VERSION="$(tr -d '\r\n' < VERSION)"
+          test -n "$VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          python3 - "$VERSION" RELEASE_NOTES.md release-notes.md <<'PY'
+          import sys
+          from pathlib import Path
+          version, source, destination = sys.argv[1:]
+          text = Path(source).read_text(encoding="utf-8")
+          selected = []
+          for section in text.split("## [")[1:]:
+              heading, separator, remainder = section.partition("]")
+              if separator and heading == version:
+                  selected.append("## [" + heading + "]" + remainder)
+          if not selected:
+              raise SystemExit(f"No release notes found for {version}")
+          Path(destination).write_text("\n\n".join(selected).strip() + "\n", encoding="utf-8")
+          PY
+
+      - name: Download installer artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: WebKitBrowser-Windows-x64
+          path: release-assets
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.release_meta.outputs.version }}
+        shell: bash
+        run: |
+          mapfile -d '' installers < <(find release-assets -type f -name '*-Setup.exe' -print0)
+          if [ "${#installers[@]}" -ne 1 ]; then
+            echo "Expected exactly one x64 installer, found ${#installers[@]}." >&2
+            find release-assets -maxdepth 3 -type f -print >&2
+            exit 1
+          fi
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            gh release edit "$VERSION" --title "$VERSION" --notes-file release-notes.md
+          else
+            gh release create "$VERSION" --title "$VERSION" --notes-file release-notes.md --target main
+          fi
+          gh release upload "$VERSION" "${installers[@]}" --clobber
