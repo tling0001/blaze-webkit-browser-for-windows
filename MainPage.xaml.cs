@@ -163,7 +163,7 @@ public sealed partial class MainPage : Page
 
     private void OnHistoryClick(object sender, RoutedEventArgs e)
     {
-        var flyout = new MenuFlyout();
+        var flyout = CreateMenuFlyout();
         if (ViewModel.History.Count == 0)
             flyout.Items.Add(new MenuFlyoutItem { Text = "No browsing history yet", IsEnabled = false });
         else
@@ -185,7 +185,7 @@ public sealed partial class MainPage : Page
 
     private void OnDownloadsClick(object sender, RoutedEventArgs e)
     {
-        var flyout = new MenuFlyout();
+        var flyout = CreateMenuFlyout();
         if (ViewModel.Downloads.Count == 0)
             flyout.Items.Add(new MenuFlyoutItem { Text = "No downloads yet", IsEnabled = false });
         else
