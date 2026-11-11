@@ -1,9 +1,6 @@
 name: Bootstrap WinUI 3 project
 
 on:
-  push:
-    paths:
-      - '.github/workflows/bootstrap-winui.yml'
   workflow_dispatch:
 
 permissions:
