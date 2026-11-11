@@ -116,6 +116,46 @@ try {
         Invoke-Ui @('wait-for', 'ReduceMotion', '--gone', '-t', '3000') | Out-Null
     }
 
+    Test-UI 'WebKit JavaScript alert, confirm and prompt use native WinUI dialogs' {
+        $dialogPage = Join-Path $env:TEMP "blaze-js-dialog-$workflowId.html"
+        @'
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Blaze dialog test</title></head>
+<body>
+<script>
+window.addEventListener('load', () => {
+    alert('Blaze alert test');
+    if (confirm('Blaze confirmation test')) {
+        const value = prompt('Blaze prompt test', 'initial value');
+        document.body.dataset.dialogResult = value || '';
+    }
+});
+</script>
+<h1>JavaScript dialog test</h1>
+</body>
+</html>
+'@ | Set-Content -LiteralPath $dialogPage -Encoding utf8
+
+        $dialogUri = ([Uri]$dialogPage).AbsoluteUri
+        Invoke-Ui @('set-value', 'AddressBox', $dialogUri) | Out-Null
+        Invoke-Ui @('send-keys', 'enter', '--via', 'send-input') | Out-Null
+
+        Invoke-Ui @('wait-for', 'JavaScriptDialog_alert', '-t', '15000') | Out-Null
+        Save-Screenshot '04-javascript-alert.png'
+        Invoke-Ui @('invoke', 'Primary') | Out-Null
+
+        Invoke-Ui @('wait-for', 'JavaScriptDialog_confirmation', '-t', '10000') | Out-Null
+        Save-Screenshot '05-javascript-confirm.png'
+        Invoke-Ui @('invoke', 'Primary') | Out-Null
+
+        Invoke-Ui @('wait-for', 'JavaScriptDialog_prompt', '-t', '10000') | Out-Null
+        Invoke-Ui @('set-value', 'JavaScriptPromptInput', 'Blaze prompt passed') | Out-Null
+        Save-Screenshot '06-javascript-prompt.png'
+        Invoke-Ui @('invoke', 'Primary') | Out-Null
+        Invoke-Ui @('wait-for', 'JavaScriptDialog_prompt', '--gone', '-t', '5000') | Out-Null
+    }
+
     Test-UI 'Tab and settings controls expose AutomationIds' {
         $inspection = Invoke-Ui @('inspect', '--interactive', '--json') | ConvertFrom-Json
         $elements = @(Get-Elements @($inspection.windows | ForEach-Object { $_.elements }))
@@ -134,6 +174,7 @@ try {
     } catch {
         $results.Add(@{ name = 'Release UI workflow'; status = 'FAIL'; detail = "$_" })
     } finally {
+        if ($dialogPage -and (Test-Path -LiteralPath $dialogPage)) { Remove-Item -LiteralPath $dialogPage -Force }
         $env:WINAPP_UI_WORKFLOW_ID = $previousWorkflowId
     }
 }
