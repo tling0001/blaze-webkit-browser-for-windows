@@ -18,4 +18,5 @@ EXPORTS
     WB_SetDownloadCallback
     WB_SetPermissionCallback
     WB_SetJavaScriptDialogCallback
+    WB_SetPopupCallbacks
     WB_ResolveJavaScriptDialog
