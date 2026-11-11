@@ -420,7 +420,8 @@ public sealed partial class MainPage : Page
             DefaultButton = isAlert ? ContentDialogButton.Primary : ContentDialogButton.Close,
             XamlRoot = XamlRoot
         };
-        AutomationProperties.SetAutomationId(dialog, "JavaScriptDialog");
+        AutomationProperties.SetAutomationId(dialog, $"JavaScriptDialog_{kind.Replace(" ", "_")}");
+        AutomationProperties.SetName(dialog, $"JavaScript {kind}");
 
         var accepted = isAlert;
         string? response = null;
