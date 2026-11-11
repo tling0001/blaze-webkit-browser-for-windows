@@ -10,6 +10,10 @@
 #include <WebKit/WKPreferencesRef.h>
 #include <WebKit/WKURL.h>
 #include <WebKit/WKView.h>
+#include <WebKit/WKContext.h>
+#include <WebKit/WKContextConfigurationRef.h>
+#include <WebKit/WKPreferencesRef.h>
+#include <WebKit/WKPageConfigurationRef.h>
 #include <WebKit/WKWebsiteDataStoreRef.h>
 #include <WebKit/WKHTTPCookieStore.h>
 #include <WebKit/WKWebsiteDataStoreConfigurationRef.h>
