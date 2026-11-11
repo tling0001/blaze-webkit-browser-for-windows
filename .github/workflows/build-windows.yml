@@ -53,19 +53,13 @@ jobs:
       - name: Build x64
         run: dotnet build "${{ steps.project.outputs.path }}" --configuration Release --no-restore -p:Platform=x64
 
-      - name: Publish unpackaged x64 app
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $project = "${{ steps.project.outputs.path }}"
-          dotnet publish $project --configuration Release --no-restore --runtime win-x64 --self-contained false -p:Platform=x64 -p:WindowsPackageType=None -p:PublishSingleFile=false
-
       - name: Upload build output
         uses: actions/upload-artifact@v4
         with:
           name: WebKitBrowser-Windows-x64
           path: |
-            **/bin/Release/**/publish/**
-            **/bin/Release/net*/**
+            **/AppPackages/**
+            **/bin/x64/Release/**
+            **/bin/Release/**
           if-no-files-found: error
           retention-days: 14
