@@ -84,6 +84,55 @@ int copyWKString(WKStringRef value, wchar_t* buffer, int capacity)
     buffer[copied] = L'\0';
     return required - 1;
 }
+
+WKWebsiteDataStoreRef sharedDataStore = nullptr;
+WKContextRef sharedContext = nullptr;
+WKPreferencesRef sharedPreferences = nullptr;
+unsigned activeViewCount = 0;
+
+void releaseSharedEngine()
+{
+    if (activeViewCount > 0)
+        --activeViewCount;
+    if (activeViewCount != 0)
+        return;
+    if (sharedPreferences) WKRelease(sharedPreferences);
+    if (sharedContext) WKRelease(sharedContext);
+    if (sharedDataStore) WKRelease(sharedDataStore);
+    sharedPreferences = nullptr;
+    sharedContext = nullptr;
+    sharedDataStore = nullptr;
+}
+
+bool acquireSharedEngine()
+{
+    if (!sharedDataStore || !sharedContext || !sharedPreferences) {
+        auto storeConfiguration = WKWebsiteDataStoreConfigurationCreate();
+        auto contextConfiguration = WKContextConfigurationCreate();
+        auto store = storeConfiguration ? WKWebsiteDataStoreCreateWithConfiguration(storeConfiguration) : nullptr;
+        auto context = contextConfiguration ? WKContextCreateWithConfiguration(contextConfiguration) : nullptr;
+        auto preferences = WKPreferencesCreate();
+
+        if (!store || !context || !preferences) {
+            if (preferences) WKRelease(preferences);
+            if (context) WKRelease(context);
+            if (store) WKRelease(store);
+            if (contextConfiguration) WKRelease(contextConfiguration);
+            if (storeConfiguration) WKRelease(storeConfiguration);
+            return false;
+        }
+
+        sharedDataStore = store;
+        sharedContext = context;
+        sharedPreferences = preferences;
+        WKContextSetCacheModel(sharedContext, kWKCacheModelPrimaryWebBrowser);
+
+        WKRelease(contextConfiguration);
+        WKRelease(storeConfiguration);
+    }
+    ++activeViewCount;
+    return true;
+}
 }
 
 std::wstring fromWKString(WKStringRef value)
@@ -239,46 +288,33 @@ WB_VIEW_HANDLE WB_Create(HWND parent, int x, int y, int width, int height, const
     if (!parent || !IsWindow(parent) || width <= 0 || height <= 0)
         return nullptr;
 
-    auto dataStoreConfiguration = WKWebsiteDataStoreConfigurationCreate();
-    if (!dataStoreConfiguration)
+    if (!acquireSharedEngine())
         return nullptr;
-    auto dataStore = WKWebsiteDataStoreCreateWithConfiguration(dataStoreConfiguration);
-    auto contextConfiguration = WKContextConfigurationCreate();
-    auto context = contextConfiguration ? WKContextCreateWithConfiguration(contextConfiguration) : nullptr;
-    auto preferences = WKPreferencesCreate();
-    auto pageConfiguration = WKPageConfigurationCreate();
 
-    if (!dataStore || !context || !preferences || !pageConfiguration) {
-        if (pageConfiguration) WKRelease(pageConfiguration);
-        if (preferences) WKRelease(preferences);
-        if (context) WKRelease(context);
-        if (contextConfiguration) WKRelease(contextConfiguration);
-        if (dataStore) WKRelease(dataStore);
-        WKRelease(dataStoreConfiguration);
+    auto pageConfiguration = WKPageConfigurationCreate();
+    if (!pageConfiguration) {
+        releaseSharedEngine();
         return nullptr;
     }
 
-    WKPageConfigurationSetWebsiteDataStore(pageConfiguration, dataStore);
-    WKPageConfigurationSetContext(pageConfiguration, context);
-    WKPageConfigurationSetPreferences(pageConfiguration, preferences);
+    WKPageConfigurationSetWebsiteDataStore(pageConfiguration, sharedDataStore);
+    WKPageConfigurationSetContext(pageConfiguration, sharedContext);
+    WKPageConfigurationSetPreferences(pageConfiguration, sharedPreferences);
 
     RECT rect { x, y, x + width, y + height };
     auto nativeView = WKViewCreate(rect, pageConfiguration, parent);
-
     WKRelease(pageConfiguration);
-    WKRelease(preferences);
-    WKRelease(context);
-    WKRelease(contextConfiguration);
-    WKRelease(dataStore);
-    WKRelease(dataStoreConfiguration);
 
-    if (!nativeView)
+    if (!nativeView) {
+        releaseSharedEngine();
         return nullptr;
+    }
 
     WKViewSetIsInWindow(nativeView, true);
     auto nativeWindow = WKViewGetWindow(nativeView);
     if (!nativeWindow || !IsWindow(nativeWindow)) {
         WKRelease(nativeView);
+        releaseSharedEngine();
         return nullptr;
     }
 
@@ -286,6 +322,7 @@ WB_VIEW_HANDLE WB_Create(HWND parent, int x, int y, int width, int height, const
     if (!result) {
         WKViewSetIsInWindow(nativeView, false);
         WKRelease(nativeView);
+        releaseSharedEngine();
         return nullptr;
     }
 
@@ -323,6 +360,7 @@ void WB_Destroy(WB_VIEW_HANDLE view)
     }
     view->window = nullptr;
     delete view;
+    releaseSharedEngine();
 }
 
 void WB_SetBounds(WB_VIEW_HANDLE view, int x, int y, int width, int height)
