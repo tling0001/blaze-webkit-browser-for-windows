@@ -52,6 +52,10 @@ struct WB_VIEW {
     void* permissionUserData{};
     WB_JAVASCRIPT_DIALOG_CALLBACK javaScriptDialogCallback{};
     void* javaScriptDialogUserData{};
+    WB_NEW_PAGE_CALLBACK newPageCallback{};
+    WB_CLOSE_PAGE_CALLBACK closePageCallback{};
+    void* popupUserData{};
+    HWND parentWindow{};
 };
 
 std::wstring fromWKString(WKStringRef value);
@@ -409,12 +413,115 @@ void runBeforeUnloadConfirmPanel(WKPageRef, WKStringRef messageValue, WKFrameRef
     view->javaScriptDialogCallback(3, L"", message.c_str(), L"", listener, view->javaScriptDialogUserData);
 }
 
-WB_VIEW_HANDLE WB_Create(HWND parent, int x, int y, int width, int height, const wchar_t*)
+namespace {
+WB_VIEW_HANDLE createNativeView(HWND parent, int x, int y, int width, int height,
+    WKPageConfigurationRef pageConfiguration, const WB_VIEW* opener, bool showImmediately);
+
+WKPageRef createNewPage(WKPageRef, WKPageConfigurationRef pageConfiguration,
+    WKNavigationActionRef, WKWindowFeaturesRef, const void* clientInfo)
 {
-    if (!parent || !IsWindow(parent) || width <= 0 || height <= 0)
+    auto* opener = const_cast<WB_VIEW*>(static_cast<const WB_VIEW*>(clientInfo));
+    if (!opener || !opener->parentWindow || !IsWindow(opener->parentWindow) || !acquireSharedEngine())
         return nullptr;
 
-    if (!acquireSharedEngine())
+    auto* popup = createNativeView(opener->parentWindow, 0, 0, 1, 1, pageConfiguration, opener, false);
+    if (!popup) {
+        releaseSharedEngine();
+        return nullptr;
+    }
+
+    if (!popup->newPageCallback || popup->newPageCallback(popup, popup->popupUserData) == 0) {
+        WB_Destroy(popup);
+        return nullptr;
+    }
+
+    auto page = WKViewGetPage(popup->view);
+    if (!page) {
+        WB_Destroy(popup);
+        return nullptr;
+    }
+    WKRetain(reinterpret_cast<WKTypeRef>(page));
+    return page;
+}
+
+void closePage(WKPageRef, const void* clientInfo)
+{
+    auto* view = const_cast<WB_VIEW*>(static_cast<const WB_VIEW*>(clientInfo));
+    if (view && view->closePageCallback)
+        view->closePageCallback(view, view->popupUserData);
+}
+
+WB_VIEW_HANDLE createNativeView(HWND parent, int x, int y, int width, int height,
+    WKPageConfigurationRef pageConfiguration, const WB_VIEW* opener, bool showImmediately)
+{
+    if (!parent || !IsWindow(parent) || width <= 0 || height <= 0 || !pageConfiguration)
+        return nullptr;
+
+    RECT rect { x, y, x + width, y + height };
+    auto nativeView = WKViewCreate(rect, pageConfiguration, parent);
+    if (!nativeView)
+        return nullptr;
+
+    WKViewSetIsInWindow(nativeView, true);
+    auto nativeWindow = WKViewGetWindow(nativeView);
+    if (!nativeWindow || !IsWindow(nativeWindow)) {
+        WKViewSetIsInWindow(nativeView, false);
+        WKRelease(nativeView);
+        return nullptr;
+    }
+
+    auto result = new (std::nothrow) WB_VIEW;
+    if (!result) {
+        WKViewSetIsInWindow(nativeView, false);
+        WKRelease(nativeView);
+        return nullptr;
+    }
+
+    result->view = nativeView;
+    result->window = nativeWindow;
+    result->parentWindow = parent;
+    if (opener) {
+        result->downloadCallback = opener->downloadCallback;
+        result->downloadUserData = opener->downloadUserData;
+        result->permissionCallback = opener->permissionCallback;
+        result->permissionUserData = opener->permissionUserData;
+        result->javaScriptDialogCallback = opener->javaScriptDialogCallback;
+        result->javaScriptDialogUserData = opener->javaScriptDialogUserData;
+        result->newPageCallback = opener->newPageCallback;
+        result->closePageCallback = opener->closePageCallback;
+        result->popupUserData = opener->popupUserData;
+    }
+
+    auto page = WKViewGetPage(nativeView);
+    result->navigationClient.base.version = 3;
+    result->navigationClient.base.clientInfo = result;
+    result->navigationClient.navigationActionDidBecomeDownload = navigationActionDidBecomeDownload;
+    result->navigationClient.navigationResponseDidBecomeDownload = navigationResponseDidBecomeDownload;
+    result->navigationClient.contextMenuDidCreateDownload = contextMenuDidCreateDownload;
+    WKPageSetPageNavigationClient(page, &result->navigationClient.base);
+
+    result->uiClient.base.version = 13;
+    result->uiClient.base.clientInfo = result;
+    result->uiClient.createNewPage = createNewPage;
+    result->uiClient.close = closePage;
+    result->uiClient.decidePolicyForGeolocationPermissionRequest = decideGeolocationPermission;
+    result->uiClient.decidePolicyForNotificationPermissionRequest = decideNotificationPermission;
+    result->uiClient.decidePolicyForUserMediaPermissionRequest = denyUserMediaPermission;
+    result->uiClient.runJavaScriptAlert = runJavaScriptAlert;
+    result->uiClient.runJavaScriptConfirm = runJavaScriptConfirm;
+    result->uiClient.runJavaScriptPrompt = runJavaScriptPrompt;
+    result->uiClient.runBeforeUnloadConfirmPanel = runBeforeUnloadConfirmPanel;
+    WKPageSetPageUIClient(page, &result->uiClient.base);
+
+    SetWindowPos(nativeWindow, nullptr, x, y, width, height, SWP_NOZORDER | SWP_NOACTIVATE);
+    ShowWindow(nativeWindow, showImmediately ? SW_SHOW : SW_HIDE);
+    return result;
+}
+}
+
+WB_VIEW_HANDLE WB_Create(HWND parent, int x, int y, int width, int height, const wchar_t* initialUrl)
+{
+    if (!parent || !IsWindow(parent) || width <= 0 || height <= 0 || !acquireSharedEngine())
         return nullptr;
 
     auto pageConfiguration = WKPageConfigurationCreate();
@@ -427,55 +534,15 @@ WB_VIEW_HANDLE WB_Create(HWND parent, int x, int y, int width, int height, const
     WKPageConfigurationSetContext(pageConfiguration, sharedContext);
     WKPageConfigurationSetPreferences(pageConfiguration, sharedPreferences);
 
-    RECT rect { x, y, x + width, y + height };
-    auto nativeView = WKViewCreate(rect, pageConfiguration, parent);
+    auto result = createNativeView(parent, x, y, width, height, pageConfiguration, nullptr, true);
     WKRelease(pageConfiguration);
-
-    if (!nativeView) {
-        releaseSharedEngine();
-        return nullptr;
-    }
-
-    WKViewSetIsInWindow(nativeView, true);
-    auto nativeWindow = WKViewGetWindow(nativeView);
-    if (!nativeWindow || !IsWindow(nativeWindow)) {
-        WKRelease(nativeView);
-        releaseSharedEngine();
-        return nullptr;
-    }
-
-    auto result = new (std::nothrow) WB_VIEW;
     if (!result) {
-        WKViewSetIsInWindow(nativeView, false);
-        WKRelease(nativeView);
         releaseSharedEngine();
         return nullptr;
     }
 
-    result->view = nativeView;
-    result->window = nativeWindow;
-
-    auto page = WKViewGetPage(nativeView);
-    result->navigationClient.base.version = 3;
-    result->navigationClient.base.clientInfo = result;
-    result->navigationClient.navigationActionDidBecomeDownload = navigationActionDidBecomeDownload;
-    result->navigationClient.navigationResponseDidBecomeDownload = navigationResponseDidBecomeDownload;
-    result->navigationClient.contextMenuDidCreateDownload = contextMenuDidCreateDownload;
-    WKPageSetPageNavigationClient(page, &result->navigationClient.base);
-
-    result->uiClient.base.version = 13;
-    result->uiClient.base.clientInfo = result;
-    result->uiClient.decidePolicyForGeolocationPermissionRequest = decideGeolocationPermission;
-    result->uiClient.decidePolicyForNotificationPermissionRequest = decideNotificationPermission;
-    result->uiClient.decidePolicyForUserMediaPermissionRequest = denyUserMediaPermission;
-    result->uiClient.runJavaScriptAlert = runJavaScriptAlert;
-    result->uiClient.runJavaScriptConfirm = runJavaScriptConfirm;
-    result->uiClient.runJavaScriptPrompt = runJavaScriptPrompt;
-    result->uiClient.runBeforeUnloadConfirmPanel = runBeforeUnloadConfirmPanel;
-    WKPageSetPageUIClient(page, &result->uiClient.base);
-
-    SetWindowPos(nativeWindow, nullptr, x, y, width, height, SWP_NOZORDER | SWP_NOACTIVATE);
-    ShowWindow(nativeWindow, SW_SHOW);
+    if (initialUrl && *initialUrl)
+        WB_Navigate(result, initialUrl);
     return result;
 }
 
@@ -613,6 +680,16 @@ void WB_SetJavaScriptDialogCallback(WB_VIEW_HANDLE view, WB_JAVASCRIPT_DIALOG_CA
         return;
     view->javaScriptDialogCallback = callback;
     view->javaScriptDialogUserData = userData;
+}
+
+void WB_SetPopupCallbacks(WB_VIEW_HANDLE view, WB_NEW_PAGE_CALLBACK newPageCallback,
+    WB_CLOSE_PAGE_CALLBACK closePageCallback, void* userData)
+{
+    if (!view)
+        return;
+    view->newPageCallback = newPageCallback;
+    view->closePageCallback = closePageCallback;
+    view->popupUserData = userData;
 }
 
 void WB_ResolveJavaScriptDialog(void* listener, int dialogType, BOOL accepted, const wchar_t* response)
