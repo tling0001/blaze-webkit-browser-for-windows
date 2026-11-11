@@ -10,7 +10,7 @@
 
 ### Native host and reliability
 - Define the missing native WebKit view/download context structures and forward declaration used by the C++ bridge.
-- Move the persistent WebKit profile under `%LOCALAPPDATA%\\Blaze\\WebKitData`.
+- Move the persistent WebKit profile under `%LOCALAPPDATA%\Blaze\WebKitData`.
 - Serialize and atomically replace browser-state JSON saves to avoid concurrent writes and partial files.
 - Keep native callback state rooted for the process lifetime so late download/dialog callbacks cannot dereference a freed GCHandle.
 - Use a temporary short drive mapping for the WebKit build to keep ICU/vcpkg CMake object paths within Windows limits.
