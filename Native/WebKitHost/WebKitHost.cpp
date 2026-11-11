@@ -1,63 +1,37 @@
 #include "WebKitHost.h"
 
 #include <WebKit/WebKit2_C.h>
-#include <WebKit/WKContextConfigurationRef.h>
-#include <WebKit/WKPage.h>
-#include <WebKit/WKPagePrivate.h>
-#include <WebKit/WKPreferencesRefPrivate.h>
-#include <WebKit/WKPageConfigurationRef.h>
-#include <WebKit/WKContext.h>
-#include <WebKit/WKPreferencesRef.h>
-#include <WebKit/WKURL.h>
-#include <WebKit/WKView.h>
 #include <WebKit/WKContext.h>
 #include <WebKit/WKContextConfigurationRef.h>
-#include <WebKit/WKPreferencesRef.h>
-#include <WebKit/WKPageConfigurationRef.h>
-#include <WebKit/WKWebsiteDataStoreRef.h>
-#include <WebKit/WKHTTPCookieStore.h>
-#include <WebKit/WKWebsiteDataStoreConfigurationRef.h>
-#include <WebKit/WKPageNavigationClient.h>
-#include <WebKit/WKPageUIClient.h>
-#include <WebKit/WKDownloadRef.h>
 #include <WebKit/WKDownloadClient.h>
-#include <WebKit/WKNavigationResponseRef.h>
-#include <WebKit/WKURLResponse.h>
-#include <WebKit/WKURL.h>
-#include <WebKit/WKSecurityOriginRef.h>
+#include <WebKit/WKDownloadRef.h>
 #include <WebKit/WKGeolocationPermissionRequest.h>
+#include <WebKit/WKHTTPCookieStore.h>
+#include <WebKit/WKNavigationResponseRef.h>
 #include <WebKit/WKNotificationPermissionRequest.h>
+#include <WebKit/WKPage.h>
+#include <WebKit/WKPageConfigurationRef.h>
+#include <WebKit/WKPageNavigationClient.h>
+#include <WebKit/WKPagePrivate.h>
+#include <WebKit/WKPageUIClient.h>
+#include <WebKit/WKPreferencesRef.h>
+#include <WebKit/WKPreferencesRefPrivate.h>
+#include <WebKit/WKSecurityOriginRef.h>
+#include <WebKit/WKURL.h>
+#include <WebKit/WKURLResponse.h>
 #include <WebKit/WKUserMediaPermissionRequest.h>
+#include <WebKit/WKView.h>
+#include <WebKit/WKWebsiteDataStoreConfigurationRef.h>
+#include <WebKit/WKWebsiteDataStoreRef.h>
 
 #include <algorithm>
+#include <cwchar>
+#include <filesystem>
 #include <new>
 #include <string>
-#include <vector>
-#include <cwchar>
 #include <system_error>
-#include <filesystem>
-#include <ShlObj.h>
-#include <string>
 #include <vector>
-
-struct WB_VIEW {
-    WKViewRef view { nullptr };
-    HWND window { nullptr };
-    WKPageNavigationClientV3 navigationClient { };
-    WKPageUIClientV13 uiClient { };
-    WB_DOWNLOAD_CALLBACK downloadCallback { nullptr };
-    void* downloadUserData { nullptr };
-    WB_PERMISSION_CALLBACK permissionCallback { nullptr };
-    void* permissionUserData { nullptr };
-};
-
-struct DownloadContext {
-    WB_DOWNLOAD_CALLBACK callback { nullptr };
-    void* userData { nullptr };
-    std::wstring destination;
-    long long bytesWritten { 0 };
-    long long bytesExpected { 0 };
-};
+#include <ShlObj.h>
 
 namespace {
 std::string toUtf8(const wchar_t* value)
