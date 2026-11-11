@@ -16,6 +16,12 @@ public sealed partial class MainPage : Page
 {
     public MainPageViewModel ViewModel { get; } = new();
 
+    private static readonly WebKitNative.DownloadCallback DownloadCallbackHandler = OnNativeDownload;
+    private static readonly WebKitNative.PermissionCallback PermissionCallbackHandler = OnNativePermission;
+    private static readonly WebKitNative.JavaScriptDialogCallback JavaScriptDialogCallbackHandler = OnNativeJavaScriptDialog;
+    private static readonly WebKitNative.NewPageCallback NewPageCallbackHandler = OnNativeNewPage;
+    private static readonly WebKitNative.ClosePageCallback ClosePageCallbackHandler = OnNativePageClose;
+
     private readonly Dictionary<TabViewItem, BrowserTab> _tabItems = [];
     private readonly SemaphoreSlim _dialogGate = new(1, 1);
     private DispatcherQueueTimer? _stateTimer;
@@ -23,11 +29,6 @@ public sealed partial class MainPage : Page
     private bool _isPageUnloading;
     private bool _engineAvailable;
     private GCHandle _nativeCallbackHandle;
-    private static readonly WebKitNative.DownloadCallback DownloadCallbackHandler = OnNativeDownload;
-    private static readonly WebKitNative.PermissionCallback PermissionCallbackHandler = OnNativePermission;
-    private static readonly WebKitNative.JavaScriptDialogCallback JavaScriptDialogCallbackHandler = OnNativeJavaScriptDialog;
-    private static readonly WebKitNative.NewPageCallback NewPageCallbackHandler = OnNativeNewPage;
-    private static readonly WebKitNative.ClosePageCallback ClosePageCallbackHandler = OnNativePageClose;
 
     public MainPage()
     {
@@ -44,7 +45,7 @@ public sealed partial class MainPage : Page
         await ViewModel.InitializeAsync();
         ApplyMotionPreferences();
         if (!_nativeCallbackHandle.IsAllocated)
-            // Native download and JavaScript result callbacks can outlive a WKView; retain this bridge for the app process lifetime.
+            // Native download, dialog and popup callbacks can outlive a WKView; retain this bridge for the app process lifetime.
             _nativeCallbackHandle = GCHandle.Alloc(this);
         foreach (var tab in ViewModel.Tabs)
             AddTabItem(tab);
