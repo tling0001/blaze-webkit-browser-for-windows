@@ -1,5 +1,21 @@
 # Blaze release notes
 
+## [2026.11.0-port.4] - 2026-11-11
+
+### Native dialogs and motion
+- Bridge WebKit JavaScript alert, confirm, prompt and before-unload requests to native WinUI ContentDialogs.
+- Retain WebKit result listeners across asynchronous dialog presentation and always resolve them on dismissal or failure.
+- Add UI smoke coverage for sequential JavaScript dialogs and the reduced-motion settings dialog.
+- Disable MenuFlyout open/close animations when Blaze Reduce motion or the Windows accessibility animation setting is active.
+
+### Native host and reliability
+- Define the missing native WebKit view/download context structures and forward declaration used by the C++ bridge.
+- Move the persistent WebKit profile under `%LOCALAPPDATA%\\Blaze\\WebKitData`.
+- Serialize and atomically replace browser-state JSON saves to avoid concurrent writes and partial files.
+- Keep native callback state rooted for the process lifetime so late download/dialog callbacks cannot dereference a freed GCHandle.
+- Use a temporary short drive mapping for the WebKit build to keep ICU/vcpkg CMake object paths within Windows limits.
+- Preserve vcpkg/CMake diagnostics when the WebKit engine build fails.
+
 ## [2026.11.0-port.3] - 2026-11-11
 
 ### User experience
@@ -10,7 +26,7 @@
 
 ### Windows installer and CI
 - Add a per-user Blaze-Setup.exe installer that installs the signed WinUI package.
-- Fix WebKit CI dependency discovery to use the actual Chocolatey XAMPP install path (C:\\xampp).
+- Fix WebKit CI dependency discovery to use the actual Chocolatey XAMPP install path (C:\xampp).
 - Verify WinUI transition APIs against the restored app references before compiling.
 - Repair the release-version script and keep project, package and release-note versions synchronized.
 
