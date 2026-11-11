@@ -131,6 +131,9 @@ window.addEventListener('load', () => {
         $popupUri = ([Uri]$popupPage).AbsoluteUri
         Invoke-Ui @('set-value', 'AddressBox', $popupUri) | Out-Null
         Invoke-Ui @('send-keys', 'enter', '--via', 'send-input') | Out-Null
+        Invoke-Ui @('wait-for', 'PopupPermissionDialog', '-t', '10000') | Out-Null
+        Save-Screenshot '03-popup-permission.png'
+        Invoke-Ui @('invoke', 'Primary') | Out-Null
 
         $popupTab = $null
         for ($attempt = 0; $attempt -lt 20; $attempt++) {
@@ -143,7 +146,7 @@ window.addEventListener('load', () => {
             Start-Sleep -Milliseconds 500
         }
         if (-not $popupTab) { throw 'window.open did not create a visible WinUI browser tab for the popup page.' }
-        Save-Screenshot '03-webkit-popup-tab.png'
+        Save-Screenshot '04-webkit-popup-tab.png'
         Invoke-Ui @('wait-for', $popupTab.automationId, '--gone', '-t', '10000') | Out-Null
     }
 
@@ -155,9 +158,12 @@ window.addEventListener('load', () => {
         if (-not ($elements | Where-Object { $_.automationId -eq 'ReduceMotion' })) {
             throw 'The native Settings ContentDialog did not expose the ReduceMotion ToggleSwitch.'
         }
+        if (-not ($elements | Where-Object { $_.automationId -eq 'PopupHandlingMode' })) {
+            throw 'The native Settings ContentDialog did not expose the PopupHandlingMode RadioButtons.'
+        }
         Invoke-Ui @('click', 'ReduceMotion') | Out-Null
         Invoke-Ui @('wait-for', 'ReduceMotion', '--value', 'On', '-t', '3000') | Out-Null
-        Save-Screenshot '03-blaze-settings-dialog.png'
+        Save-Screenshot '05-blaze-settings-dialog.png'
         Invoke-Ui @('invoke', 'Primary') | Out-Null
         Invoke-Ui @('wait-for', 'ReduceMotion', '--gone', '-t', '3000') | Out-Null
 
@@ -193,16 +199,16 @@ window.addEventListener('load', () => {
         Invoke-Ui @('send-keys', 'enter', '--via', 'send-input') | Out-Null
 
         Invoke-Ui @('wait-for', 'JavaScriptDialog_alert', '-t', '15000') | Out-Null
-        Save-Screenshot '04-javascript-alert.png'
+        Save-Screenshot '06-javascript-alert.png'
         Invoke-Ui @('invoke', 'Primary') | Out-Null
 
         Invoke-Ui @('wait-for', 'JavaScriptDialog_confirmation', '-t', '10000') | Out-Null
-        Save-Screenshot '05-javascript-confirm.png'
+        Save-Screenshot '07-javascript-confirm.png'
         Invoke-Ui @('invoke', 'Primary') | Out-Null
 
         Invoke-Ui @('wait-for', 'JavaScriptDialog_prompt', '-t', '10000') | Out-Null
         Invoke-Ui @('set-value', 'JavaScriptPromptInput', 'Blaze prompt passed') | Out-Null
-        Save-Screenshot '06-javascript-prompt.png'
+        Save-Screenshot '08-javascript-prompt.png'
         Invoke-Ui @('invoke', 'Primary') | Out-Null
         Invoke-Ui @('wait-for', 'JavaScriptDialog_prompt', '--gone', '-t', '5000') | Out-Null
         $promptResultFound = $false

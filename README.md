@@ -21,6 +21,7 @@ The upstream WinCairo port is an x64 development/testing port rather than a regu
 - Native child-window hosting for WebKit WKView; no WebView2 or Chromium fallback
 - Address/search, back/forward/reload/stop/home
 - Multiple tabs with per-tab native WebKit views and shared website data store/context
+- Configurable pop-up handling: ask before opening, always allow, or always deny
 - JavaScript `window.open()` and `target="_blank"` open a new native browser tab; `window.close()` closes the owning tab
 - Persistent sessions, browsing history and bookmarks
 - Downloads into the Windows Downloads folder with progress and completion tracking
@@ -66,5 +67,5 @@ For manual installation, see [`INSTALL.md`](INSTALL.md).
 
 - Upstream WinCairo release cadence and security servicing are not equivalent to WebKit's regularly released Apple/Igalia ports.
 - Camera and microphone access is denied; device picker and per-device permission model are not yet implemented.
-- Popup/new-window handling, certificate exception UI, and broader browser security hardening still need implementation and testing.
+- Certificate exception UI and broader browser security hardening still need implementation and testing.
 - A successful GitHub Actions build, UI smoke test and clean Windows installation are required before calling the package usable.

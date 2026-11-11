@@ -15,7 +15,7 @@ permissions:
 
 concurrency:
   # v2 uses a fresh concurrency group to bypass the stale Build 62 run.
-  group: Blaze-v2-${{ github.ref }}
+  group: Blaze-v3-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -26,6 +26,7 @@ jobs:
       - name: Enable Windows long paths for the WebKit source tree
         shell: pwsh
         run: |
+          New-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name LongPathsEnabled -PropertyType DWord -Value 1 -Force | Out-Null
           git config --global core.longpaths true
           git config --global core.autocrlf input
 
@@ -34,7 +35,7 @@ jobs:
         with:
           repository: WebKit/WebKit
           ref: d641dd75af65b0469eff30bb76a97e01e02633fc
-          path: webkit-src
+          path: w
           fetch-depth: 1
         env:
           GIT_CONFIG_COUNT: 2
@@ -48,9 +49,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            webkit-src/WebKitBuild/Release
-            webkit-src/WebKitLibraries/win
-          key: wincairo-x64-d641dd75af65b0469eff30bb76a97e01e02633fc-windows-2025-v1
+            w/WebKitBuild/Release
+            w/WebKitLibraries/win
+          key: wincairo-x64-d641dd75af65b0469eff30bb76a97e01e02633fc-windows-latest-v2
 
       - name: Install WinCairo build dependencies
         if: steps.webkit-cache.outputs.cache-hit != 'true'
@@ -91,14 +92,15 @@ jobs:
       - name: Build WebKit Windows port
         if: steps.webkit-cache.outputs.cache-hit != 'true'
         shell: pwsh
-        working-directory: webkit-src
+        working-directory: w
         run: |
           $ErrorActionPreference = 'Stop'
-          $sourceRoot = Join-Path $env:GITHUB_WORKSPACE 'webkit-src'
-          if (Test-Path 'W:\') { throw 'The short WebKit build drive W: is already in use.' }
-          subst W: $sourceRoot
-          if ($LASTEXITCODE -ne 0) { throw 'Could not map the WebKit source tree to the short W: drive.' }
-          Push-Location 'W:\'
+          $sourceRoot = Join-Path $env:GITHUB_WORKSPACE 'w'
+          if (-not (Test-Path -LiteralPath $sourceRoot -PathType Container)) { throw "WebKit source checkout was not found: $sourceRoot" }
+          # Keep source, vcpkg and build paths on the same physical drive.
+          # Mapping only the build output to W: makes Python os.path.relpath fail
+          # when Meson passes source paths from D: to a W: build directory.
+          Push-Location $sourceRoot
           try {
             $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
             $vs = & $vswhere -latest -property installationPath
@@ -109,15 +111,12 @@ jobs:
             $ninjaDir = Split-Path $env:WEBKIT_NINJA
             # vcvars64.bat can replace PATH; prepend all required tools after it runs.
             $extraPath = $env:WEBKIT_XAMPP + '\perl\bin;' + $env:WEBKIT_XAMPP + '\apache\bin;' + $pythonDir + ';' + $pythonDir + '\Scripts;' + $ninjaDir
-            $command = 'call "' + $vcvars + '" && set "PATH=' + $extraPath + ';%PATH%" && set "CC=clang-cl" && set "CXX=clang-cl" && where.exe ninja && ninja --version && perl Tools\Scripts\build-webkit --release'
+            $command = 'cd /d "' + $sourceRoot + '" && call "' + $vcvars + '" && set "PATH=' + $extraPath + ';%PATH%" && set "CC=clang-cl" && set "CXX=clang-cl" && where.exe ninja && ninja --version && perl Tools\Scripts\build-webkit --release'
             cmd.exe /d /s /c $command
             $buildExitCode = $LASTEXITCODE
             if ($buildExitCode -ne 0) { throw "The upstream WebKit Windows-port build failed (exit $buildExitCode)." }
           } finally {
             Pop-Location
-            subst W: /d
-            $unmapExitCode = $LASTEXITCODE
-            if ($unmapExitCode -ne 0) { Write-Warning 'The temporary WebKit drive mapping could not be removed.' }
           }
 
       - name: Print WebKit build diagnostics
@@ -126,7 +125,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Continue'
-          $releaseRoot = Join-Path $env:GITHUB_WORKSPACE 'webkit-src\WebKitBuild\Release'
+          $releaseRoot = Join-Path $env:GITHUB_WORKSPACE 'w\WebKitBuild\Release'
           $manifestLog = Join-Path $releaseRoot 'vcpkg-manifest-install.log'
           if (Test-Path -LiteralPath $manifestLog -PathType Leaf) {
             Write-Host '========== vcpkg-manifest-install.log (last 250 lines) =========='
@@ -147,15 +146,15 @@ jobs:
         with:
           name: WebKitEngine-build-diagnostics
           path: |
-            webkit-src/WebKitBuild/Release/vcpkg-manifest-install.log
-            webkit-src/WebKitBuild/Release/**/CMakeError.log
-            webkit-src/WebKitBuild/Release/**/CMakeOutput.log
+            w/WebKitBuild/Release/vcpkg-manifest-install.log
+            w/WebKitBuild/Release/**/CMakeError.log
+            w/WebKitBuild/Release/**/CMakeOutput.log
           if-no-files-found: ignore
           retention-days: 7
 
       - name: Verify WebKit runtime and build native WKView host
         shell: pwsh
-        working-directory: webkit-src
+        working-directory: w
         run: |
           $ErrorActionPreference = 'Stop'
           $webkitRoot = Join-Path $PWD 'WebKitBuild\Release'
@@ -172,7 +171,7 @@ jobs:
 
       - name: Stage complete x64 WebKit runtime
         shell: pwsh
-        working-directory: webkit-src
+        working-directory: w
         run: |
           $ErrorActionPreference = 'Stop'
           $stage = Join-Path $env:GITHUB_WORKSPACE 'webkit-runtime'

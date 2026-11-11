@@ -1,5 +1,17 @@
 # Blaze release notes
 
+## [1.0.3] - 2026-11-11
+
+### Browser settings and popup control
+- Add a Pop-up windows settings section with Ask (recommended), Always allow and Always deny policies.
+- Ask mode displays a native WinUI Allow / Ignore / Cancel dialog for each requested pop-up; ignored or cancelled pop-ups are destroyed without opening a tab.
+- Add UI automation coverage for the default Ask flow and the settings control.
+
+### WebKit build reliability
+- Keep the WinCairo source, vcpkg and build directories on the same drive to prevent Python path-relativization failures in HarfBuzz.
+- Enable Windows long-path support and use a shorter checkout directory.
+- Reuse the pinned WebKit build cache after the first successful engine build, avoiding a full WebKit rebuild on subsequent browser commits.
+
 ## [1.0.2] - 2026-11-11
 
 ### Build reliability

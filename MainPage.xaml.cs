@@ -23,6 +23,7 @@ public sealed partial class MainPage : Page
     private static readonly WebKitNative.ClosePageCallback ClosePageCallbackHandler = OnNativePageClose;
 
     private readonly Dictionary<TabViewItem, BrowserTab> _tabItems = [];
+    private readonly HashSet<IntPtr> _pendingPopups = [];
     private readonly SemaphoreSlim _dialogGate = new(1, 1);
     private DispatcherQueueTimer? _stateTimer;
     private bool _initialized;
@@ -69,6 +70,9 @@ public sealed partial class MainPage : Page
         _stateTimer?.Stop();
         _stateTimer = null;
         _ = ViewModel.SaveAsync();
+        foreach (var popup in _pendingPopups.ToArray())
+            WebKitNative.Destroy(popup);
+        _pendingPopups.Clear();
         foreach (var tab in ViewModel.Tabs)
             DestroyNativeView(tab);
     }
@@ -93,6 +97,11 @@ public sealed partial class MainPage : Page
     {
         if (nativeHandle == IntPtr.Zero)
             return;
+        if (_pendingPopups.Remove(nativeHandle))
+        {
+            WebKitNative.Destroy(nativeHandle);
+            return;
+        }
         var tab = ViewModel.Tabs.FirstOrDefault(candidate => candidate.NativeHandle == nativeHandle);
         if (tab is not null)
             CloseBrowserTab(tab);
@@ -145,6 +154,62 @@ public sealed partial class MainPage : Page
         UpdateClosableTabs();
         LayoutNativeViews();
         _ = ViewModel.SaveAsync();
+    }
+
+    private void QueuePopupPermission(IntPtr nativeHandle)
+    {
+        if (nativeHandle == IntPtr.Zero)
+            return;
+        if (!_initialized || _isPageUnloading || !_pendingPopups.Add(nativeHandle))
+        {
+            WebKitNative.Destroy(nativeHandle);
+            return;
+        }
+        _ = RequestPopupPermissionAsync(nativeHandle);
+    }
+
+    private async Task RequestPopupPermissionAsync(IntPtr nativeHandle)
+    {
+        try
+        {
+            if (!_initialized || _isPageUnloading)
+                return;
+
+            var source = "A website";
+            if (Uri.TryCreate(ViewModel.SelectedTab?.Url, UriKind.Absolute, out var uri)
+                && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
+                source = uri.Host;
+
+            var dialog = new ContentDialog
+            {
+                Title = "Allow pop-up?",
+                Content = $"{source} wants to open a new browser tab. Only allow pop-ups from sites you trust.",
+                PrimaryButtonText = "Allow",
+                SecondaryButtonText = "Ignore",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Close,
+                XamlRoot = XamlRoot
+            };
+            AutomationProperties.SetAutomationId(dialog, "PopupPermissionDialog");
+            AutomationProperties.SetName(dialog, "Pop-up permission request");
+
+            var result = await ShowDialogAsync(dialog);
+            if (result == ContentDialogResult.Primary && !_isPageUnloading && _pendingPopups.Remove(nativeHandle))
+            {
+                AttachPopupTab(nativeHandle);
+                return;
+            }
+        }
+        catch (Exception ex)
+        {
+            if (!_isPageUnloading)
+                ViewModel.StatusMessage = $"The pop-up request could not be displayed: {ex.Message}";
+        }
+        finally
+        {
+            if (_pendingPopups.Remove(nativeHandle))
+                WebKitNative.Destroy(nativeHandle);
+        }
     }
 
     private void OnTabSelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -311,15 +376,29 @@ public sealed partial class MainPage : Page
         var reduceMotion = new ToggleSwitch { Header = "Reduce motion", IsOn = ViewModel.Settings.ReduceMotion };
         reduceMotion.OffContent = "Animations on";
         reduceMotion.OnContent = "Reduced animations";
+        var popupHandling = new RadioButtons
+        {
+            Header = "Pop-up windows",
+            ItemsSource = new[] { "Ask (recommended)", "Always allow", "Always deny" },
+            SelectedIndex = (int)ViewModel.Settings.PopupHandlingMode
+        };
         AutomationProperties.SetAutomationId(position, "TabBarPosition");
         AutomationProperties.SetAutomationId(javaScript, "JavaScriptEnabled");
         AutomationProperties.SetAutomationId(images, "LoadImagesAutomatically");
         AutomationProperties.SetAutomationId(reduceMotion, "ReduceMotion");
+        AutomationProperties.SetAutomationId(popupHandling, "PopupHandlingMode");
+        AutomationProperties.SetName(popupHandling, "Pop-up windows");
         var panel = new StackPanel { Spacing = 12, MinWidth = 340 };
         panel.Children.Add(position);
         panel.Children.Add(javaScript);
         panel.Children.Add(images);
         panel.Children.Add(reduceMotion);
+        panel.Children.Add(popupHandling);
+        panel.Children.Add(new TextBlock
+        {
+            Text = "Ask shows an Allow, Ignore or Cancel prompt whenever a site requests a new window.",
+            TextWrapping = TextWrapping.Wrap
+        });
         panel.Children.Add(new TextBlock
         {
             Text = "Site permissions",
@@ -394,6 +473,12 @@ public sealed partial class MainPage : Page
         ViewModel.Settings.JavaScriptEnabled = javaScript.IsOn;
         ViewModel.Settings.LoadImagesAutomatically = images.IsOn;
         ViewModel.Settings.ReduceMotion = reduceMotion.IsOn;
+        ViewModel.Settings.PopupHandlingMode = popupHandling.SelectedIndex switch
+        {
+            1 => PopupHandlingMode.AlwaysAllow,
+            2 => PopupHandlingMode.AlwaysDeny,
+            _ => PopupHandlingMode.Ask
+        };
         ApplyMotionPreferences();
         foreach (var control in permissionControls)
             ViewModel.ApplySitePermission(control.Site, control.Location.IsOn, control.Notifications.IsOn);
@@ -508,16 +593,24 @@ public sealed partial class MainPage : Page
     {
         try
         {
-            if (GCHandle.FromIntPtr(userData).Target is MainPage page
-                && page._initialized && !page._isPageUnloading
-                && App.DispatcherQueue.TryEnqueue(() => page.AttachPopupTab(nativeHandle)))
-                return 1;
+            if (GCHandle.FromIntPtr(userData).Target is not MainPage page
+                || !page._initialized || page._isPageUnloading)
+                return 0;
+
+            var mode = page.ViewModel.Settings.PopupHandlingMode;
+            if (mode == PopupHandlingMode.AlwaysDeny)
+                return 0;
+
+            Action attach = mode == PopupHandlingMode.Ask
+                ? () => page.QueuePopupPermission(nativeHandle)
+                : () => page.AttachPopupTab(nativeHandle);
+            return App.DispatcherQueue.TryEnqueue(attach) ? 1 : 0;
         }
         catch
         {
-            // A popup must be rejected if its owning WinUI page is no longer available.
+            // Reject a popup if its owning WinUI page is no longer available.
+            return 0;
         }
-        return 0;
     }
 
     private static void OnNativePageClose(IntPtr nativeHandle, IntPtr userData)
