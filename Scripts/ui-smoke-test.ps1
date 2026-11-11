@@ -115,7 +115,7 @@ try {
     Write-Warning "UI smoke setup failed: $_"
 } finally {
     try {
-        if ($uiStarted) { Invoke-WinAppChecked @('ui', 'yield') | Out-Null }
+        if ($uiStarted) { Invoke-Ui @('yield') | Out-Null }
     } catch {
         $results.Add(@{ name = 'Release UI workflow'; status = 'FAIL'; detail = "$_" })
     } finally {
