@@ -219,6 +219,9 @@ public sealed partial class MainPage : Page
         };
         var javaScript = new ToggleSwitch { Header = "Enable JavaScript", IsOn = ViewModel.Settings.JavaScriptEnabled };
         var images = new ToggleSwitch { Header = "Load images automatically", IsOn = ViewModel.Settings.LoadImagesAutomatically };
+        AutomationProperties.SetAutomationId(position, "TabBarPosition");
+        AutomationProperties.SetAutomationId(javaScript, "JavaScriptEnabled");
+        AutomationProperties.SetAutomationId(images, "LoadImagesAutomatically");
         var panel = new StackPanel { Spacing = 12, MinWidth = 340 };
         panel.Children.Add(position);
         panel.Children.Add(javaScript);
@@ -245,6 +248,8 @@ public sealed partial class MainPage : Page
                 });
                 var location = new ToggleSwitch { Header = "Allow location", IsOn = site.GeolocationAllowed };
                 var notifications = new ToggleSwitch { Header = "Allow notifications", IsOn = site.NotificationsAllowed };
+                AutomationProperties.SetAutomationId(location, "AllowLocation_" + SiteAutomationToken(site.Origin));
+                AutomationProperties.SetAutomationId(notifications, "AllowNotifications_" + SiteAutomationToken(site.Origin));
                 permissionControls.Add((site, location, notifications));
                 panel.Children.Add(location);
                 panel.Children.Add(notifications);
@@ -362,7 +367,10 @@ public sealed partial class MainPage : Page
         }
 
         if (FindTabItem(tab) is { } item)
+        {
             item.Header = tab.Title.Length > 28 ? tab.Title[..28] + "…" : tab.Title;
+            AutomationProperties.SetName(item, tab.Title);
+        }
         UpdateBookmarkButton();
         UpdateNavigationButtons();
     }
@@ -382,6 +390,8 @@ public sealed partial class MainPage : Page
             IsClosable = true,
             Content = new Grid { Width = 0, Height = 0 }
         };
+        AutomationProperties.SetAutomationId(item, "BrowserTab_" + tab.Id);
+        AutomationProperties.SetName(item, item.Header?.ToString() ?? "New tab");
         _tabItems[item] = tab;
         TabStrip.TabItems.Add(item);
         UpdateClosableTabs();
@@ -474,6 +484,9 @@ public sealed partial class MainPage : Page
         var height = (int)Math.Round(BrowserSurface.ActualHeight * scale);
         return (x, y, Math.Max(1, width), Math.Max(1, height));
     }
+
+    private static string SiteAutomationToken(string origin) =>
+        Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(origin)))[..12];
 
     private void UpdateBookmarkButton()
     {
