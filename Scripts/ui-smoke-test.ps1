@@ -119,7 +119,7 @@ window.addEventListener('load', () => {
         return;
     }
     popup.document.open();
-    popup.document.write('<!doctype html><title>Blaze popup passed</title><h1>Popup tab created</h1><script>setTimeout(() => window.close(), 3000);<\\/script>');
+    popup.document.write('<!doctype html><title>Blaze popup passed</title><h1>Popup tab created</h1><script>setTimeout(() => window.close(), 6000);<\\/script>');
     popup.document.close();
 });
 </script>
