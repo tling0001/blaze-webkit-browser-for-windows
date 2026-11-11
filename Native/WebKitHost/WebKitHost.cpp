@@ -10,15 +10,38 @@
 #include <WebKit/WKView.h>
 #include <WebKit/WKWebsiteDataStoreRef.h>
 #include <WebKit/WKWebsiteDataStoreConfigurationRef.h>
+#include <WebKit/WKPageNavigationClient.h>
+#include <WebKit/WKPageUIClient.h>
+#include <WebKit/WKDownloadRef.h>
+#include <WebKit/WKDownloadClient.h>
+#include <WebKit/WKNavigationResponseRef.h>
+#include <WebKit/WKURLResponse.h>
+#include <WebKit/WKGeolocationPermissionRequest.h>
+#include <WebKit/WKNotificationPermissionRequest.h>
+#include <WebKit/WKUserMediaPermissionRequest.h>
 
 #include <algorithm>
 #include <new>
+#include <filesystem>
+#include <ShlObj.h>
 #include <string>
 #include <vector>
 
 struct WB_VIEW {
     WKViewRef view { nullptr };
     HWND window { nullptr };
+    WKPageNavigationClientV3 navigationClient { };
+    WKPageUIClientV13 uiClient { };
+    WB_DOWNLOAD_CALLBACK downloadCallback { nullptr };
+    void* downloadUserData { nullptr };
+    WB_PERMISSION_CALLBACK permissionCallback { nullptr };
+    void* permissionUserData { nullptr };
+};
+
+struct DownloadContext {
+    WB_DOWNLOAD_CALLBACK callback { nullptr };
+    void* userData { nullptr };
+    std::wstring destination;
 };
 
 namespace {
@@ -61,6 +84,148 @@ int copyWKString(WKStringRef value, wchar_t* buffer, int capacity)
     buffer[copied] = L'\0';
     return required - 1;
 }
+}
+
+std::wstring fromWKString(WKStringRef value)
+{
+    std::vector<wchar_t> buffer(4096);
+    const int length = copyWKString(value, buffer.data(), static_cast<int>(buffer.size()));
+    return length > 0 ? std::wstring(buffer.data()) : std::wstring();
+}
+
+std::wstring downloadsDirectory()
+{
+    PWSTR path = nullptr;
+    if (FAILED(SHGetKnownFolderPath(FOLDERID_Downloads, KF_FLAG_CREATE, nullptr, &path)) || !path)
+        return {};
+    std::wstring result(path);
+    CoTaskMemFree(path);
+    return result;
+}
+
+void notifyDownload(DownloadContext* context, int status, long long written, long long expected)
+{
+    if (context && context->callback && !context->destination.empty())
+        context->callback(context->destination.c_str(), status, written, expected, context->userData);
+}
+
+WKStringRef downloadDecideDestination(WKDownloadRef, WKURLResponseRef response, WKStringRef suggestedFilename, const void* clientInfo)
+{
+    auto* context = const_cast<DownloadContext*>(static_cast<const DownloadContext*>(clientInfo));
+    auto filename = fromWKString(suggestedFilename);
+    if (filename.empty() && response) {
+        auto url = WKURLResponseCopyURL(response);
+        auto host = url ? WKURLCopyHostName(url) : nullptr;
+        filename = fromWKString(host);
+        if (host) WKRelease(host);
+        if (url) WKRelease(url);
+    }
+    if (filename.empty())
+        filename = L"download";
+
+    for (auto& character : filename) {
+        if (character < 32 || wcschr(L"<>:\"/\\|?*", character))
+            character = L'_';
+    }
+
+    const auto folder = downloadsDirectory();
+    if (folder.empty())
+        return nullptr;
+
+    std::filesystem::path target = std::filesystem::path(folder) / std::filesystem::path(filename).filename();
+    std::error_code error;
+    const auto original = target;
+    unsigned suffix = 1;
+    while (std::filesystem::exists(target, error)) {
+        target = original.parent_path() /
+            (original.stem().wstring() + L" (" + std::to_wstring(suffix++) + L")" + original.extension().wstring());
+        error.clear();
+    }
+
+    context->destination = target.wstring();
+    notifyDownload(context, 0, 0, 0);
+    const auto utf8 = toUtf8(context->destination.c_str());
+    return utf8.empty() ? nullptr : WKStringCreateWithUTF8CString(utf8.c_str());
+}
+
+void downloadDidWriteData(WKDownloadRef, long long, long long totalBytesWritten, long long totalBytesExpectedToWrite, const void* clientInfo)
+{
+    notifyDownload(const_cast<DownloadContext*>(static_cast<const DownloadContext*>(clientInfo)), 1, totalBytesWritten, totalBytesExpectedToWrite);
+}
+
+void downloadDidFinish(WKDownloadRef, const void* clientInfo)
+{
+    auto* context = const_cast<DownloadContext*>(static_cast<const DownloadContext*>(clientInfo));
+    notifyDownload(context, 2, 0, 0);
+    delete context;
+}
+
+void downloadDidFail(WKDownloadRef, WKErrorRef, WKDataRef, const void* clientInfo)
+{
+    auto* context = const_cast<DownloadContext*>(static_cast<const DownloadContext*>(clientInfo));
+    notifyDownload(context, 3, 0, 0);
+    delete context;
+}
+
+void attachDownload(WKDownloadRef download, const void* clientInfo)
+{
+    auto* view = const_cast<WB_VIEW*>(static_cast<const WB_VIEW*>(clientInfo));
+    auto* context = new (std::nothrow) DownloadContext;
+    if (!context)
+        return;
+    context->callback = view->downloadCallback;
+    context->userData = view->downloadUserData;
+
+    WKDownloadClientV0 client { };
+    client.base.version = 0;
+    client.base.clientInfo = context;
+    client.decideDestinationWithResponse = downloadDecideDestination;
+    client.didWriteData = downloadDidWriteData;
+    client.didFinish = downloadDidFinish;
+    client.didFailWithError = downloadDidFail;
+    WKDownloadSetClient(download, &client.base);
+}
+
+void navigationActionDidBecomeDownload(WKPageRef, WKNavigationActionRef, WKDownloadRef download, const void* clientInfo)
+{
+    attachDownload(download, clientInfo);
+}
+
+void navigationResponseDidBecomeDownload(WKPageRef, WKNavigationResponseRef, WKDownloadRef download, const void* clientInfo)
+{
+    attachDownload(download, clientInfo);
+}
+
+void contextMenuDidCreateDownload(WKPageRef, WKDownloadRef download, const void* clientInfo)
+{
+    attachDownload(download, clientInfo);
+}
+
+void decideGeolocationPermission(WKPageRef, WKFrameRef, WKSecurityOriginRef origin, WKGeolocationPermissionRequestRef request, const void* clientInfo)
+{
+    auto* view = const_cast<WB_VIEW*>(static_cast<const WB_VIEW*>(clientInfo));
+    auto originString = WKSecurityOriginCopyToString(origin);
+    auto text = fromWKString(originString);
+    if (originString) WKRelease(originString);
+    const bool allowed = view->permissionCallback && view->permissionCallback(text.c_str(), 0, view->permissionUserData) != 0;
+    if (allowed) WKGeolocationPermissionRequestAllow(request);
+    else WKGeolocationPermissionRequestDeny(request);
+}
+
+void decideNotificationPermission(WKPageRef, WKSecurityOriginRef origin, WKNotificationPermissionRequestRef request, const void* clientInfo)
+{
+    auto* view = const_cast<WB_VIEW*>(static_cast<const WB_VIEW*>(clientInfo));
+    auto originString = WKSecurityOriginCopyToString(origin);
+    auto text = fromWKString(originString);
+    if (originString) WKRelease(originString);
+    const bool allowed = view->permissionCallback && view->permissionCallback(text.c_str(), 1, view->permissionUserData) != 0;
+    if (allowed) WKNotificationPermissionRequestAllow(request);
+    else WKNotificationPermissionRequestDeny(request);
+}
+
+void denyUserMediaPermission(WKPageRef, WKFrameRef, WKSecurityOriginRef, WKSecurityOriginRef, WKUserMediaPermissionRequestRef request, const void*)
+{
+    WKUserMediaPermissionRequestDeny(request, kWKPermissionDenied);
 }
 
 WB_VIEW_HANDLE WB_Create(HWND parent, int x, int y, int width, int height, const wchar_t* initialUrl)
@@ -120,6 +285,22 @@ WB_VIEW_HANDLE WB_Create(HWND parent, int x, int y, int width, int height, const
 
     result->view = nativeView;
     result->window = nativeWindow;
+
+    auto page = WKViewGetPage(nativeView);
+    result->navigationClient.base.version = 3;
+    result->navigationClient.base.clientInfo = result;
+    result->navigationClient.navigationActionDidBecomeDownload = navigationActionDidBecomeDownload;
+    result->navigationClient.navigationResponseDidBecomeDownload = navigationResponseDidBecomeDownload;
+    result->navigationClient.contextMenuDidCreateDownload = contextMenuDidCreateDownload;
+    WKPageSetPageNavigationClient(page, &result->navigationClient.base);
+
+    result->uiClient.base.version = 13;
+    result->uiClient.base.clientInfo = result;
+    result->uiClient.decidePolicyForGeolocationPermissionRequest = decideGeolocationPermission;
+    result->uiClient.decidePolicyForNotificationPermissionRequest = decideNotificationPermission;
+    result->uiClient.decidePolicyForUserMediaPermissionRequest = denyUserMediaPermission;
+    WKPageSetPageUIClient(page, &result->uiClient.base);
+
     SetWindowPos(nativeWindow, nullptr, x, y, width, height, SWP_NOZORDER | SWP_NOACTIVATE);
     ShowWindow(nativeWindow, SW_SHOW);
     if (initialUrl && *initialUrl)
@@ -236,4 +417,20 @@ void WB_ClearWebsiteData(WB_VIEW_HANDLE view)
     WKWebsiteDataStoreRemoveAllServiceWorkerRegistrations(store, nullptr, [](void*) { });
     WKWebsiteDataStoreRemoveAllIndexedDatabases(store, nullptr, [](void*) { });
     WKWebsiteDataStoreRemoveLocalStorage(store, nullptr, [](void*) { });
+}
+
+void WB_SetDownloadCallback(WB_VIEW_HANDLE view, WB_DOWNLOAD_CALLBACK callback, void* userData)
+{
+    if (!view)
+        return;
+    view->downloadCallback = callback;
+    view->downloadUserData = userData;
+}
+
+void WB_SetPermissionCallback(WB_VIEW_HANDLE view, WB_PERMISSION_CALLBACK callback, void* userData)
+{
+    if (!view)
+        return;
+    view->permissionCallback = callback;
+    view->permissionUserData = userData;
 }
