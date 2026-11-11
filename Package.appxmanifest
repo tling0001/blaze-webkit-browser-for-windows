@@ -16,8 +16,8 @@
   <mp:PhoneIdentity PhoneProductId="44C86CE5-2F2D-412F-9565-A731B6070756" PhonePublisherId="00000000-0000-0000-0000-000000000000"/>
 
   <Properties>
-    <DisplayName>WebKit Browser</DisplayName>
-    <PublisherDisplayName>WebKit Browser contributors</PublisherDisplayName>
+    <DisplayName>Blaze</DisplayName>
+    <PublisherDisplayName>Blaze contributors</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
     <uap10:PackageIntegrity>
       <uap10:Content Enforcement="on"/>
@@ -38,7 +38,7 @@
       Executable="$targetnametoken$.exe"
       EntryPoint="$targetentrypoint$">
       <uap:VisualElements
-        DisplayName="WebKit Browser"
+        DisplayName="Blaze"
         Description="A native Windows browser powered by WebKit."
         BackgroundColor="transparent"
         Square150x150Logo="Assets\Square150x150Logo.png"
