@@ -376,12 +376,24 @@ public sealed partial class MainPage : Page
             Text = ViewModel.Settings.HomePage,
             PlaceholderText = "https://example.com"
         };
-        var searchEngine = new RadioButtons
-        {
-            Header = "Search engine",
-            ItemsSource = new[] { "Google", "Bing", "DuckDuckGo", "Brave Search" },
-            SelectedIndex = (int)ViewModel.Settings.SearchEngine
-        };
+        var searchEngine = new RadioButtons { Header = "Search engine" };
+        var googleSearchOption = new RadioButton { Content = "Google" };
+        var bingSearchOption = new RadioButton { Content = "Bing" };
+        var duckDuckGoSearchOption = new RadioButton { Content = "DuckDuckGo" };
+        var braveSearchOption = new RadioButton { Content = "Brave Search" };
+        AutomationProperties.SetAutomationId(googleSearchOption, "SearchEngineGoogle");
+        AutomationProperties.SetAutomationId(bingSearchOption, "SearchEngineBing");
+        AutomationProperties.SetAutomationId(duckDuckGoSearchOption, "SearchEngineDuckDuckGo");
+        AutomationProperties.SetAutomationId(braveSearchOption, "SearchEngineBrave");
+        AutomationProperties.SetName(googleSearchOption, "Google");
+        AutomationProperties.SetName(bingSearchOption, "Bing");
+        AutomationProperties.SetName(duckDuckGoSearchOption, "DuckDuckGo");
+        AutomationProperties.SetName(braveSearchOption, "Brave Search");
+        searchEngine.Items.Add(googleSearchOption);
+        searchEngine.Items.Add(bingSearchOption);
+        searchEngine.Items.Add(duckDuckGoSearchOption);
+        searchEngine.Items.Add(braveSearchOption);
+        searchEngine.SelectedIndex = Math.Clamp((int)ViewModel.Settings.SearchEngine, 0, 3);
         AutomationProperties.SetAutomationId(homePage, "HomePage");
         AutomationProperties.SetName(homePage, "Home page");
         AutomationProperties.SetAutomationId(searchEngine, "SearchEngine");
