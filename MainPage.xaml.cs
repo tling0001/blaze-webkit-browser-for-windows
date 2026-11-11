@@ -238,6 +238,7 @@ public sealed partial class MainPage : Page
         await _dialogGate.WaitAsync();
         try
         {
+            dialog.Transitions = CreateEntranceTransitions();
             dialog.ContentTransitions = CreateEntranceTransitions();
             return await dialog.ShowAsync();
         }
