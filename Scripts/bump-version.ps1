@@ -4,21 +4,20 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$versionPath = Join-Path $PSScriptRoot '..\VERSION'
-$notesPath = Join-Path $PSScriptRoot '..\RELEASE_NOTES.md'
-$current = (Get-Content -LiteralPath $versionPath -Raw).Trim()
-if ($current -notmatch '^(?<base>\d{4}\.\d+\.\d+-port\.)(?<number>\d+)$') {
-    throw "Unsupported version format: $current"
-}
-$next = "$($Matches.base)$([int]$Matches.number + 1)"
-Set-Content -LiteralPath $versionPath -Value $next -NoNewline
+$note = $Notes.Trim()
+if ([string]::IsNullOrWhiteSpace($note)) { throw 'Release notes must not be empty.' }
 
 $projectPath = Join-Path $PSScriptRoot '..\WebKitBrowser.csproj'
 [xml]$project = Get-Content -LiteralPath $projectPath -Raw
+$versionNode = $project.SelectSingleNode("/*[local-name()='Project']/*[local-name()='PropertyGroup']/*[local-name()='Version']")
+if (-not $versionNode) { throw 'The project Version property was not found.' }
+$current = $versionNode.InnerText.Trim()
+if ($current -notmatch '^(?<base>\d{4}\.\d+\.\d+-port\.)(?<number>\d+)$') { throw "Unsupported version format: $current" }
+$next = "$($Matches.base)$([int]$Matches.number + 1)"
 $numericVersion = $next -replace '-port\.', '.'
-$propertyGroup = $project.Project.PropertyGroup | Select-Object -First 1
+$propertyGroup = $project.SelectSingleNode("/*[local-name()='Project']/*[local-name()='PropertyGroup']")
 foreach ($pair in @(@('Version', $next), @('InformationalVersion', $next), @('AssemblyVersion', $numericVersion), @('FileVersion', $numericVersion), @('AppxPackageVersion', $numericVersion))) {
-    $node = $project.SelectSingleNode("/Project/PropertyGroup/*[local-name()='$($pair[0])']")
+    $node = $project.SelectSingleNode("/*[local-name()='Project']/*[local-name()='PropertyGroup']/*[local-name()='$($pair[0])']")
     if (-not $node) { $node = $project.CreateElement($pair[0]); [void]$propertyGroup.AppendChild($node) }
     $node.InnerText = $pair[1]
 }
@@ -31,12 +30,11 @@ if (-not $identity) { throw 'Package identity was not found in Package.appxmanif
 $identity.SetAttribute('Version', $numericVersion)
 $manifest.Save($manifestPath)
 
-$today = Get-Date -Format 'yyyy-MM-dd'
-$note = $Notes.Trim()
-if ([string]::IsNullOrWhiteSpace($note)) { throw 'Release notes must not be empty.' }
-$entry = "## [$next] - $today`n`n### Changes`n- $note`n`n"
+$notesPath = Join-Path $PSScriptRoot '..\RELEASE_NOTES.md'
 $existing = Get-Content -LiteralPath $notesPath -Raw
 $header = '# WebKit Browser release notes'
 if (-not $existing.StartsWith($header)) { throw 'Unexpected RELEASE_NOTES.md format.' }
+$today = Get-Date -Format 'yyyy-MM-dd'
+$entry = "## [$next] - $today`n`n### Changes`n- $note`n`n"
 Set-Content -LiteralPath $notesPath -Value ($header + "`n`n" + $entry + $existing.Substring($header.Length).TrimStart()) -NoNewline
 Write-Host "Bumped version: $current -> $next"
