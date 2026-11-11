@@ -18,7 +18,7 @@ permissions:
 concurrency:
   # v3 bypasses stale runs left in earlier concurrency groups.
   group: Blaze-v3-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   build:
