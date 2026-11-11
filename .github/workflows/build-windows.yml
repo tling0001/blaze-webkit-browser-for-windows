@@ -279,7 +279,7 @@ jobs:
           Path(destination).write_text("\n\n".join(selected).strip() + "\n", encoding="utf-8")
           PY
 
-      - name: Download installer artifacts
+      - name: Download MSIX release artifacts
         uses: actions/download-artifact@v4
         with:
           name: WebKitBrowser-Windows-x64
@@ -291,10 +291,10 @@ jobs:
           VERSION: ${{ steps.release_meta.outputs.version }}
         shell: bash
         run: |
-          mapfile -d '' installers < <(find release-assets -type f -name '*-Setup.exe' -print0)
-          if [ "${#installers[@]}" -ne 1 ]; then
-            echo "Expected exactly one x64 installer, found ${#installers[@]}." >&2
-            find release-assets -maxdepth 3 -type f -print >&2
+          mapfile -d '' assets < <(find release-assets -maxdepth 1 -type f \( -name '*.msix' -o -name '*.cer' -o -name 'INSTALL.txt' \) -print0)
+          if [ "${#assets[@]}" -lt 3 ]; then
+            echo "Expected the signed MSIX, public certificate and install guide." >&2
+            find release-assets -maxdepth 2 -type f -print >&2
             exit 1
           fi
           if gh release view "$VERSION" >/dev/null 2>&1; then
@@ -302,4 +302,4 @@ jobs:
           else
             gh release create "$VERSION" --title "$VERSION" --notes-file release-notes.md --target main
           fi
-          gh release upload "$VERSION" "${installers[@]}" --clobber
+          gh release upload "$VERSION" "${assets[@]}" --clobber
