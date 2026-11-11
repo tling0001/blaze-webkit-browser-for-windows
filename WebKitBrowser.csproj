@@ -16,13 +16,13 @@
     <AppxPackageSigningEnabled>true</AppxPackageSigningEnabled>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <Version>2026.11.0-port.2</Version>
-    <AssemblyVersion>2026.11.0.2</AssemblyVersion>
-    <FileVersion>2026.11.0.2</FileVersion>
-    <InformationalVersion>2026.11.0-port.2</InformationalVersion>
+    <Version>2026.11.0-port.3</Version>
+    <AssemblyVersion>2026.11.0.3</AssemblyVersion>
+    <FileVersion>2026.11.0.3</FileVersion>
+    <InformationalVersion>2026.11.0-port.3</InformationalVersion>
     <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
     <WindowsPackageType>MSIX</WindowsPackageType>
-    <AppxPackageVersion>2026.11.0.2</AppxPackageVersion>
+    <AppxPackageVersion>2026.11.0.3</AppxPackageVersion>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <SelfContained>true</SelfContained>
   </PropertyGroup>
