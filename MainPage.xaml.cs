@@ -5,6 +5,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Animation;
 using Windows.Foundation;
 using WebKitBrowser.Models;
 using WebKitBrowser.Services;
@@ -17,6 +18,7 @@ public sealed partial class MainPage : Page
     public MainPageViewModel ViewModel { get; } = new();
 
     private readonly Dictionary<TabViewItem, BrowserTab> _tabItems = [];
+    private readonly SemaphoreSlim _dialogGate = new(1, 1);
     private DispatcherQueueTimer? _stateTimer;
     private bool _initialized;
     private bool _engineAvailable;
@@ -36,6 +38,7 @@ public sealed partial class MainPage : Page
         _initialized = true;
 
         await ViewModel.InitializeAsync();
+        ApplyMotionPreferences();
         if (!_nativeCallbackHandle.IsAllocated)
             _nativeCallbackHandle = GCHandle.Alloc(this);
         foreach (var tab in ViewModel.Tabs)
@@ -61,6 +64,8 @@ public sealed partial class MainPage : Page
         _ = ViewModel.SaveAsync();
         foreach (var tab in ViewModel.Tabs)
             DestroyNativeView(tab);
+        if (_nativeCallbackHandle.IsAllocated)
+            _nativeCallbackHandle.Free();
     }
 
     private void OnAddTabButtonClick(TabView sender, TabViewAddTabButtonClickEventArgs args)
@@ -209,6 +214,38 @@ public sealed partial class MainPage : Page
 
     private async void OnSettingsClick(object sender, RoutedEventArgs e) => await ShowSettingsDialogAsync();
 
+    private TransitionCollection CreateEntranceTransitions()
+    {
+        if (ViewModel.Settings.ReduceMotion)
+            return [];
+
+        return [new EntranceThemeTransition { IsStaggeringEnabled = false }];
+    }
+
+    private void ApplyMotionPreferences()
+    {
+        LayoutRoot.Transitions = CreateEntranceTransitions();
+        TabStrip.Transitions = CreateEntranceTransitions();
+        Toolbar.Transitions = CreateEntranceTransitions();
+        BrowserSurface.Transitions = CreateEntranceTransitions();
+    }
+
+    private async Task<ContentDialogResult> ShowDialogAsync(ContentDialog dialog)
+    {
+        // ContentDialog is modal per XamlRoot. Serialize native dialogs so
+        // simultaneous WebKit permission callbacks cannot throw or overlap.
+        await _dialogGate.WaitAsync();
+        try
+        {
+            dialog.ContentTransitions = CreateEntranceTransitions();
+            return await dialog.ShowAsync();
+        }
+        finally
+        {
+            _dialogGate.Release();
+        }
+    }
+
     private async Task ShowSettingsDialogAsync()
     {
         var position = new RadioButtons
@@ -219,13 +256,18 @@ public sealed partial class MainPage : Page
         };
         var javaScript = new ToggleSwitch { Header = "Enable JavaScript", IsOn = ViewModel.Settings.JavaScriptEnabled };
         var images = new ToggleSwitch { Header = "Load images automatically", IsOn = ViewModel.Settings.LoadImagesAutomatically };
+        var reduceMotion = new ToggleSwitch { Header = "Reduce motion", IsOn = ViewModel.Settings.ReduceMotion };
+        reduceMotion.OffContent = "Animations on";
+        reduceMotion.OnContent = "Reduced animations";
         AutomationProperties.SetAutomationId(position, "TabBarPosition");
         AutomationProperties.SetAutomationId(javaScript, "JavaScriptEnabled");
         AutomationProperties.SetAutomationId(images, "LoadImagesAutomatically");
+        AutomationProperties.SetAutomationId(reduceMotion, "ReduceMotion");
         var panel = new StackPanel { Spacing = 12, MinWidth = 340 };
         panel.Children.Add(position);
         panel.Children.Add(javaScript);
         panel.Children.Add(images);
+        panel.Children.Add(reduceMotion);
         panel.Children.Add(new TextBlock
         {
             Text = "Site permissions",
@@ -272,7 +314,7 @@ public sealed partial class MainPage : Page
             XamlRoot = XamlRoot
         };
 
-        var result = await dialog.ShowAsync();
+        var result = await ShowDialogAsync(dialog);
         if (result == ContentDialogResult.Secondary)
         {
             var confirmation = new ContentDialog
@@ -284,7 +326,7 @@ public sealed partial class MainPage : Page
                 DefaultButton = ContentDialogButton.Close,
                 XamlRoot = XamlRoot
             };
-            if (await confirmation.ShowAsync() == ContentDialogResult.Primary)
+            if (await ShowDialogAsync(confirmation) == ContentDialogResult.Primary)
             {
                 var activeProfile = ViewModel.Tabs.FirstOrDefault(tab => tab.NativeHandle != IntPtr.Zero);
                 if (activeProfile is not null)
@@ -299,6 +341,8 @@ public sealed partial class MainPage : Page
         ViewModel.Settings.TabBarAboveToolbar = position.SelectedIndex == 0;
         ViewModel.Settings.JavaScriptEnabled = javaScript.IsOn;
         ViewModel.Settings.LoadImagesAutomatically = images.IsOn;
+        ViewModel.Settings.ReduceMotion = reduceMotion.IsOn;
+        ApplyMotionPreferences();
         foreach (var control in permissionControls)
             ViewModel.ApplySitePermission(control.Site, control.Location.IsOn, control.Notifications.IsOn);
         foreach (var tab in ViewModel.Tabs)
@@ -331,7 +375,7 @@ public sealed partial class MainPage : Page
             DefaultButton = ContentDialogButton.Close,
             XamlRoot = XamlRoot
         };
-        if (await dialog.ShowAsync() == ContentDialogResult.Primary && permissionType != 2)
+        if (await ShowDialogAsync(dialog) == ContentDialogResult.Primary && permissionType != 2)
             await ShowSettingsDialogAsync();
     }
 
