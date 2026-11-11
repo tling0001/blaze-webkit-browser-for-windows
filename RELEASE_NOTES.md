@@ -1,4 +1,21 @@
-# WebKit Browser release notes
+# Blaze release notes
+
+## [2026.11.0-port.3] - 2026-11-11
+
+### User experience
+- Rename the app, executable, package identity and installer to Blaze.
+- Add a persistent Reduce motion setting and motion-aware WinUI transitions.
+- Serialize native ContentDialog presentation and animate dialog content without replacing the system dialog surface.
+- Keep toolbar actions as native XAML Buttons with consistent default WinUI sizing.
+
+### Windows installer and CI
+- Add a per-user Blaze-Setup.exe installer that installs the signed WinUI package.
+- Fix WebKit CI dependency discovery to use the actual Chocolatey XAMPP install path (C:\\xampp).
+- Verify WinUI transition APIs against the restored app references before compiling.
+- Repair the release-version script and keep project, package and release-note versions synchronized.
+
+### Known limitations
+- WinCairo remains an upstream testing port; successful end-to-end build and installation validation are still required.
 
 ## [2026.11.0-port.2] - 2026-11-11
 
