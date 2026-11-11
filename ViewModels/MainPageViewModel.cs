@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Collections.Concurrent;
 using System.Text.Json;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -13,6 +14,7 @@ namespace WebKitBrowser.ViewModels;
 public partial class MainPageViewModel : ObservableObject
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
+    private readonly ConcurrentDictionary<string, SitePermissionEntry> _permissionIndex = new(StringComparer.OrdinalIgnoreCase);
     private readonly string _dataDirectory = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "WebKitBrowser");
@@ -20,6 +22,8 @@ public partial class MainPageViewModel : ObservableObject
     public ObservableCollection<BrowserTab> Tabs { get; } = [];
     public ObservableCollection<BookmarkEntry> Bookmarks { get; } = [];
     public ObservableCollection<HistoryEntry> History { get; } = [];
+    public ObservableCollection<DownloadEntry> Downloads { get; } = [];
+    public ObservableCollection<SitePermissionEntry> SitePermissions { get; } = [];
 
     public BrowserSettings Settings { get; private set; } = new();
 
@@ -44,10 +48,19 @@ public partial class MainPageViewModel : ObservableObject
 
         var savedBookmarks = await ReadAsync<List<BookmarkEntry>>("bookmarks.json") ?? [];
         var savedHistory = await ReadAsync<List<HistoryEntry>>("history.json") ?? [];
+        var savedDownloads = await ReadAsync<List<DownloadEntry>>("downloads.json") ?? [];
+        var savedPermissions = await ReadAsync<List<SitePermissionEntry>>("permissions.json") ?? [];
         foreach (var bookmark in savedBookmarks)
             Bookmarks.Add(bookmark);
         foreach (var historyItem in savedHistory)
             History.Add(historyItem);
+        foreach (var download in savedDownloads)
+            Downloads.Add(download);
+        foreach (var permission in savedPermissions)
+        {
+            SitePermissions.Add(permission);
+            _permissionIndex[permission.Origin] = permission;
+        }
 
         var session = await ReadAsync<SessionState>("session.json");
         if (session?.TabUrls is { Count: > 0 })
@@ -154,6 +167,69 @@ public partial class MainPageViewModel : ObservableObject
         !string.IsNullOrWhiteSpace(url) &&
         Bookmarks.Any(item => string.Equals(item.Url, url, StringComparison.OrdinalIgnoreCase));
 
+
+    public void UpdateDownload(string filePath, int status, long bytesReceived, long bytesExpected)
+    {
+        var entry = Downloads.FirstOrDefault(item => string.Equals(item.FilePath, filePath, StringComparison.OrdinalIgnoreCase));
+        if (entry is null)
+        {
+            entry = new DownloadEntry { FilePath = filePath };
+            Downloads.Insert(0, entry);
+        }
+
+        entry.Status = status switch
+        {
+            0 => "Starting",
+            1 => "Downloading",
+            2 => "Completed",
+            3 => "Failed",
+            _ => "Unknown"
+        };
+        entry.BytesReceived = bytesReceived;
+        entry.BytesExpected = bytesExpected;
+        entry.UpdatedAt = DateTimeOffset.Now;
+        _ = SaveAsync();
+    }
+
+    public bool IsPermissionAllowed(string origin, int permissionType)
+    {
+        if (!_permissionIndex.TryGetValue(origin, out var permission))
+            return false;
+        return permissionType switch
+        {
+            0 => permission.GeolocationAllowed,
+            1 => permission.NotificationsAllowed,
+            _ => false
+        };
+    }
+
+    public void RecordPermissionRequest(string origin, int permissionType)
+    {
+        if (string.IsNullOrWhiteSpace(origin))
+            return;
+        if (!_permissionIndex.TryGetValue(origin, out var permission))
+        {
+            permission = new SitePermissionEntry { Origin = origin };
+            _permissionIndex[origin] = permission;
+            SitePermissions.Add(permission);
+        }
+        permission.LastRequestedAt = DateTimeOffset.Now;
+        StatusMessage = permissionType switch
+        {
+            0 => $"Location access from {origin} was blocked until you allow it in Settings.",
+            1 => $"Notifications from {origin} were blocked until you allow them in Settings.",
+            _ => $"Camera and microphone access from {origin} is blocked."
+        };
+        _ = SaveAsync();
+    }
+
+    public void ApplySitePermission(SitePermissionEntry entry, bool locationAllowed, bool notificationsAllowed)
+    {
+        entry.GeolocationAllowed = locationAllowed;
+        entry.NotificationsAllowed = notificationsAllowed;
+        _permissionIndex[entry.Origin] = entry;
+    }
+
     public async Task ClearHistoryAsync()
     {
         History.Clear();
@@ -173,6 +249,8 @@ public partial class MainPageViewModel : ObservableObject
         await WriteAsync("settings.json", Settings);
         await WriteAsync("bookmarks.json", Bookmarks.ToList());
         await WriteAsync("history.json", History.ToList());
+        await WriteAsync("downloads.json", Downloads.ToList());
+        await WriteAsync("permissions.json", SitePermissions.ToList());
         await WriteAsync("session.json", session);
     }
 
