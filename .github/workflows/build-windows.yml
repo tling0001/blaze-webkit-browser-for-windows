@@ -15,7 +15,8 @@ permissions:
   contents: write
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # v2 releases runs queued behind the stale Build 62 concurrency record.
+  group: Blaze-v2-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
