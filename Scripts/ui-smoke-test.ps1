@@ -104,15 +104,22 @@ try {
         Save-Screenshot '02-example-domain.png'
     }
 
-    Test-UI 'Native settings dialog opens with reduced-motion control' {
+    Test-UI 'Native settings dialog opens and persists reduced-motion preference' {
         Invoke-Ui @('invoke', 'SettingsButton') | Out-Null
-        Invoke-Ui @('wait-for', 'ReduceMotion', '-t', '5000') | Out-Null
+        Invoke-Ui @('wait-for', 'ReduceMotion', '--value', 'Off', '-t', '5000') | Out-Null
         $inspection = Invoke-Ui @('inspect', '--interactive', '--json') | ConvertFrom-Json
         $elements = @(Get-Elements @($inspection.windows | ForEach-Object { $_.elements }))
         if (-not ($elements | Where-Object { $_.automationId -eq 'ReduceMotion' })) {
             throw 'The native Settings ContentDialog did not expose the ReduceMotion ToggleSwitch.'
         }
+        Invoke-Ui @('click', 'ReduceMotion') | Out-Null
+        Invoke-Ui @('wait-for', 'ReduceMotion', '--value', 'On', '-t', '3000') | Out-Null
         Save-Screenshot '03-blaze-settings-dialog.png'
+        Invoke-Ui @('invoke', 'Primary') | Out-Null
+        Invoke-Ui @('wait-for', 'ReduceMotion', '--gone', '-t', '3000') | Out-Null
+
+        Invoke-Ui @('invoke', 'SettingsButton') | Out-Null
+        Invoke-Ui @('wait-for', 'ReduceMotion', '--value', 'On', '-t', '5000') | Out-Null
         Invoke-Ui @('invoke', 'Close') | Out-Null
         Invoke-Ui @('wait-for', 'ReduceMotion', '--gone', '-t', '3000') | Out-Null
     }
