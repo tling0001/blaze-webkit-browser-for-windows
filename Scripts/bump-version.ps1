@@ -12,18 +12,28 @@ $projectPath = Join-Path $PSScriptRoot '..\WebKitBrowser.csproj'
 $versionNode = $project.SelectSingleNode("/*[local-name()='Project']/*[local-name()='PropertyGroup']/*[local-name()='Version']")
 if (-not $versionNode) { throw 'The project Version property was not found.' }
 $current = $versionNode.InnerText.Trim()
-$match = [regex]::Match($current, '^(?<base>\d{4}\.\d+\.\d+-port\.)(?<number>\d+)$')
-if (-not $match.Success) { throw "Unsupported version format: $current" }
+$match = [regex]::Match($current, '^(?<major>0|[1-9]\d*)\.(?<minor>0|[1-9]\d*)(?:\.(?<patch>0|[1-9]\d*))?$')
+if (-not $match.Success) { throw "Unsupported product version: $current. Expected major.minor or major.minor.patch." }
 
-$next = "$($match.Groups['base'].Value)$([int]$match.Groups['number'].Value + 1)"
-$numericVersion = $next -replace '-port\.', '.'
+$major = [int]$match.Groups['major'].Value
+$minor = [int]$match.Groups['minor'].Value
+$patch = if ($match.Groups['patch'].Success) { [int]$match.Groups['patch'].Value } else { 0 }
+if ($patch -ge 9) {
+    $minor++
+    $patch = 0
+} else {
+    $patch++
+}
+$next = "$major.$minor.$patch"
+$packageVersion = "$next.0"
+
 $propertyGroup = $project.SelectSingleNode("/*[local-name()='Project']/*[local-name()='PropertyGroup']")
 foreach ($pair in @(
     @('Version', $next),
     @('InformationalVersion', $next),
-    @('AssemblyVersion', $numericVersion),
-    @('FileVersion', $numericVersion),
-    @('AppxPackageVersion', $numericVersion)
+    @('AssemblyVersion', $packageVersion),
+    @('FileVersion', $packageVersion),
+    @('AppxPackageVersion', $packageVersion)
 )) {
     $node = $project.SelectSingleNode("/*[local-name()='Project']/*[local-name()='PropertyGroup']/*[local-name()='$($pair[0])']")
     if (-not $node) {
@@ -38,7 +48,7 @@ $manifestPath = Join-Path $PSScriptRoot '..\Package.appxmanifest'
 [xml]$manifest = Get-Content -LiteralPath $manifestPath -Raw
 $identity = $manifest.SelectSingleNode("/*[local-name()='Package']/*[local-name()='Identity']")
 if (-not $identity) { throw 'Package identity was not found in Package.appxmanifest.' }
-$identity.SetAttribute('Version', $numericVersion)
+$identity.SetAttribute('Version', $packageVersion)
 $manifest.Save($manifestPath)
 
 $notesPath = Join-Path $PSScriptRoot '..\RELEASE_NOTES.md'
@@ -49,4 +59,4 @@ if ($existing -match [regex]::Escape("## [$next]")) { throw "Release notes alrea
 $today = Get-Date -Format 'yyyy-MM-dd'
 $entry = "## [$next] - $today`n`n### Changes`n- $note`n`n"
 Set-Content -LiteralPath $notesPath -Value ($header + "`n`n" + $entry + $existing.Substring($header.Length).TrimStart()) -NoNewline
-Write-Host "Bumped version: $current -> $next"
+Write-Host "Bumped version: $current -> $next (package $packageVersion)"
