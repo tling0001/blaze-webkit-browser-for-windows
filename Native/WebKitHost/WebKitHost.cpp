@@ -1,11 +1,10 @@
 #include "WebKitHost.h"
 
-#include <WebKit/WKBase.h>
+#include <WebKit/WebKit2_C.h>
 #include <WebKit/WKContextConfigurationRef.h>
 #include <WebKit/WKPage.h>
 #include <WebKit/WKPageConfigurationRef.h>
 #include <WebKit/WKContext.h>
-#include <WebKit/WKString.h>
 #include <WebKit/WKPreferencesRef.h>
 #include <WebKit/WKURL.h>
 #include <WebKit/WKView.h>
