@@ -6,25 +6,80 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:local="using:WebKitBrowser"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-    mc:Ignorable="d">
+    mc:Ignorable="d"
+    Loaded="OnLoaded"
+    Unloaded="OnUnloaded">
 
-    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="16">
-        <TextBlock
-            Text="{x:Bind ViewModel.Greeting, Mode=OneWay}"
-            Style="{StaticResource TitleTextBlockStyle}" />
-        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="8">
-            <Button Command="{x:Bind ViewModel.IncrementCommand}">
-                <FontIcon Glyph="&#xE710;" FontSize="14" />
-            </Button>
-            <TextBlock
-                Text="{x:Bind ViewModel.Counter, Mode=OneWay}"
+    <Grid x:Name="LayoutRoot" RowSpacing="0">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <TabView
+            x:Name="TabStrip"
+            Grid.Row="0"
+            Height="44"
+            IsAddTabButtonVisible="True"
+            CanReorderTabs="True"
+            AddTabButtonClick="OnAddTabButtonClick"
+            TabCloseRequested="OnTabCloseRequested"
+            SelectionChanged="OnTabSelectionChanged"
+            AutomationProperties.Name="Browser tabs" />
+
+        <Grid
+            x:Name="Toolbar"
+            Grid.Row="1"
+            Height="56"
+            Padding="12,6"
+            ColumnSpacing="8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <Button Grid.Column="0" Content="Back" Click="OnBackClick" AutomationProperties.Name="Go back" />
+            <Button Grid.Column="1" Content="Forward" Click="OnForwardClick" AutomationProperties.Name="Go forward" />
+            <Button Grid.Column="2" Content="Reload" Click="OnReloadClick" AutomationProperties.Name="Reload page" />
+            <Button Grid.Column="3" Content="Home" Click="OnHomeClick" AutomationProperties.Name="Go to home page" />
+
+            <AutoSuggestBox
+                x:Name="AddressBox"
+                Grid.Column="4"
+                MinWidth="180"
+                HorizontalAlignment="Stretch"
                 VerticalAlignment="Center"
-                MinWidth="40"
-                TextAlignment="Center"
-                Style="{StaticResource BodyStrongTextBlockStyle}" />
-            <Button Command="{x:Bind ViewModel.DecrementCommand}">
-                <FontIcon Glyph="&#xE738;" FontSize="14" />
-            </Button>
-        </StackPanel>
-    </StackPanel>
+                PlaceholderText="Search or enter address"
+                QueryIcon="Find"
+                QuerySubmitted="OnAddressQuerySubmitted"
+                AutomationProperties.Name="Address and search" />
+
+            <Button Grid.Column="5" Content="Bookmark" Click="OnBookmarkClick" AutomationProperties.Name="Add or remove bookmark" />
+            <Button Grid.Column="6" Content="History" Click="OnHistoryClick" AutomationProperties.Name="Open browsing history" />
+            <Button Grid.Column="7" Content="Downloads" Click="OnDownloadsClick" AutomationProperties.Name="Open downloads" />
+            <Button Grid.Column="8" Content="Settings" Click="OnSettingsClick" AutomationProperties.Name="Open browser settings" />
+        </Grid>
+
+        <Grid
+            x:Name="BrowserSurface"
+            Grid.Row="2"
+            Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
+            SizeChanged="OnBrowserSurfaceSizeChanged">
+            <InfoBar
+                x:Name="EngineError"
+                IsOpen="False"
+                IsClosable="True"
+                Severity="Error"
+                Title="WebKit engine unavailable"
+                Message="The WinCairo runtime could not be loaded. This browser will not fall back to Chromium or WebView2." />
+        </Grid>
+    </Grid>
 </Page>
