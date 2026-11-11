@@ -17,7 +17,7 @@ public partial class MainPageViewModel : ObservableObject
     private readonly ConcurrentDictionary<string, SitePermissionEntry> _permissionIndex = new(StringComparer.OrdinalIgnoreCase);
     private readonly string _dataDirectory = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "WebKitBrowser");
+        "Blaze");
 
     public ObservableCollection<BrowserTab> Tabs { get; } = [];
     public ObservableCollection<BookmarkEntry> Bookmarks { get; } = [];
