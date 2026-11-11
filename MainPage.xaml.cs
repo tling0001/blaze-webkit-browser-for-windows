@@ -105,6 +105,7 @@ public sealed partial class MainPage : Page
 
         ViewModel.SelectedTab = tab;
         AddressBox.Text = tab.Url;
+        UpdateBookmarkButton();
         EnsureNativeView(tab);
         LayoutNativeViews();
         UpdateNavigationButtons();
@@ -134,8 +135,25 @@ public sealed partial class MainPage : Page
     {
         var added = ViewModel.ToggleBookmark(ViewModel.SelectedTab);
         await ViewModel.SaveAsync();
-        if (sender is Button button)
-            button.Content = added ? "Bookmarked" : "Bookmark";
+        BookmarkButton.Content = added ? "Bookmarked" : "Bookmark";
+    }
+
+    private void OnBookmarksClick(object sender, RoutedEventArgs e)
+    {
+        var flyout = new MenuFlyout();
+        if (ViewModel.Bookmarks.Count == 0)
+            flyout.Items.Add(new MenuFlyoutItem { Text = "No saved bookmarks yet", IsEnabled = false });
+        else
+        {
+            foreach (var bookmark in ViewModel.Bookmarks)
+            {
+                var item = new MenuFlyoutItem { Text = string.IsNullOrWhiteSpace(bookmark.Title) ? bookmark.Url : bookmark.Title };
+                item.Click += (_, _) => NavigateTo(bookmark.Url);
+                flyout.Items.Add(item);
+            }
+        }
+        if (sender is FrameworkElement element)
+            flyout.ShowAt(element);
     }
 
     private void OnHistoryClick(object sender, RoutedEventArgs e)
@@ -346,6 +364,7 @@ public sealed partial class MainPage : Page
 
         if (FindTabItem(tab) is { } item)
             item.Header = tab.Title.Length > 28 ? tab.Title[..28] + "…" : tab.Title;
+        UpdateBookmarkButton();
         UpdateNavigationButtons();
     }
 
@@ -455,6 +474,11 @@ public sealed partial class MainPage : Page
         var width = (int)Math.Round(BrowserSurface.ActualWidth * scale);
         var height = (int)Math.Round(BrowserSurface.ActualHeight * scale);
         return (x, y, Math.Max(1, width), Math.Max(1, height));
+    }
+
+    private void UpdateBookmarkButton()
+    {
+        BookmarkButton.Content = ViewModel.IsBookmarked(ViewModel.SelectedTab?.Url) ? "Bookmarked" : "Bookmark";
     }
 
     private void UpdateNavigationButtons()
