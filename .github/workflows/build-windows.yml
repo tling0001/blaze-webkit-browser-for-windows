@@ -14,7 +14,7 @@ permissions:
   contents: write
 
 concurrency:
-  # v2 releases runs queued behind the stale Build 62 concurrency record.
+  # v2 uses a fresh concurrency group to bypass the stale Build 62 run.
   group: Blaze-v2-${{ github.ref }}
   cancel-in-progress: false
 
