@@ -142,11 +142,8 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $workspace = $env:GITHUB_WORKSPACE
-          subst W: /D 2>$null
-          subst W: $workspace
-          if ($LASTEXITCODE -ne 0 -or -not (Test-Path 'W:\w\Tools\Scripts\build-webkit')) { throw 'Could not create the short W: alias for the complete workspace.' }
-          $sourceRoot = 'W:\w'
+          $sourceRoot = $env:WEBKIT_SOURCE_ROOT
+          if (-not $sourceRoot -or -not (Test-Path -LiteralPath (Join-Path $sourceRoot 'Tools\Scripts\build-webkit'))) { throw 'The short physical WebKit source root is unavailable.' }
           $spec = Get-Content -LiteralPath 'blaze\eng\WebKitSdk.json' -Raw | ConvertFrom-Json
           $webkitConfig = Get-Content -LiteralPath (Join-Path $sourceRoot 'vcpkg-configuration.json') -Raw | ConvertFrom-Json
           $builtin = $webkitConfig.'default-registry'.baseline
@@ -182,10 +179,8 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $workspace = $env:GITHUB_WORKSPACE
-          subst W: /D 2>$null
-          subst W: $workspace
-          if ($LASTEXITCODE -ne 0) { throw 'Could not create short W: workspace alias.' }
-          $sourceRoot = 'W:\w'
+          $sourceRoot = $env:WEBKIT_SOURCE_ROOT
+          if (-not $sourceRoot -or -not (Test-Path -LiteralPath $sourceRoot -PathType Container)) { throw 'The short physical WebKit source root is unavailable for SDK staging.' }
           $release = Join-Path $sourceRoot 'WebKitBuild\Release'
           $stage = Join-Path $workspace 'webkit-sdk'
           New-Item -ItemType Directory -Path $stage -Force | Out-Null
