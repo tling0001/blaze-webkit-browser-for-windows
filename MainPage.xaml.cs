@@ -20,11 +20,14 @@ public sealed partial class MainPage : Page
     private readonly SemaphoreSlim _dialogGate = new(1, 1);
     private DispatcherQueueTimer? _stateTimer;
     private bool _initialized;
+    private bool _isPageUnloading;
     private bool _engineAvailable;
     private GCHandle _nativeCallbackHandle;
     private static readonly WebKitNative.DownloadCallback DownloadCallbackHandler = OnNativeDownload;
     private static readonly WebKitNative.PermissionCallback PermissionCallbackHandler = OnNativePermission;
     private static readonly WebKitNative.JavaScriptDialogCallback JavaScriptDialogCallbackHandler = OnNativeJavaScriptDialog;
+    private static readonly WebKitNative.NewPageCallback NewPageCallbackHandler = OnNativeNewPage;
+    private static readonly WebKitNative.ClosePageCallback ClosePageCallbackHandler = OnNativePageClose;
 
     public MainPage()
     {
@@ -35,6 +38,7 @@ public sealed partial class MainPage : Page
     {
         if (_initialized)
             return;
+        _isPageUnloading = false;
         _initialized = true;
 
         await ViewModel.InitializeAsync();
@@ -60,6 +64,7 @@ public sealed partial class MainPage : Page
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
+        _isPageUnloading = true;
         _stateTimer?.Stop();
         _stateTimer = null;
         _ = ViewModel.SaveAsync();
@@ -79,13 +84,24 @@ public sealed partial class MainPage : Page
 
     private void OnTabCloseRequested(TabView sender, TabViewTabCloseRequestedEventArgs args)
     {
-        if (args.Tab is not TabViewItem item || !_tabItems.TryGetValue(item, out var tab))
+        if (args.Tab is TabViewItem item && _tabItems.TryGetValue(item, out var tab))
+            CloseNativeTab(tab.NativeHandle);
+    }
+
+    private void CloseNativeTab(IntPtr nativeHandle)
+    {
+        var tab = ViewModel.Tabs.FirstOrDefault(candidate => candidate.NativeHandle == nativeHandle);
+        if (tab is null)
             return;
 
+        var item = FindTabItem(tab);
         DestroyNativeView(tab);
-        _tabItems.Remove(item);
+        if (item is not null)
+        {
+            _tabItems.Remove(item);
+            TabStrip.TabItems.Remove(item);
+        }
         ViewModel.CloseTab(tab);
-        TabStrip.TabItems.Remove(item);
 
         if (ViewModel.Tabs.Count == 0)
         {
@@ -97,6 +113,26 @@ public sealed partial class MainPage : Page
         else if (ViewModel.SelectedTab is not null)
             TabStrip.SelectedItem = FindTabItem(ViewModel.SelectedTab);
 
+        UpdateClosableTabs();
+        LayoutNativeViews();
+        _ = ViewModel.SaveAsync();
+    }
+
+    private void AttachPopupTab(IntPtr nativeHandle)
+    {
+        if (nativeHandle == IntPtr.Zero)
+            return;
+        if (!_initialized || _isPageUnloading)
+        {
+            WebKitNative.Destroy(nativeHandle);
+            return;
+        }
+
+        var tab = ViewModel.AddTab();
+        tab.NativeHandle = nativeHandle;
+        var item = AddTabItem(tab);
+        TabStrip.SelectedItem = item;
+        ConfigureNativeView(tab);
         UpdateClosableTabs();
         LayoutNativeViews();
         _ = ViewModel.SaveAsync();
@@ -459,6 +495,34 @@ public sealed partial class MainPage : Page
         WebKitNative.ResolveJavaScriptDialog(listener, dialogType, dialogType == 0, null);
     }
 
+    private static int OnNativeNewPage(IntPtr nativeHandle, IntPtr userData)
+    {
+        try
+        {
+            if (GCHandle.FromIntPtr(userData).Target is MainPage page
+                && App.DispatcherQueue.TryEnqueue(() => page.AttachPopupTab(nativeHandle)))
+                return 1;
+        }
+        catch
+        {
+            // A popup must be rejected if its owning WinUI page is no longer available.
+        }
+        return 0;
+    }
+
+    private static void OnNativePageClose(IntPtr nativeHandle, IntPtr userData)
+    {
+        try
+        {
+            if (GCHandle.FromIntPtr(userData).Target is MainPage page)
+                App.DispatcherQueue.TryEnqueue(() => page.CloseNativeTab(nativeHandle));
+        }
+        catch
+        {
+            // The owning page may already be shutting down.
+        }
+    }
+
     private static void OnNativeDownload(string filePath, int status, long bytesWritten, long totalBytesExpected, IntPtr userData)
     {
         if (GCHandle.FromIntPtr(userData).Target is MainPage page)
@@ -556,10 +620,7 @@ public sealed partial class MainPage : Page
             tab.NativeHandle = WebKitNative.Create(App.WindowHandle, x, y, Math.Max(1, width), Math.Max(1, height), tab.Url);
             if (tab.NativeHandle == IntPtr.Zero)
                 throw new InvalidOperationException("WKViewCreate did not return a native view.");
-            var callbackHandle = GCHandle.ToIntPtr(_nativeCallbackHandle);
-            WebKitNative.SetDownloadCallback(tab.NativeHandle, DownloadCallbackHandler, callbackHandle);
-            WebKitNative.SetPermissionCallback(tab.NativeHandle, PermissionCallbackHandler, callbackHandle);
-            WebKitNative.SetJavaScriptDialogCallback(tab.NativeHandle, JavaScriptDialogCallbackHandler, callbackHandle);
+            ConfigureNativeView(tab);
             WebKitNative.SetJavaScriptEnabled(tab.NativeHandle, ViewModel.Settings.JavaScriptEnabled);
             WebKitNative.SetLoadsImagesAutomatically(tab.NativeHandle, ViewModel.Settings.LoadImagesAutomatically);
             WebKitNative.Navigate(tab.NativeHandle, tab.Url);
@@ -572,6 +633,17 @@ public sealed partial class MainPage : Page
             EngineError.Message = $"The pinned WinCairo runtime failed to initialize: {ex.Message}";
             EngineError.IsOpen = true;
         }
+    }
+
+    private void ConfigureNativeView(BrowserTab tab)
+    {
+        if (tab.NativeHandle == IntPtr.Zero)
+            return;
+        var callbackHandle = GCHandle.ToIntPtr(_nativeCallbackHandle);
+        WebKitNative.SetDownloadCallback(tab.NativeHandle, DownloadCallbackHandler, callbackHandle);
+        WebKitNative.SetPermissionCallback(tab.NativeHandle, PermissionCallbackHandler, callbackHandle);
+        WebKitNative.SetJavaScriptDialogCallback(tab.NativeHandle, JavaScriptDialogCallbackHandler, callbackHandle);
+        WebKitNative.SetPopupCallbacks(tab.NativeHandle, NewPageCallbackHandler, ClosePageCallbackHandler, callbackHandle);
     }
 
     private void DestroyNativeView(BrowserTab tab)
