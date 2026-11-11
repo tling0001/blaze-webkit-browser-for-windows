@@ -222,7 +222,8 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $version = (Get-Content VERSION -Raw).Trim()
+          $projectMetadata = [xml](Get-Content -LiteralPath "WebKitBrowser.csproj" -Raw)
+          $version = $projectMetadata.SelectSingleNode("/*[local-name()='Project']/*[local-name()='PropertyGroup']/*[local-name()='Version']").InnerText.Trim()
           if ($version -notmatch '^\d{4}\.\d+\.\d+-port\.\d+$') { throw "Invalid release version: $version" }
 
           $output = & winapp package .\WebKitBrowser.csproj --arch x64 --cert .\devcert.pfx --self-contained 2>&1
@@ -277,7 +278,7 @@ jobs:
         id: release_meta
         shell: bash
         run: |
-          VERSION="$(tr -d '\r\n' < VERSION)"
+          VERSION="$(python3 -c 'import xml.etree.ElementTree as ET; print(ET.parse("WebKitBrowser.csproj").findtext(".//Version"))')"
           test -n "$VERSION"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           python3 - "$VERSION" RELEASE_NOTES.md release-notes.md <<'PY'
