@@ -31,10 +31,16 @@ public partial class MainPageViewModel : ObservableObject
     public partial BrowserTab? SelectedTab { get; set; }
 
     [ObservableProperty]
-    public partial string AddressText { get; set; } = string.Empty;
+    public partial string AddressText { get; set; }
 
     [ObservableProperty]
-    public partial string StatusMessage { get; set; } = string.Empty;
+    public partial string StatusMessage { get; set; }
+
+    public MainPageViewModel()
+    {
+        AddressText = string.Empty;
+        StatusMessage = string.Empty;
+    }
 
     partial void OnSelectedTabChanged(BrowserTab? value)
     {
