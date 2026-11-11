@@ -17,3 +17,5 @@ EXPORTS
     WB_ClearWebsiteData
     WB_SetDownloadCallback
     WB_SetPermissionCallback
+    WB_SetJavaScriptDialogCallback
+    WB_ResolveJavaScriptDialog
