@@ -6,7 +6,7 @@
 #include <WebKit/WKDownloadClient.h>
 #include <WebKit/WKDownloadRef.h>
 #include <WebKit/WKGeolocationPermissionRequest.h>
-#include <WebKit/WKHTTPCookieStore.h>
+#include <WebKit/WKHTTPCookieStoreRef.h>
 #include <WebKit/WKNavigationResponseRef.h>
 #include <WebKit/WKNotificationPermissionRequest.h>
 #include <WebKit/WKPage.h>
