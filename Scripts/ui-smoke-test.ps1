@@ -12,6 +12,7 @@ $results = [Collections.Generic.List[object]]::new()
 $screenshots = [Collections.Generic.List[string]]::new()
 $uiStarted = $false
 $dialogPage = Join-Path $env:TEMP "blaze-js-dialog-$workflowId.html"
+$popupPage = Join-Path $env:TEMP "blaze-popup-$workflowId.html"
 
 function Invoke-WinAppChecked {
     param([string[]]$Arguments)
@@ -104,6 +105,48 @@ try {
         Save-Screenshot '02-example-domain.png'
     }
 
+    Test-UI 'WebKit window.open creates and closes a native browser tab' {
+        @'
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Blaze popup opener</title></head>
+<body>
+<script>
+window.addEventListener('load', () => {
+    const popup = window.open('about:blank', '_blank');
+    if (!popup) {
+        document.title = 'Popup blocked';
+        return;
+    }
+    popup.document.open();
+    popup.document.write('<!doctype html><title>Blaze popup passed</title><h1>Popup tab created</h1><script>setTimeout(() => window.close(), 3000);<\\/script>');
+    popup.document.close();
+});
+</script>
+<h1>Popup opener</h1>
+</body>
+</html>
+'@ | Set-Content -LiteralPath $popupPage -Encoding utf8
+
+        $popupUri = ([Uri]$popupPage).AbsoluteUri
+        Invoke-Ui @('set-value', 'AddressBox', $popupUri) | Out-Null
+        Invoke-Ui @('send-keys', 'enter', '--via', 'send-input') | Out-Null
+
+        $popupTab = $null
+        for ($attempt = 0; $attempt -lt 20; $attempt++) {
+            $inspection = Invoke-Ui @('inspect', '--interactive', '--json') | ConvertFrom-Json
+            $elements = @(Get-Elements @($inspection.windows | ForEach-Object { $_.elements }))
+            $popupTab = $elements | Where-Object {
+                $_.automationId -like 'BrowserTab_*' -and $_.name -eq 'Blaze popup passed'
+            } | Select-Object -First 1
+            if ($popupTab) { break }
+            Start-Sleep -Milliseconds 500
+        }
+        if (-not $popupTab) { throw 'window.open did not create a visible WinUI browser tab for the popup page.' }
+        Save-Screenshot '03-webkit-popup-tab.png'
+        Invoke-Ui @('wait-for', $popupTab.automationId, '--gone', '-t', '10000') | Out-Null
+    }
+
     Test-UI 'Native settings dialog opens and persists reduced-motion preference' {
         Invoke-Ui @('invoke', 'SettingsButton') | Out-Null
         Invoke-Ui @('wait-for', 'ReduceMotion', '--value', 'Off', '-t', '5000') | Out-Null
@@ -194,257 +237,7 @@ window.addEventListener('load', () => {
         $results.Add(@{ name = 'Release UI workflow'; status = 'FAIL'; detail = "$_" })
     } finally {
         if ($dialogPage -and (Test-Path -LiteralPath $dialogPage)) { Remove-Item -LiteralPath $dialogPage -Force }
-        $env:WINAPP_UI_WORKFLOW_ID = $previousWorkflowId
-    }
-}
-
-$failed = @($results | Where-Object { $_.status -eq 'FAIL' }).Count
-$report = [ordered]@{
-    target = 'local'
-    appPid = $appPid
-    workflowId = $workflowId
-    passed = $results.Count - $failed
-    failed = $failed
-    results = @($results.ToArray())
-    screenshots = @($screenshots.ToArray())
-}
-$report | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath '.\ui-test-results.json' -Encoding utf8
-Write-Host "Passed: $($report.passed) | Failed: $failed | Results: .\ui-test-results.json"
-if ($failed -gt 0) { exit 1 }
- } | Select-Object -First 1
-    if (-not $main) { throw 'The launched WinUI browser window was not found.' }
-    $hwnd = [string]$main.hwnd
-
-    Test-UI 'WinUI browser window and address control' {
-        $inspection = Invoke-Ui @('inspect', '--interactive', '--json') | ConvertFrom-Json
-        $elements = @(Get-Elements @($inspection.windows | ForEach-Object { $_.elements }))
-        $address = $elements | Where-Object { $_.automationId -eq 'AddressBox' } | Select-Object -First 1
-        if (-not $address) { throw 'AddressBox AutomationId was not found in the WinUI tree.' }
-        Save-Screenshot '01-browser-start.png'
-    }
-
-    Test-UI 'Live WebKit navigation to HTTPS example.com' {
-        Invoke-Ui @('set-value', 'AddressBox', 'https://example.com') | Out-Null
-        Invoke-Ui @('send-keys', 'enter', '--via', 'send-input') | Out-Null
-        Invoke-Ui @('wait-for', 'AddressBox', '--value', 'https://example.com', '-t', '15000') | Out-Null
-
-        $foundTitle = $false
-        for ($attempt = 0; $attempt -lt 20; $attempt++) {
-            $inspection = Invoke-Ui @('inspect', '--interactive', '--json') | ConvertFrom-Json
-            $elements = @(Get-Elements @($inspection.windows | ForEach-Object { $_.elements }))
-            $pageTab = $elements | Where-Object {
-                $_.automationId -like 'BrowserTab_*' -and $_.name -eq 'Example Domain'
-            } | Select-Object -First 1
-            if ($pageTab) { $foundTitle = $true; break }
-            Start-Sleep -Seconds 1
-        }
-        if (-not $foundTitle) { throw 'The WebKit page title "Example Domain" did not appear in the browser tab.' }
-        Save-Screenshot '02-example-domain.png'
-    }
-
-    Test-UI 'Tab and settings controls expose AutomationIds' {
-        $inspection = Invoke-Ui @('inspect', '--interactive', '--json') | ConvertFrom-Json
-        $elements = @(Get-Elements @($inspection.windows | ForEach-Object { $_.elements }))
-        foreach ($id in @('BrowserTabStrip', 'BackButton', 'ForwardButton', 'ReloadButton', 'StopButton', 'HomeButton', 'BookmarkButton', 'BookmarksButton', 'HistoryButton', 'DownloadsButton', 'SettingsButton')) {
-            if (-not ($elements | Where-Object { $_.automationId -eq $id })) {
-                throw "Missing AutomationId: $id"
-            }
-        }
-    }
-} catch {
-    $results.Add(@{ name = 'UI smoke setup'; status = 'FAIL'; detail = "$_" })
-    Write-Warning "UI smoke setup failed: $_"
-} finally {
-    try {
-        if ($uiStarted) { Invoke-WinAppChecked @('ui', 'yield') | Out-Null }
-    } catch {
-        $results.Add(@{ name = 'Release UI workflow'; status = 'FAIL'; detail = "$_" })
-    } finally {
-        $env:WINAPP_UI_WORKFLOW_ID = $previousWorkflowId
-    }
-}
-
-$failed = @($results | Where-Object { $_.status -eq 'FAIL' }).Count
-$report = [ordered]@{
-    target = 'local'
-    appPid = $appPid
-    workflowId = $workflowId
-    passed = $results.Count - $failed
-    failed = $failed
-    results = @($results.ToArray())
-    screenshots = @($screenshots.ToArray())
-}
-$report | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath '.\ui-test-results.json' -Encoding utf8
-Write-Host "Passed: $($report.passed) | Failed: $failed | Results: .\ui-test-results.json"
-if ($failed -gt 0) { exit 1 }
- } | Select-Object -First 1
-    if (-not $main) { throw 'The launched WinUI browser window was not found.' }
-    $hwnd = [string]$main.hwnd
-
-    Test-UI 'WinUI browser window and address control' {
-        $inspection = Invoke-Ui @('inspect', '--interactive', '--json') | ConvertFrom-Json
-        $elements = @(Get-Elements @($inspection.windows | ForEach-Object { $_.elements }))
-        $address = $elements | Where-Object { $_.automationId -eq 'AddressBox' } | Select-Object -First 1
-        if (-not $address) { throw 'AddressBox AutomationId was not found in the WinUI tree.' }
-        Save-Screenshot '01-browser-start.png'
-    }
-
-    Test-UI 'Live WebKit navigation to HTTPS example.com' {
-        Invoke-Ui @('set-value', 'AddressBox', 'https://example.com') | Out-Null
-        Invoke-Ui @('send-keys', 'enter', '--via', 'send-input') | Out-Null
-        Invoke-Ui @('wait-for', 'AddressBox', '--value', 'https://example.com', '-t', '15000') | Out-Null
-
-        $foundTitle = $false
-        for ($attempt = 0; $attempt -lt 20; $attempt++) {
-            $inspection = Invoke-Ui @('inspect', '--interactive', '--json') | ConvertFrom-Json
-            $elements = @(Get-Elements @($inspection.windows | ForEach-Object { $_.elements }))
-            $pageTab = $elements | Where-Object {
-                $_.automationId -like 'BrowserTab_*' -and $_.name -eq 'Example Domain'
-            } | Select-Object -First 1
-            if ($pageTab) { $foundTitle = $true; break }
-            Start-Sleep -Seconds 1
-        }
-        if (-not $foundTitle) { throw 'The WebKit page title "Example Domain" did not appear in the browser tab.' }
-        Save-Screenshot '02-example-domain.png'
-    }
-
-    Test-UI 'Native settings dialog opens with reduced-motion control' {
-        Invoke-Ui @('invoke', 'SettingsButton') | Out-Null
-        Invoke-Ui @('wait-for', 'ReduceMotion', '-t', '5000') | Out-Null
-        $inspection = Invoke-Ui @('inspect', '--interactive', '--json') | ConvertFrom-Json
-        $elements = @(Get-Elements @($inspection.windows | ForEach-Object { $_.elements }))
-        if (-not ($elements | Where-Object { $_.automationId -eq 'ReduceMotion' })) {
-            throw 'The native Settings ContentDialog did not expose the ReduceMotion ToggleSwitch.'
-        }
-        Save-Screenshot '03-blaze-settings-dialog.png'
-        Invoke-Ui @('invoke', 'Close') | Out-Null
-        Invoke-Ui @('wait-for', 'ReduceMotion', '--gone', '-t', '3000') | Out-Null
-    }
-
-    Test-UI 'WebKit JavaScript alert, confirm and prompt use native WinUI dialogs' {
-        @'
-<!doctype html>
-<html>
-<head><meta charset="utf-8"><title>Blaze dialog test</title></head>
-<body>
-<script>
-window.addEventListener('load', () => {
-    alert('Blaze alert test');
-    if (confirm('Blaze confirmation test')) {
-        const value = prompt('Blaze prompt test', 'initial value');
-        document.body.dataset.dialogResult = value || '';
-    }
-});
-</script>
-<h1>JavaScript dialog test</h1>
-</body>
-</html>
-'@ | Set-Content -LiteralPath $dialogPage -Encoding utf8
-
-        $dialogUri = ([Uri]$dialogPage).AbsoluteUri
-        Invoke-Ui @('set-value', 'AddressBox', $dialogUri) | Out-Null
-        Invoke-Ui @('send-keys', 'enter', '--via', 'send-input') | Out-Null
-
-        Invoke-Ui @('wait-for', 'JavaScriptDialog_alert', '-t', '15000') | Out-Null
-        Save-Screenshot '04-javascript-alert.png'
-        Invoke-Ui @('invoke', 'Primary') | Out-Null
-
-        Invoke-Ui @('wait-for', 'JavaScriptDialog_confirmation', '-t', '10000') | Out-Null
-        Save-Screenshot '05-javascript-confirm.png'
-        Invoke-Ui @('invoke', 'Primary') | Out-Null
-
-        Invoke-Ui @('wait-for', 'JavaScriptDialog_prompt', '-t', '10000') | Out-Null
-        Invoke-Ui @('set-value', 'JavaScriptPromptInput', 'Blaze prompt passed') | Out-Null
-        Save-Screenshot '06-javascript-prompt.png'
-        Invoke-Ui @('invoke', 'Primary') | Out-Null
-        Invoke-Ui @('wait-for', 'JavaScriptDialog_prompt', '--gone', '-t', '5000') | Out-Null
-    }
-
-    Test-UI 'Tab and settings controls expose AutomationIds' {
-        $inspection = Invoke-Ui @('inspect', '--interactive', '--json') | ConvertFrom-Json
-        $elements = @(Get-Elements @($inspection.windows | ForEach-Object { $_.elements }))
-        foreach ($id in @('BrowserTabStrip', 'BackButton', 'ForwardButton', 'ReloadButton', 'StopButton', 'HomeButton', 'BookmarkButton', 'BookmarksButton', 'HistoryButton', 'DownloadsButton', 'SettingsButton')) {
-            if (-not ($elements | Where-Object { $_.automationId -eq $id })) {
-                throw "Missing AutomationId: $id"
-            }
-        }
-    }
-} catch {
-    $results.Add(@{ name = 'UI smoke setup'; status = 'FAIL'; detail = "$_" })
-    Write-Warning "UI smoke setup failed: $_"
-} finally {
-    try {
-        if ($uiStarted) { Invoke-WinAppChecked @('ui', 'yield') | Out-Null }
-    } catch {
-        $results.Add(@{ name = 'Release UI workflow'; status = 'FAIL'; detail = "$_" })
-    } finally {
-        if ($dialogPage -and (Test-Path -LiteralPath $dialogPage)) { Remove-Item -LiteralPath $dialogPage -Force }
-        $env:WINAPP_UI_WORKFLOW_ID = $previousWorkflowId
-    }
-}
-
-$failed = @($results | Where-Object { $_.status -eq 'FAIL' }).Count
-$report = [ordered]@{
-    target = 'local'
-    appPid = $appPid
-    workflowId = $workflowId
-    passed = $results.Count - $failed
-    failed = $failed
-    results = @($results.ToArray())
-    screenshots = @($screenshots.ToArray())
-}
-$report | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath '.\ui-test-results.json' -Encoding utf8
-Write-Host "Passed: $($report.passed) | Failed: $failed | Results: .\ui-test-results.json"
-if ($failed -gt 0) { exit 1 }
- } | Select-Object -First 1
-    if (-not $main) { throw 'The launched WinUI browser window was not found.' }
-    $hwnd = [string]$main.hwnd
-
-    Test-UI 'WinUI browser window and address control' {
-        $inspection = Invoke-Ui @('inspect', '--interactive', '--json') | ConvertFrom-Json
-        $elements = @(Get-Elements @($inspection.windows | ForEach-Object { $_.elements }))
-        $address = $elements | Where-Object { $_.automationId -eq 'AddressBox' } | Select-Object -First 1
-        if (-not $address) { throw 'AddressBox AutomationId was not found in the WinUI tree.' }
-        Save-Screenshot '01-browser-start.png'
-    }
-
-    Test-UI 'Live WebKit navigation to HTTPS example.com' {
-        Invoke-Ui @('set-value', 'AddressBox', 'https://example.com') | Out-Null
-        Invoke-Ui @('send-keys', 'enter', '--via', 'send-input') | Out-Null
-        Invoke-Ui @('wait-for', 'AddressBox', '--value', 'https://example.com', '-t', '15000') | Out-Null
-
-        $foundTitle = $false
-        for ($attempt = 0; $attempt -lt 20; $attempt++) {
-            $inspection = Invoke-Ui @('inspect', '--interactive', '--json') | ConvertFrom-Json
-            $elements = @(Get-Elements @($inspection.windows | ForEach-Object { $_.elements }))
-            $pageTab = $elements | Where-Object {
-                $_.automationId -like 'BrowserTab_*' -and $_.name -eq 'Example Domain'
-            } | Select-Object -First 1
-            if ($pageTab) { $foundTitle = $true; break }
-            Start-Sleep -Seconds 1
-        }
-        if (-not $foundTitle) { throw 'The WebKit page title "Example Domain" did not appear in the browser tab.' }
-        Save-Screenshot '02-example-domain.png'
-    }
-
-    Test-UI 'Tab and settings controls expose AutomationIds' {
-        $inspection = Invoke-Ui @('inspect', '--interactive', '--json') | ConvertFrom-Json
-        $elements = @(Get-Elements @($inspection.windows | ForEach-Object { $_.elements }))
-        foreach ($id in @('BrowserTabStrip', 'BackButton', 'ForwardButton', 'ReloadButton', 'StopButton', 'HomeButton', 'BookmarkButton', 'BookmarksButton', 'HistoryButton', 'DownloadsButton', 'SettingsButton')) {
-            if (-not ($elements | Where-Object { $_.automationId -eq $id })) {
-                throw "Missing AutomationId: $id"
-            }
-        }
-    }
-} catch {
-    $results.Add(@{ name = 'UI smoke setup'; status = 'FAIL'; detail = "$_" })
-    Write-Warning "UI smoke setup failed: $_"
-} finally {
-    try {
-        if ($uiStarted) { Invoke-WinAppChecked @('ui', 'yield') | Out-Null }
-    } catch {
-        $results.Add(@{ name = 'Release UI workflow'; status = 'FAIL'; detail = "$_" })
-    } finally {
+        if ($popupPage -and (Test-Path -LiteralPath $popupPage)) { Remove-Item -LiteralPath $popupPage -Force }
         $env:WINAPP_UI_WORKFLOW_ID = $previousWorkflowId
     }
 }
