@@ -53,6 +53,7 @@ jobs:
           key: wincairo-x64-d641dd75af65b0469eff30bb76a97e01e02633fc-windows-2025-v1
 
       - name: Install WinCairo build dependencies
+        if: steps.webkit-cache.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -60,6 +61,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Installing WebKit Windows-port dependencies failed.' }
 
       - name: Configure WebKit command environment
+        if: steps.webkit-cache.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
