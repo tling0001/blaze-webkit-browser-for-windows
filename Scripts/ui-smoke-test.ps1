@@ -74,6 +74,7 @@ try {
     $windows = @(Invoke-Ui @('list-windows', '--json') | ConvertFrom-Json)
     $main = $windows | Where-Object { $_.hwnd -and $_.hwnd -ne '0' -and $_.title -match 'WebKit Browser' } | Select-Object -First 1
     if (-not $main) { throw 'The launched WinUI browser window was not found.' }
+    $hwnd = [string]$main.hwnd
 
     Test-UI 'WinUI browser window and address control' {
         $inspection = Invoke-Ui @('inspect', '--interactive', '--json') | ConvertFrom-Json
