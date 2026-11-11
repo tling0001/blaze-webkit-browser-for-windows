@@ -252,10 +252,11 @@ jobs:
           if ($exitCode -ne 0) { throw 'WinApp CLI MSIX packaging failed.' }
 
           $outputText = $output -join [Environment]::NewLine
-          $reported = [regex]::Matches($outputText, '(?i)(?:[A-Z]:\\|\.\\|/)[^\r\n"'']+\.msix(?:bundle)?')
+          $reported = [regex]::Matches($outputText, '(?i)(?:[A-Z]:\\|\.\\|/|[A-Za-z0-9_.-]+\\)[^\r\n"'']+\.msix(?:bundle)?')
           if ($reported.Count -eq 0) { throw 'WinApp CLI did not report an MSIX artifact path; refusing to guess an output directory.' }
           $packagePath = $reported[$reported.Count - 1].Value.Trim()
           $packagePath = $packagePath.Trim([char[]]@('"', "'", ' ', '.', ':'))
+          if (-not [IO.Path]::IsPathRooted($packagePath)) { $packagePath = Join-Path $PWD $packagePath }
           if (-not (Test-Path -LiteralPath $packagePath)) { throw "Reported MSIX package does not exist: $packagePath" }
 
           $releaseDir = Join-Path $PWD 'release-assets'
