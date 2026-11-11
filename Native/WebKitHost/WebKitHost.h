@@ -7,14 +7,14 @@
 #define WB_API extern "C" __declspec(dllimport)
 #endif
 
+struct WB_VIEW;
+using WB_VIEW_HANDLE = WB_VIEW*;
+
 using WB_DOWNLOAD_CALLBACK = void (__cdecl*)(const wchar_t* filePath, int status, long long bytesWritten, long long totalBytesExpected, void* userData);
 using WB_PERMISSION_CALLBACK = int (__cdecl*)(const wchar_t* origin, int permissionType, void* userData);
 using WB_JAVASCRIPT_DIALOG_CALLBACK = void (__cdecl*)(int dialogType, const wchar_t* origin, const wchar_t* message, const wchar_t* defaultValue, void* listener, void* userData);
 using WB_NEW_PAGE_CALLBACK = int (__cdecl*)(WB_VIEW_HANDLE view, void* userData);
 using WB_CLOSE_PAGE_CALLBACK = void (__cdecl*)(WB_VIEW_HANDLE view, void* userData);
-
-struct WB_VIEW;
-using WB_VIEW_HANDLE = WB_VIEW*;
 
 WB_API WB_VIEW_HANDLE WB_Create(HWND parent, int x, int y, int width, int height, const wchar_t* initialUrl);
 WB_API void WB_Destroy(WB_VIEW_HANDLE view);
