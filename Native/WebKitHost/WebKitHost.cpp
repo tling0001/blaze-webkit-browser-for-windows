@@ -33,6 +33,29 @@
 #include <vector>
 #include <ShlObj.h>
 
+struct DownloadContext {
+    WB_DOWNLOAD_CALLBACK callback{};
+    void* userData{};
+    std::wstring destination;
+    long long bytesWritten{};
+    long long bytesExpected{};
+};
+
+struct WB_VIEW {
+    WKViewRef view{};
+    HWND window{};
+    WKPageNavigationClientV3 navigationClient{};
+    WKPageUIClientV13 uiClient{};
+    WB_DOWNLOAD_CALLBACK downloadCallback{};
+    void* downloadUserData{};
+    WB_PERMISSION_CALLBACK permissionCallback{};
+    void* permissionUserData{};
+    WB_JAVASCRIPT_DIALOG_CALLBACK javaScriptDialogCallback{};
+    void* javaScriptDialogUserData{};
+};
+
+std::wstring fromWKString(WKStringRef value);
+
 namespace {
 std::string toUtf8(const wchar_t* value)
 {
@@ -99,7 +122,7 @@ bool configurePersistentWebsiteDataStore(WKWebsiteDataStoreConfigurationRef conf
     if (FAILED(SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_CREATE, nullptr, &localAppData)) || !localAppData)
         return false;
 
-    std::filesystem::path root = std::filesystem::path(localAppData) / L"WebKitBrowser" / L"WebKitData";
+    std::filesystem::path root = std::filesystem::path(localAppData) / L"Blaze" / L"WebKitData";
     CoTaskMemFree(localAppData);
 
     struct DirectorySetting {
@@ -328,6 +351,64 @@ void denyUserMediaPermission(WKPageRef, WKFrameRef, WKSecurityOriginRef, WKSecur
     WKUserMediaPermissionRequestDeny(request, kWKPermissionDenied);
 }
 
+void runJavaScriptAlert(WKPageRef, WKStringRef alertText, WKFrameRef, WKSecurityOriginRef securityOrigin, WKPageRunJavaScriptAlertResultListenerRef listener, const void* clientInfo)
+{
+    auto* view = const_cast<WB_VIEW*>(static_cast<const WB_VIEW*>(clientInfo));
+    auto originString = WKSecurityOriginCopyToString(securityOrigin);
+    auto origin = fromWKString(originString);
+    if (originString) WKRelease(originString);
+    auto message = fromWKString(alertText);
+    if (!view->javaScriptDialogCallback) {
+        WKPageRunJavaScriptAlertResultListenerCall(listener);
+        return;
+    }
+    WKRetain(reinterpret_cast<WKTypeRef>(listener));
+    view->javaScriptDialogCallback(0, origin.c_str(), message.c_str(), L"", listener, view->javaScriptDialogUserData);
+}
+
+void runJavaScriptConfirm(WKPageRef, WKStringRef messageValue, WKFrameRef, WKSecurityOriginRef securityOrigin, WKPageRunJavaScriptConfirmResultListenerRef listener, const void* clientInfo)
+{
+    auto* view = const_cast<WB_VIEW*>(static_cast<const WB_VIEW*>(clientInfo));
+    auto originString = WKSecurityOriginCopyToString(securityOrigin);
+    auto origin = fromWKString(originString);
+    if (originString) WKRelease(originString);
+    auto message = fromWKString(messageValue);
+    if (!view->javaScriptDialogCallback) {
+        WKPageRunJavaScriptConfirmResultListenerCall(listener, false);
+        return;
+    }
+    WKRetain(reinterpret_cast<WKTypeRef>(listener));
+    view->javaScriptDialogCallback(1, origin.c_str(), message.c_str(), L"", listener, view->javaScriptDialogUserData);
+}
+
+void runJavaScriptPrompt(WKPageRef, WKStringRef messageValue, WKStringRef defaultValue, WKFrameRef, WKSecurityOriginRef securityOrigin, WKPageRunJavaScriptPromptResultListenerRef listener, const void* clientInfo)
+{
+    auto* view = const_cast<WB_VIEW*>(static_cast<const WB_VIEW*>(clientInfo));
+    auto originString = WKSecurityOriginCopyToString(securityOrigin);
+    auto origin = fromWKString(originString);
+    if (originString) WKRelease(originString);
+    auto message = fromWKString(messageValue);
+    auto initialValue = fromWKString(defaultValue);
+    if (!view->javaScriptDialogCallback) {
+        WKPageRunJavaScriptPromptResultListenerCall(listener, nullptr);
+        return;
+    }
+    WKRetain(reinterpret_cast<WKTypeRef>(listener));
+    view->javaScriptDialogCallback(2, origin.c_str(), message.c_str(), initialValue.c_str(), listener, view->javaScriptDialogUserData);
+}
+
+void runBeforeUnloadConfirmPanel(WKPageRef, WKStringRef messageValue, WKFrameRef, WKPageRunBeforeUnloadConfirmPanelResultListenerRef listener, const void* clientInfo)
+{
+    auto* view = const_cast<WB_VIEW*>(static_cast<const WB_VIEW*>(clientInfo));
+    auto message = fromWKString(messageValue);
+    if (!view->javaScriptDialogCallback) {
+        WKPageRunBeforeUnloadConfirmPanelResultListenerCall(listener, false);
+        return;
+    }
+    WKRetain(reinterpret_cast<WKTypeRef>(listener));
+    view->javaScriptDialogCallback(3, L"", message.c_str(), L"", listener, view->javaScriptDialogUserData);
+}
+
 WB_VIEW_HANDLE WB_Create(HWND parent, int x, int y, int width, int height, const wchar_t*)
 {
     if (!parent || !IsWindow(parent) || width <= 0 || height <= 0)
@@ -387,6 +468,10 @@ WB_VIEW_HANDLE WB_Create(HWND parent, int x, int y, int width, int height, const
     result->uiClient.decidePolicyForGeolocationPermissionRequest = decideGeolocationPermission;
     result->uiClient.decidePolicyForNotificationPermissionRequest = decideNotificationPermission;
     result->uiClient.decidePolicyForUserMediaPermissionRequest = denyUserMediaPermission;
+    result->uiClient.runJavaScriptAlert = runJavaScriptAlert;
+    result->uiClient.runJavaScriptConfirm = runJavaScriptConfirm;
+    result->uiClient.runJavaScriptPrompt = runJavaScriptPrompt;
+    result->uiClient.runBeforeUnloadConfirmPanel = runBeforeUnloadConfirmPanel;
     WKPageSetPageUIClient(page, &result->uiClient.base);
 
     SetWindowPos(nativeWindow, nullptr, x, y, width, height, SWP_NOZORDER | SWP_NOACTIVATE);
@@ -520,4 +605,43 @@ void WB_SetPermissionCallback(WB_VIEW_HANDLE view, WB_PERMISSION_CALLBACK callba
         return;
     view->permissionCallback = callback;
     view->permissionUserData = userData;
+}
+
+void WB_SetJavaScriptDialogCallback(WB_VIEW_HANDLE view, WB_JAVASCRIPT_DIALOG_CALLBACK callback, void* userData)
+{
+    if (!view)
+        return;
+    view->javaScriptDialogCallback = callback;
+    view->javaScriptDialogUserData = userData;
+}
+
+void WB_ResolveJavaScriptDialog(void* listener, int dialogType, BOOL accepted, const wchar_t* response)
+{
+    if (!listener)
+        return;
+    switch (dialogType) {
+    case 0:
+        WKPageRunJavaScriptAlertResultListenerCall(reinterpret_cast<WKPageRunJavaScriptAlertResultListenerRef>(listener));
+        break;
+    case 1:
+        WKPageRunJavaScriptConfirmResultListenerCall(reinterpret_cast<WKPageRunJavaScriptConfirmResultListenerRef>(listener), accepted != FALSE);
+        break;
+    case 2: {
+        WKStringRef value = nullptr;
+        if (accepted && response) {
+            const auto utf8 = toUtf8(response);
+            if (!utf8.empty())
+                value = WKStringCreateWithUTF8CString(utf8.c_str());
+        }
+        WKPageRunJavaScriptPromptResultListenerCall(reinterpret_cast<WKPageRunJavaScriptPromptResultListenerRef>(listener), value);
+        if (value) WKRelease(value);
+        break;
+    }
+    case 3:
+        WKPageRunBeforeUnloadConfirmPanelResultListenerCall(reinterpret_cast<WKPageRunBeforeUnloadConfirmPanelResultListenerRef>(listener), accepted != FALSE);
+        break;
+    default:
+        break;
+    }
+    WKRelease(reinterpret_cast<WKTypeRef>(listener));
 }
