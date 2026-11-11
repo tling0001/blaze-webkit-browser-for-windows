@@ -379,7 +379,7 @@ public sealed partial class MainPage : Page
         var popupHandling = new RadioButtons
         {
             Header = "Pop-up windows",
-            ItemsSource = new[] { "Ask (recommended)", "Always allow", "Always deny" },
+            ItemsSource = new[] { "Automatic", "Always allow", "Always deny" },
             SelectedIndex = (int)ViewModel.Settings.PopupHandlingMode
         };
         AutomationProperties.SetAutomationId(position, "TabBarPosition");
@@ -396,7 +396,7 @@ public sealed partial class MainPage : Page
         panel.Children.Add(popupHandling);
         panel.Children.Add(new TextBlock
         {
-            Text = "Ask shows an Allow, Ignore or Cancel prompt whenever a site requests a new window.",
+            Text = "Automatic shows an Allow, Ignore or Cancel prompt whenever a site requests a new window.",
             TextWrapping = TextWrapping.Wrap
         });
         panel.Children.Add(new TextBlock
@@ -601,10 +601,9 @@ public sealed partial class MainPage : Page
             if (mode == PopupHandlingMode.AlwaysDeny)
                 return 0;
 
-            Action attach = mode == PopupHandlingMode.Ask
-                ? () => page.QueuePopupPermission(nativeHandle)
-                : () => page.AttachPopupTab(nativeHandle);
-            return App.DispatcherQueue.TryEnqueue(attach) ? 1 : 0;
+            if (mode == PopupHandlingMode.Ask)
+                return App.DispatcherQueue.TryEnqueue(() => page.QueuePopupPermission(nativeHandle)) ? 1 : 0;
+            return App.DispatcherQueue.TryEnqueue(() => page.AttachPopupTab(nativeHandle)) ? 1 : 0;
         }
         catch
         {

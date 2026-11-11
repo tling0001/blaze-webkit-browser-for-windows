@@ -21,7 +21,7 @@ The upstream WinCairo port is an x64 development/testing port rather than a regu
 - Native child-window hosting for WebKit WKView; no WebView2 or Chromium fallback
 - Address/search, back/forward/reload/stop/home
 - Multiple tabs with per-tab native WebKit views and shared website data store/context
-- Configurable pop-up handling: ask before opening, always allow, or always deny
+- Configurable pop-up handling: automatic permission prompts, always allow, or always deny
 - JavaScript `window.open()` and `target="_blank"` open a new native browser tab; `window.close()` closes the owning tab
 - Persistent sessions, browsing history and bookmarks
 - Downloads into the Windows Downloads folder with progress and completion tracking

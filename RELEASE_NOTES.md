@@ -1,10 +1,16 @@
 # Blaze release notes
 
+## [1.0.4] - 2026-11-11
+
+### Popup settings and native callback reliability
+- Name the request-permission policy Automatic and keep it as the default setting.
+- Pass native popup handlers to the WinUI DispatcherQueue using its native delegate signature.
+
 ## [1.0.3] - 2026-11-11
 
 ### Browser settings and popup control
-- Add a Pop-up windows settings section with Ask (recommended), Always allow and Always deny policies.
-- Ask mode displays a native WinUI Allow / Ignore / Cancel dialog for each requested pop-up; ignored or cancelled pop-ups are destroyed without opening a tab.
+- Add a Pop-up windows settings section with Automatic, Always allow and Always deny policies.
+- Automatic mode displays a native WinUI Allow / Ignore / Cancel dialog for each requested pop-up; ignored or cancelled pop-ups are destroyed without opening a tab.
 - Add UI automation coverage for the default Ask flow and the settings control.
 
 ### WebKit build reliability
