@@ -359,6 +359,8 @@ public sealed partial class MainPage : Page
         TabStrip.Transitions = CreateEntranceTransitions();
         Toolbar.Transitions = CreateEntranceTransitions();
         BrowserSurface.Transitions = CreateEntranceTransitions();
+        StartPageSurface.Transitions = CreateEntranceTransitions();
+        StartPageShortcutsGrid.Transitions = CreateEntranceTransitions();
     }
 
     private async Task<ContentDialogResult> ShowDialogAsync(ContentDialog dialog)
