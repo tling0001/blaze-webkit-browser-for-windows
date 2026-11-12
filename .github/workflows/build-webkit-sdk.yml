@@ -165,6 +165,7 @@ jobs:
 
       - name: Save successful pinned WebKit build cache
         if: steps.sdk.outputs.exists != 'true' && steps.webkit-cache.outputs.cache-hit != 'true'
+        continue-on-error: true
         uses: actions/cache/save@v4
         with:
           path: |
