@@ -10,6 +10,7 @@ EXPORTS
     WB_Stop
     WB_CanGoBack
     WB_CanGoForward
+    WB_GetEstimatedProgress
     WB_GetCurrentUrl
     WB_GetTitle
     WB_SetJavaScriptEnabled

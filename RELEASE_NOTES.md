@@ -1,5 +1,17 @@
 # Blaze release notes
 
+## [1.1.15] - 2026-11-12
+
+### Browser chrome and navigation state
+- Replace text-labelled toolbar commands with compact icon-only Segoe Fluent buttons while retaining accessible names and tooltips.
+- Combine Reload and Stop into one button that switches its glyph, accessible name and action using WebKit estimated page-load progress.
+- Expose page-load progress through the native WinCairo host instead of guessing from a timer or navigation URL.
+
+### Startup diagnostics
+- Remove the title-bar raster icon-source XAML that could fail while constructing the window; the app icon remains assigned to the native window in code.
+- Initialize crash logging before application XAML resources and include HRESULTs for each exception in the inner-exception chain.
+
+
 ## [1.1.14] - 2026-11-12
 
 ### Startup crash diagnostics

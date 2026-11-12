@@ -31,164 +31,22 @@
             AutomationProperties.Name="Browser tabs"
             AutomationProperties.AutomationId="BrowserTabStrip" />
 
-        <!-- Native WinUI buttons use Segoe Fluent glyphs, visible labels and accessible names. -->
-        <Grid
-            x:Name="Toolbar"
-            Grid.Row="1"
-            Padding="12,6"
-            ColumnSpacing="8">
+        <!-- Compact icon-only commands retain accessible names and tooltips. -->
+        <Grid x:Name="Toolbar" Grid.Row="1" Padding="12,6" ColumnSpacing="4">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
-
-            <Button
-                x:Name="BackButton"
-                Grid.Column="0"
-                
-                Click="OnBackClick"
-                VerticalAlignment="Center"
-                AutomationProperties.Name="Go back"
-                AutomationProperties.AutomationId="BackButton" ToolTipService.ToolTip="Go back">
-                <StackPanel Orientation="Horizontal" Spacing="6">
-                    <FontIcon Glyph="&#xE72B;" FontSize="16" FontFamily="{ThemeResource SymbolThemeFontFamily}" />
-                    <TextBlock Text="Back" VerticalAlignment="Center" />
-                </StackPanel>
-            </Button>
-            <Button
-                x:Name="ForwardButton"
-                Grid.Column="1"
-                
-                Click="OnForwardClick"
-                VerticalAlignment="Center"
-                AutomationProperties.Name="Go forward"
-                AutomationProperties.AutomationId="ForwardButton" ToolTipService.ToolTip="Go forward">
-                <StackPanel Orientation="Horizontal" Spacing="6">
-                    <FontIcon Glyph="&#xE72A;" FontSize="16" FontFamily="{ThemeResource SymbolThemeFontFamily}" />
-                    <TextBlock Text="Forward" VerticalAlignment="Center" />
-                </StackPanel>
-            </Button>
-            <Button
-                Grid.Column="2"
-                
-                Click="OnReloadClick"
-                VerticalAlignment="Center"
-                AutomationProperties.Name="Reload page"
-                AutomationProperties.AutomationId="ReloadButton" ToolTipService.ToolTip="Reload page">
-                <StackPanel Orientation="Horizontal" Spacing="6">
-                    <FontIcon Glyph="&#xE72C;" FontSize="16" FontFamily="{ThemeResource SymbolThemeFontFamily}" />
-                    <TextBlock Text="Reload" VerticalAlignment="Center" />
-                </StackPanel>
-            </Button>
-            <Button
-                Grid.Column="3"
-                
-                Click="OnStopClick"
-                VerticalAlignment="Center"
-                AutomationProperties.Name="Stop loading"
-                AutomationProperties.AutomationId="StopButton" ToolTipService.ToolTip="Stop loading">
-                <StackPanel Orientation="Horizontal" Spacing="6">
-                    <FontIcon Glyph="&#xE71A;" FontSize="16" FontFamily="{ThemeResource SymbolThemeFontFamily}" />
-                    <TextBlock Text="Stop" VerticalAlignment="Center" />
-                </StackPanel>
-            </Button>
-            <Button
-                Grid.Column="4"
-                
-                Click="OnHomeClick"
-                VerticalAlignment="Center"
-                AutomationProperties.Name="Go to home page"
-                AutomationProperties.AutomationId="HomeButton" ToolTipService.ToolTip="Go to home page">
-                <StackPanel Orientation="Horizontal" Spacing="6">
-                    <FontIcon Glyph="&#xE80F;" FontSize="16" FontFamily="{ThemeResource SymbolThemeFontFamily}" />
-                    <TextBlock Text="Home" VerticalAlignment="Center" />
-                </StackPanel>
-            </Button>
-
-            <AutoSuggestBox
-                x:Name="AddressBox"
-                Grid.Column="5"
-                MinWidth="180"
-                HorizontalAlignment="Stretch"
-                VerticalAlignment="Center"
-                PlaceholderText="Search or enter address"
-                QuerySubmitted="OnAddressQuerySubmitted"
-                AutomationProperties.Name="Address and search" AutomationProperties.AutomationId="AddressBox">
-                <AutoSuggestBox.QueryIcon>
-                    <SymbolIcon Symbol="Find" />
-                </AutoSuggestBox.QueryIcon>
-            </AutoSuggestBox>
-
-            <Button
-                x:Name="BookmarkButton"
-                Grid.Column="6"
-                
-                Click="OnBookmarkClick"
-                VerticalAlignment="Center"
-                AutomationProperties.Name="Add or remove bookmark"
-                AutomationProperties.AutomationId="BookmarkButton" ToolTipService.ToolTip="Add or remove bookmark">
-                <StackPanel Orientation="Horizontal" Spacing="6">
-                    <FontIcon Glyph="&#xE8A4;" FontSize="16" FontFamily="{ThemeResource SymbolThemeFontFamily}" />
-                    <TextBlock Text="Bookmark" VerticalAlignment="Center" />
-                </StackPanel>
-            </Button>
-            <Button
-                Grid.Column="7"
-                
-                Click="OnBookmarksClick"
-                VerticalAlignment="Center"
-                AutomationProperties.Name="Open bookmarks"
-                AutomationProperties.AutomationId="BookmarksButton" ToolTipService.ToolTip="Open saved bookmarks">
-                <StackPanel Orientation="Horizontal" Spacing="6">
-                    <FontIcon Glyph="&#xE8A4;" FontSize="16" FontFamily="{ThemeResource SymbolThemeFontFamily}" />
-                    <TextBlock Text="Saved" VerticalAlignment="Center" />
-                </StackPanel>
-            </Button>
-            <Button
-                Grid.Column="8"
-                
-                Click="OnHistoryClick"
-                VerticalAlignment="Center"
-                AutomationProperties.Name="Open browsing history"
-                AutomationProperties.AutomationId="HistoryButton" ToolTipService.ToolTip="Open browsing history">
-                <StackPanel Orientation="Horizontal" Spacing="6">
-                    <FontIcon Glyph="&#xE81C;" FontSize="16" FontFamily="{ThemeResource SymbolThemeFontFamily}" />
-                    <TextBlock Text="History" VerticalAlignment="Center" />
-                </StackPanel>
-            </Button>
-            <Button
-                Grid.Column="9"
-                
-                Click="OnDownloadsClick"
-                VerticalAlignment="Center"
-                AutomationProperties.Name="Open downloads"
-                AutomationProperties.AutomationId="DownloadsButton" ToolTipService.ToolTip="Open downloads">
-                <StackPanel Orientation="Horizontal" Spacing="6">
-                    <FontIcon Glyph="&#xE896;" FontSize="16" FontFamily="{ThemeResource SymbolThemeFontFamily}" />
-                    <TextBlock Text="Downloads" VerticalAlignment="Center" />
-                </StackPanel>
-            </Button>
-            <Button
-                Grid.Column="10"
-                
-                Click="OnSettingsClick"
-                VerticalAlignment="Center"
-                AutomationProperties.Name="Open browser settings"
-                AutomationProperties.AutomationId="SettingsButton" ToolTipService.ToolTip="Open browser settings">
-                <StackPanel Orientation="Horizontal" Spacing="6">
-                    <FontIcon Glyph="&#xE713;" FontSize="16" FontFamily="{ThemeResource SymbolThemeFontFamily}" />
-                    <TextBlock Text="Settings" VerticalAlignment="Center" />
-                </StackPanel>
-            </Button>
+            <Button x:Name="BackButton" Grid.Column="0" Width="36" Height="36" Padding="0" Click="OnBackClick" AutomationProperties.Name="Go back" AutomationProperties.AutomationId="BackButton" ToolTipService.ToolTip="Back"><FontIcon Glyph="&#xE72B;" FontSize="16" FontFamily="{ThemeResource SymbolThemeFontFamily}" /></Button>
+            <Button x:Name="ForwardButton" Grid.Column="1" Width="36" Height="36" Padding="0" Click="OnForwardClick" AutomationProperties.Name="Go forward" AutomationProperties.AutomationId="ForwardButton" ToolTipService.ToolTip="Forward"><FontIcon Glyph="&#xE72A;" FontSize="16" FontFamily="{ThemeResource SymbolThemeFontFamily}" /></Button>
+            <Button x:Name="ReloadStopButton" Grid.Column="2" Width="36" Height="36" Padding="0" Click="OnReloadStopClick" AutomationProperties.Name="Reload page" AutomationProperties.AutomationId="ReloadStopButton" ToolTipService.ToolTip="Reload"><FontIcon x:Name="ReloadStopIcon" Glyph="&#xE72C;" FontSize="16" FontFamily="{ThemeResource SymbolThemeFontFamily}" /></Button>
+            <Button x:Name="HomeButton" Grid.Column="3" Width="36" Height="36" Padding="0" Click="OnHomeClick" AutomationProperties.Name="Go to home page" AutomationProperties.AutomationId="HomeButton" ToolTipService.ToolTip="Home"><FontIcon Glyph="&#xE80F;" FontSize="16" FontFamily="{ThemeResource SymbolThemeFontFamily}" /></Button>
+            <AutoSuggestBox x:Name="AddressBox" Grid.Column="4" MinWidth="180" HorizontalAlignment="Stretch" VerticalAlignment="Center" PlaceholderText="Search or enter address" QuerySubmitted="OnAddressQuerySubmitted" AutomationProperties.Name="Address and search" AutomationProperties.AutomationId="AddressBox"><AutoSuggestBox.QueryIcon><SymbolIcon Symbol="Find" /></AutoSuggestBox.QueryIcon></AutoSuggestBox>
+            <Button x:Name="BookmarkButton" Grid.Column="5" Width="36" Height="36" Padding="0" Click="OnBookmarkClick" AutomationProperties.Name="Add bookmark" AutomationProperties.AutomationId="BookmarkButton" ToolTipService.ToolTip="Add bookmark"><FontIcon Glyph="&#xE8A4;" FontSize="16" FontFamily="{ThemeResource SymbolThemeFontFamily}" /></Button>
+            <Button x:Name="BookmarksButton" Grid.Column="6" Width="36" Height="36" Padding="0" Click="OnBookmarksClick" AutomationProperties.Name="Open bookmarks" AutomationProperties.AutomationId="BookmarksButton" ToolTipService.ToolTip="Bookmarks"><FontIcon Glyph="&#xE8A4;" FontSize="16" FontFamily="{ThemeResource SymbolThemeFontFamily}" /></Button>
+            <Button x:Name="HistoryButton" Grid.Column="7" Width="36" Height="36" Padding="0" Click="OnHistoryClick" AutomationProperties.Name="Open browsing history" AutomationProperties.AutomationId="HistoryButton" ToolTipService.ToolTip="History"><FontIcon Glyph="&#xE81C;" FontSize="16" FontFamily="{ThemeResource SymbolThemeFontFamily}" /></Button>
+            <Button x:Name="DownloadsButton" Grid.Column="8" Width="36" Height="36" Padding="0" Click="OnDownloadsClick" AutomationProperties.Name="Open downloads" AutomationProperties.AutomationId="DownloadsButton" ToolTipService.ToolTip="Downloads"><FontIcon Glyph="&#xE896;" FontSize="16" FontFamily="{ThemeResource SymbolThemeFontFamily}" /></Button>
+            <Button x:Name="SettingsButton" Grid.Column="9" Width="36" Height="36" Padding="0" Click="OnSettingsClick" AutomationProperties.Name="Open browser settings" AutomationProperties.AutomationId="SettingsButton" ToolTipService.ToolTip="Settings"><FontIcon Glyph="&#xE713;" FontSize="16" FontFamily="{ThemeResource SymbolThemeFontFamily}" /></Button>
         </Grid>
 
         <Grid

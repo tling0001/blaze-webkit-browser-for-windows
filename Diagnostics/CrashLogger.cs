@@ -39,13 +39,19 @@ internal static class CrashLogger
     public static void LogException(string source, Exception exception)
     {
         ArgumentNullException.ThrowIfNull(exception);
-        Write("ERROR", $"{source}{Environment.NewLine}{exception}");
+        var details = new StringBuilder();
+        for (Exception? current = exception; current is not null; current = current.InnerException)
+        {
+            details.AppendLine($"{current.GetType().FullName}: {current.Message} (HRESULT=0x{current.HResult:X8})");
+            if (!string.IsNullOrWhiteSpace(current.StackTrace)) details.AppendLine(current.StackTrace);
+        }
+        Write("ERROR", $"{source}{Environment.NewLine}{details}");
     }
 
     public static void LogFatal(string source, object? exceptionObject)
     {
         var details = exceptionObject is Exception exception
-            ? exception.ToString()
+            ? $"{exception.GetType().FullName}: {exception.Message} (HRESULT=0x{exception.HResult:X8}){Environment.NewLine}{exception}"
             : exceptionObject?.ToString() ?? "No exception object was supplied.";
         Write("FATAL", $"{source}{Environment.NewLine}{details}");
     }

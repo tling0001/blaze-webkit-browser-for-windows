@@ -328,8 +328,12 @@ public sealed partial class MainPage : Page
 
     private void OnBackClick(object sender, RoutedEventArgs e) => ViewModel.GoBackCommand.Execute(null);
     private void OnForwardClick(object sender, RoutedEventArgs e) => ViewModel.GoForwardCommand.Execute(null);
-    private void OnReloadClick(object sender, RoutedEventArgs e) => ViewModel.ReloadCommand.Execute(null);
-    private void OnStopClick(object sender, RoutedEventArgs e) => ViewModel.StopCommand.Execute(null);
+    private void OnReloadStopClick(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel.SelectedTab?.IsLoading == true) ViewModel.StopCommand.Execute(null);
+        else ViewModel.ReloadCommand.Execute(null);
+        UpdateLoadingButton();
+    }
 
     private void OnHomeClick(object sender, RoutedEventArgs e)
     {
@@ -350,9 +354,9 @@ public sealed partial class MainPage : Page
 
     private async void OnBookmarkClick(object sender, RoutedEventArgs e)
     {
-        var added = ViewModel.ToggleBookmark(ViewModel.SelectedTab);
+        ViewModel.ToggleBookmark(ViewModel.SelectedTab);
         await ViewModel.SaveAsync();
-        BookmarkButton.Content = added ? "Bookmarked" : "Bookmark";
+        UpdateBookmarkButton();
     }
 
     private void OnBookmarksClick(object sender, RoutedEventArgs e)
@@ -804,6 +808,7 @@ public sealed partial class MainPage : Page
             return;
 
         tab.RefreshNativeState();
+        UpdateLoadingButton();
         if (AddressBox.FocusState == FocusState.Unfocused)
             AddressBox.Text = tab.Url;
         if (!string.Equals(tab.LastRecordedUrl, tab.Url, StringComparison.Ordinal))
@@ -970,13 +975,26 @@ public sealed partial class MainPage : Page
 
     private void UpdateBookmarkButton()
     {
+        var isBookmarked = ViewModel.IsBookmarked(ViewModel.SelectedTab?.Url);
         BookmarkButton.IsEnabled = ViewModel.SelectedTab?.IsNativeStartPage != true;
-        BookmarkButton.Content = ViewModel.IsBookmarked(ViewModel.SelectedTab?.Url) ? "Bookmarked" : "Bookmark";
+        var accessibleName = isBookmarked ? "Remove bookmark" : "Add bookmark";
+        AutomationProperties.SetName(BookmarkButton, accessibleName);
+        ToolTipService.SetToolTip(BookmarkButton, accessibleName);
+    }
+
+    private void UpdateLoadingButton()
+    {
+        var isLoading = ViewModel.SelectedTab?.IsLoading == true;
+        ReloadStopIcon.Glyph = isLoading ? "\\uE71A" : "\\uE72C";
+        var accessibleName = isLoading ? "Stop loading" : "Reload page";
+        AutomationProperties.SetName(ReloadStopButton, accessibleName);
+        ToolTipService.SetToolTip(ReloadStopButton, isLoading ? "Stop loading" : "Reload");
     }
 
     private void UpdateNavigationButtons()
     {
         BackButton.IsEnabled = ViewModel.SelectedTab?.CanGoBack == true;
         ForwardButton.IsEnabled = ViewModel.SelectedTab?.CanGoForward == true;
+        UpdateLoadingButton();
     }
 }

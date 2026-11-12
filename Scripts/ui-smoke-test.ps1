@@ -436,7 +436,7 @@ window.addEventListener('load', () => {
     Test-UI 'Tab and settings controls expose AutomationIds' {
         $inspection = Invoke-Ui @('inspect', '--interactive', '--json') | ConvertFrom-Json
         $elements = @(Get-Elements @($inspection.windows | ForEach-Object { $_.elements }))
-        foreach ($id in @('BrowserTabStrip', 'BackButton', 'ForwardButton', 'ReloadButton', 'StopButton', 'HomeButton', 'BookmarkButton', 'BookmarksButton', 'HistoryButton', 'DownloadsButton', 'SettingsButton')) {
+        foreach ($id in @('BrowserTabStrip', 'BackButton', 'ForwardButton', 'ReloadStopButton', 'HomeButton', 'BookmarkButton', 'BookmarksButton', 'HistoryButton', 'DownloadsButton', 'SettingsButton')) {
             if (-not ($elements | Where-Object { $_.automationId -eq $id })) {
                 throw "Missing AutomationId: $id"
             }

@@ -600,6 +600,11 @@ void WB_Reload(WB_VIEW_HANDLE view) { if (view && view->view) WKPageReload(WKVie
 void WB_Stop(WB_VIEW_HANDLE view) { if (view && view->view) WKPageStopLoading(WKViewGetPage(view->view)); }
 BOOL WB_CanGoBack(WB_VIEW_HANDLE view) { return view && view->view && WKPageCanGoBack(WKViewGetPage(view->view)); }
 BOOL WB_CanGoForward(WB_VIEW_HANDLE view) { return view && view->view && WKPageCanGoForward(WKViewGetPage(view->view)); }
+double WB_GetEstimatedProgress(WB_VIEW_HANDLE view)
+{
+    if (!view || !view->view) return 1.0;
+    return WKPageGetEstimatedProgress(WKViewGetPage(view->view));
+}
 
 int WB_GetCurrentUrl(WB_VIEW_HANDLE view, wchar_t* buffer, int capacity)
 {

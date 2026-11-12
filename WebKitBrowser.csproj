@@ -16,7 +16,7 @@
     <AppxPackageSigningEnabled>false</AppxPackageSigningEnabled>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <Version>1.1.14</Version>
+    <Version>1.1.15</Version>
     <AssemblyVersion>1.1.14.0</AssemblyVersion>
     <FileVersion>1.1.14.0</FileVersion>
     <InformationalVersion>1.1.14</InformationalVersion>

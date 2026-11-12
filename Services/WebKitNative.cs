@@ -43,6 +43,9 @@ internal static class WebKitNative
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static extern bool CanGoForward(IntPtr view);
 
+    [DllImport(Library, EntryPoint = "WB_GetEstimatedProgress", CallingConvention = CallingConvention.Cdecl)]
+    internal static extern double GetEstimatedProgress(IntPtr view);
+
     [DllImport(Library, EntryPoint = "WB_GetCurrentUrl", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Unicode)]
     private static extern int GetCurrentUrlNative(IntPtr view, StringBuilder buffer, int capacity);
 

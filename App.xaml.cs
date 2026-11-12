@@ -1,4 +1,5 @@
 using Microsoft.UI.Xaml;
+using WebKitBrowser.Diagnostics;
 
 // To learn more about WinUI, the WinUI project structure,
 // and more about our project templates, see: http://aka.ms/winui-project-info.
@@ -36,8 +37,18 @@ public partial class App : Application
     /// </summary>
     public App()
     {
-        InitializeComponent();
+        CrashLogger.Initialize();
+        CrashLogger.Log("App constructor entered.");
+        UnhandledException += OnUnhandledException;
+        AppDomain.CurrentDomain.UnhandledException += OnDomainUnhandledException;
+        TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
+        try { CrashLogger.Log("Initializing application XAML resources."); InitializeComponent(); CrashLogger.Log("Application XAML resources initialized."); }
+        catch (Exception exception) { CrashLogger.LogException("Application construction failed.", exception); throw; }
     }
+
+    private void OnUnhandledException(object sender, Microsoft.UI.Xaml.UnhandledExceptionEventArgs e) => CrashLogger.LogFatal("WinUI unhandled exception.", e.Exception);
+    private static void OnDomainUnhandledException(object sender, System.UnhandledExceptionEventArgs e) => CrashLogger.LogFatal($"AppDomain unhandled exception. IsTerminating={e.IsTerminating}.", e.ExceptionObject);
+    private static void OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e) { CrashLogger.LogException("Unobserved task exception.", e.Exception); e.SetObserved(); }
 
     /// <summary>
     /// Invoked when the application is launched.
@@ -45,8 +56,8 @@ public partial class App : Application
     /// <param name="args">Details about the launch request and process.</param>
     protected override void OnLaunched(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)
     {
-        Window = new MainWindow();
-        DispatcherQueue = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
-        Window.Activate();
+        CrashLogger.Log("Application launch activation entered.");
+        try { Window = new MainWindow(); CrashLogger.Log("MainWindow constructed."); DispatcherQueue = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread(); Window.Activate(); CrashLogger.Log("MainWindow activated."); }
+        catch (Exception exception) { CrashLogger.LogException("Application launch failed.", exception); throw; }
     }
 }
