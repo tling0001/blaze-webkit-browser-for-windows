@@ -94,12 +94,21 @@ try {
     $ArtifactDirectory = [IO.Path]::GetFullPath($ArtifactDirectory)
     New-Item -ItemType Directory -Force -Path $ArtifactDirectory | Out-Null
 
-    $launch = (Invoke-WinAppChecked @('run', '.', '--detach', '--json') | ConvertFrom-Json)
-    if ($launch.Error -or -not $launch.ProcessId -or [int]$launch.ProcessId -le 0 -or ($launch.ProcessScope -and $launch.ProcessScope -ne 'local')) {
-        throw "WinApp CLI did not return an app process ID. $($launch.Error)"
+    # Exercise the exact Release payload that is placed inside the Inno Setup installer.
+    # The previous test used 'winapp run', which rebuilt/launched Debug and could pass
+    # while the published Release installer behaved differently on a user's machine.
+    $releaseExe = Join-Path $PWD 'publish\\win-x64\\Blaze.exe'
+    if (-not (Test-Path -LiteralPath $releaseExe -PathType Leaf)) {
+        throw "Published Release executable was not found: $releaseExe"
     }
-    $appPid = [int]$launch.ProcessId
+    $releaseDirectory = Split-Path -Parent $releaseExe
+    $process = Start-Process -FilePath $releaseExe -WorkingDirectory $releaseDirectory -PassThru
+    if (-not $process -or $process.Id -le 0) {
+        throw 'Could not launch the published Release executable.'
+    }
+    $appPid = [int]$process.Id
     $uiStarted = $true
+    Write-Host "Smoke testing published Release executable. PID=$appPid; Path=$releaseExe"
 
     # WinUI activation is asynchronous. A successful detached launch can
     # return before App.OnLaunched has created and activated MainWindow.

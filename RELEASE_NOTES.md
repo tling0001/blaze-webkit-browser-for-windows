@@ -1,5 +1,15 @@
 # Blaze release notes
 
+## [1.1.17] - 2026-11-12
+
+### Release-build smoke testing and startup diagnostics
+- Run UI smoke tests against the published Release executable that is packaged into the standalone installer, rather than rebuilding and testing a separate Debug executable.
+- Expand startup logs with product and assembly versions, Windows App SDK assembly version, process and OS architectures, process bitness and application base directory.
+- Record XAML resource names, numeric XAML line metadata when available, exception types, HRESULTs, target sites, full stack traces and nested/aggregate/loader exceptions.
+- Flush diagnostic log entries to disk so startup failures are less likely to lose their final diagnostic record.
+- Keep page content, browsing URLs, cookies, form values and arbitrary exception data out of routine logs.
+
+
 ## [1.1.16] - 2026-11-12
 
 ### UI automation reliability and toolbar polish
