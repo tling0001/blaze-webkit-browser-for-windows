@@ -95,12 +95,12 @@ jobs:
       - name: Restore pinned WebKit build cache
         if: steps.sdk.outputs.exists != 'true'
         id: webkit-cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: |
             ${{ runner.temp }}/webkit/WebKitBuild/Release
             ${{ runner.temp }}/webkit/WebKitLibraries/win
-          key: wincairo-x64-d641dd75af65b0469eff30bb76a97e01e02633fc-7d5f3c6241729acbbb7774f54bf687429aaf6492-9a80b82f283a1d69ffdc64e32536627ae738a65b-windows-latest-physical-shortpath-v2
+          key: wincairo-x64-d641dd75af65b0469eff30bb76a97e01e02633fc-7d5f3c6241729acbbb7774f54bf687429aaf6492-9a80b82f283a1d69ffdc64e32536627ae738a65b-windows-latest-release-runtime-no-tests-v3
 
       - name: Install WinCairo build dependencies
         if: steps.sdk.outputs.exists != 'true' && steps.webkit-cache.outputs.cache-hit != 'true'
@@ -158,8 +158,19 @@ jobs:
           $ninjaDir = Split-Path $env:WEBKIT_NINJA
           $extraPath = $env:WEBKIT_XAMPP + '\perl\bin;' + $env:WEBKIT_XAMPP + '\apache\bin;' + $pythonDir + ';' + $pythonDir + '\Scripts;' + $ninjaDir
           $command = 'cd /d "' + $sourceRoot + '" && call "' + $vcvars + '" && set "PATH=' + $extraPath + ';%PATH%" && set "CC=clang-cl" && set "CXX=clang-cl" && where.exe ninja && ninja --version && perl Tools\Scripts\build-webkit --release'
+          $command = $command.TrimEnd() + ' --cmakeargs="-DENABLE_API_TESTS=OFF -DENABLE_LAYOUT_TESTS=OFF -DENABLE_WEBDRIVER=OFF -DENABLE_MINIBROWSER=OFF"'
+          Write-Host 'Building the production WebKit runtime in Release mode; optional API/layout tests, WebDriver and MiniBrowser targets are disabled.'
           cmd.exe /d /s /c $command
           if ($LASTEXITCODE -ne 0) { throw "Pinned WebKit WinCairo build failed (exit $LASTEXITCODE)." }
+
+      - name: Save successful pinned WebKit build cache
+        if: steps.sdk.outputs.exists != 'true' && steps.webkit-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ${{ runner.temp }}/webkit/WebKitBuild/Release
+            ${{ runner.temp }}/webkit/WebKitLibraries/win
+          key: wincairo-x64-d641dd75af65b0469eff30bb76a97e01e02633fc-7d5f3c6241729acbbb7774f54bf687429aaf6492-9a80b82f283a1d69ffdc64e32536627ae738a65b-windows-latest-release-runtime-no-tests-v3
 
       - name: Print WebKit build diagnostics
         if: failure() && steps.sdk.outputs.exists != 'true'
@@ -181,36 +192,83 @@ jobs:
           $workspace = $env:GITHUB_WORKSPACE
           $sourceRoot = $env:WEBKIT_SOURCE_ROOT
           if (-not $sourceRoot -or -not (Test-Path -LiteralPath $sourceRoot -PathType Container)) { throw 'The short physical WebKit source root is unavailable for SDK staging.' }
+
           $release = Join-Path $sourceRoot 'WebKitBuild\Release'
           $stage = Join-Path $workspace 'webkit-sdk'
-          New-Item -ItemType Directory -Path $stage -Force | Out-Null
-          foreach ($required in @((Join-Path $release 'bin64\WebKit2.dll'),(Join-Path $release 'include\WebKit\WKView.h'))) { if (-not (Test-Path $required)) { throw "Missing WebKit output: $required" } }
-          $importLibrary = Get-ChildItem -LiteralPath $release -Filter 'WebKit2.lib' -Recurse -File | Select-Object -First 1
-          if (-not $importLibrary) { throw 'WebKit2.lib was not produced.' }
-          Copy-Item -Path (Join-Path $release 'bin64') -Destination $stage -Recurse -Force
-          Remove-Item -LiteralPath (Join-Path $stage 'bin64\MiniBrowser.exe') -Force -ErrorAction SilentlyContinue
-          Remove-Item -LiteralPath (Join-Path $stage 'bin64\WebKitTestRunner.exe') -Force -ErrorAction SilentlyContinue
-          Get-ChildItem -LiteralPath (Join-Path $stage 'bin64') -Filter '*.pdb' -Recurse -File | Remove-Item -Force
-          Copy-Item -Path (Join-Path $release 'include') -Destination $stage -Recurse -Force
-          $lib64 = Join-Path $release 'lib64'
-          if (Test-Path $lib64) { Copy-Item -Path $lib64 -Destination $stage -Recurse -Force }
+          $includeRoot = Join-Path $release 'include'
+          $header = Join-Path $includeRoot 'WebKit\WKView.h'
+          if (-not (Test-Path -LiteralPath $header -PathType Leaf)) { throw "Missing public WebKit C API header: $header" }
+
+          # The pinned WinCairo CMake build writes x64 outputs to bin, not bin64.
+          # Normalize that upstream layout to the stable bin64 SDK contract used by Blaze.
+          $binaryRoot = @('bin', 'bin64') |
+            ForEach-Object { Join-Path $release $_ } |
+            Where-Object { Test-Path -LiteralPath (Join-Path $_ 'WebKit2.dll') -PathType Leaf } |
+            Select-Object -First 1
+          if (-not $binaryRoot) {
+            $candidates = @(Get-ChildItem -LiteralPath $release -Filter 'WebKit2.dll' -Recurse -File -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName)
+            throw "WebKit2.dll was not found in the expected WinCairo output folders. Found: $($candidates -join '; '). Release root: $release"
+          }
+
+          $importLibrary = Get-ChildItem -LiteralPath $release -Filter 'WebKit2.lib' -Recurse -File |
+            Where-Object { $_.FullName.StartsWith($binaryRoot, [StringComparison]::OrdinalIgnoreCase) } |
+            Select-Object -First 1
+          if (-not $importLibrary) { throw "WebKit2.lib was not found beside the WinCairo runtime in $binaryRoot." }
+
+          if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force }
+          $stageBin = Join-Path $stage 'bin64'
+          New-Item -ItemType Directory -Path $stageBin -Force | Out-Null
+          Copy-Item -Path (Join-Path $binaryRoot '*') -Destination $stageBin -Recurse -Force
+          if (-not (Test-Path -LiteralPath (Join-Path $stageBin 'WebKit2.lib'))) {
+            Copy-Item -LiteralPath $importLibrary.FullName -Destination (Join-Path $stageBin 'WebKit2.lib') -Force
+          }
+
+          # Keep the browser engine and its helper processes; omit developer/test frontends and symbols.
+          $unneededExecutables = @('MiniBrowser.exe', 'WebKitTestRunner.exe', 'WebDriver.exe', 'ImageDiff.exe', 'jsc.exe')
+          foreach ($name in $unneededExecutables) {
+            Remove-Item -LiteralPath (Join-Path $stageBin $name) -Force -ErrorAction SilentlyContinue
+          }
+          Get-ChildItem -LiteralPath $stageBin -File -Recurse |
+            Where-Object { $_.Name -match '^(Test.*|test.*|.*TestRunnerInjectedBundle)\.(exe|dll)$' -or $_.Extension -in @('.pdb', '.ilk', '.exp') } |
+            Remove-Item -Force
+
+          Copy-Item -LiteralPath $includeRoot -Destination $stage -Recurse -Force
+
           $runtime = Join-Path $stage 'runtime'
           New-Item -ItemType Directory -Path $runtime -Force | Out-Null
-          foreach ($folder in @('bin','bin64')) { $source = Join-Path $sourceRoot "WebKitLibraries\win\$folder"; if (Test-Path $source) { Copy-Item -Path (Join-Path $source '*') -Destination $runtime -Recurse -Force } }
+          foreach ($folder in @('bin', 'bin64')) {
+            $source = Join-Path $sourceRoot "WebKitLibraries\win\$folder"
+            if (Test-Path -LiteralPath $source -PathType Container) {
+              Copy-Item -Path (Join-Path $source '*') -Destination $runtime -Recurse -Force
+            }
+          }
+
           $thirdPartyLib = Join-Path $sourceRoot 'WebKitLibraries\win\lib'
-          if (Test-Path $thirdPartyLib) { Copy-Item -Path $thirdPartyLib -Destination (Join-Path $stage 'third-party') -Recurse -Force }
+          if (Test-Path -LiteralPath $thirdPartyLib -PathType Container) {
+            Copy-Item -LiteralPath $thirdPartyLib -Destination (Join-Path $stage 'third-party') -Recurse -Force
+          }
+
           $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
           $vs = & $vswhere -latest -property installationPath
+          if (-not $vs) { throw 'Visual Studio installation was not found while staging the SDK.' }
           $crtRoot = Join-Path $vs 'VC\Redist\MSVC'
-          $crt = Get-ChildItem -LiteralPath $crtRoot -Filter 'Microsoft.VC*.CRT' -Directory -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match '\\x64\\Microsoft\.VC[^\\]+\.CRT$' } | Sort-Object FullName -Descending | Select-Object -First 1
+          $crt = Get-ChildItem -LiteralPath $crtRoot -Filter 'Microsoft.VC*.CRT' -Directory -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match '\\x64\\Microsoft\.VC[^\\]+\.CRT$' } |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
           if (-not $crt) { throw 'Visual C++ x64 app-local CRT files were not found.' }
           Copy-Item -Path (Join-Path $crt.FullName '*.dll') -Destination $runtime -Force
+
           $vcpkgExe = Join-Path $vs 'VC\vcpkg\vcpkg.exe'
           if (-not (Test-Path -LiteralPath $vcpkgExe)) { throw "Visual Studio vcpkg executable was not found: $vcpkgExe" }
           Push-Location $release
-          try { $dependencies = & $vcpkgExe list; if ($LASTEXITCODE -ne 0 -or -not $dependencies) { throw 'Could not capture the resolved vcpkg dependency list.' } }
+          try {
+            $dependencies = & $vcpkgExe list
+            if ($LASTEXITCODE -ne 0 -or -not $dependencies) { throw 'Could not capture the resolved vcpkg dependency list.' }
+          }
           finally { Pop-Location }
           $dependencies | Set-Content -LiteralPath (Join-Path $stage 'dependencies.lock.txt') -Encoding utf8
+
           $spec = Get-Content -LiteralPath 'blaze\eng\WebKitSdk.json' -Raw | ConvertFrom-Json
           $manifest = [ordered]@{
             sdkFormatVersion = [int]$spec.sdkFormatVersion
@@ -226,10 +284,19 @@ jobs:
             vcpkgTriplet = $spec.vcpkgTriplet
             toolchain = $spec.toolchain
             visualStudioInstallation = $vs
-            importLibrary = $importLibrary.FullName.Substring($release.Length + 1)
+            importLibrary = 'bin64\WebKit2.lib'
             runtimeFileCount = (Get-ChildItem -LiteralPath $runtime -File -Recurse).Count
+            engineBinaryDirectory = (Split-Path -Leaf $binaryRoot)
+            disabledBuildTargets = @('API tests', 'layout tests', 'WebDriver', 'MiniBrowser')
           }
           $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $stage 'sdk-manifest.json') -Encoding utf8
+
+          foreach ($required in @('bin64\WebKit2.dll', 'bin64\WebKit2.lib', 'bin64\WebKitWebProcess.exe', 'bin64\WebKitNetworkProcess.exe', 'include\WebKit\WKView.h')) {
+            if (-not (Test-Path -LiteralPath (Join-Path $stage $required) -PathType Leaf)) {
+              throw "Staged SDK is incomplete: missing $required"
+            }
+          }
+
           $zipName = "Blaze-WebKitSDK-$($spec.webkitCommit.Substring(0,8))-x64.zip"
           $zipPath = Join-Path $workspace $zipName
           Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zipPath -CompressionLevel Optimal -Force
@@ -237,6 +304,7 @@ jobs:
           $manifest.archiveSha256 = $archiveHash
           $manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $workspace 'sdk-manifest.json') -Encoding utf8
           "$archiveHash  $zipName" | Set-Content -LiteralPath (Join-Path $workspace 'sdk.sha256') -Encoding ascii
+
           @"
           WebKit WinCairo SDK release $($spec.releaseTag)
 
@@ -245,8 +313,10 @@ jobs:
           Configuration: Release
           vcpkg baseline: $($spec.vcpkgBuiltinBaseline)
           WebKitRequirements baseline: $($spec.webkitRequirementsBaseline)
-          Archive includes WebKit runtime binaries/resources, public headers, import libraries,
-          dependency DLLs, app-local Visual C++ runtime DLLs and the resolved vcpkg package list.
+          Archive normalizes the pinned WinCairo bin output to bin64 for the stable SDK contract.
+          It includes WebKit runtime binaries/processes, public headers, import library,
+          dependency DLLs, app-local Visual C++ runtime DLLs and resolved vcpkg package list.
+          API/layout tests, WebDriver and MiniBrowser are excluded from the production SDK build.
           SHA-256 is recorded in sdk-manifest.json and sdk.sha256.
           "@ | Set-Content -LiteralPath (Join-Path $workspace 'sdk-release-notes.md') -Encoding utf8
 
