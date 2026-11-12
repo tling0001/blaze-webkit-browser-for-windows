@@ -52,9 +52,15 @@ public partial class MainPageViewModel : ObservableObject
     {
         Directory.CreateDirectory(_dataDirectory);
         Settings = await ReadAsync<BrowserSettings>("settings.json") ?? new BrowserSettings();
-        // Migrate the old uncustomized Google default to the native WinUI start page.
-        if (!Settings.HomePageCustomized && string.Equals(Settings.HomePage, "https://www.google.com", StringComparison.OrdinalIgnoreCase))
-            Settings.HomePage = BrowserSettings.NativeStartPageUrl;
+        // Migrate the previous default to the native start page, while retaining any
+        // custom homepage saved by an earlier Blaze version.
+        if (!Settings.HomePageCustomized)
+        {
+            if (string.Equals(Settings.HomePage, "https://www.google.com", StringComparison.OrdinalIgnoreCase))
+                Settings.HomePage = BrowserSettings.NativeStartPageUrl;
+            else if (!string.Equals(Settings.HomePage, BrowserSettings.NativeStartPageUrl, StringComparison.OrdinalIgnoreCase))
+                Settings.HomePageCustomized = true;
+        }
 
         var savedBookmarks = await ReadAsync<List<BookmarkEntry>>("bookmarks.json") ?? [];
         var savedHistory = await ReadAsync<List<HistoryEntry>>("history.json") ?? [];
@@ -80,7 +86,12 @@ public partial class MainPageViewModel : ObservableObject
         if (session?.TabUrls is { Count: > 0 })
         {
             foreach (var url in session.TabUrls)
-                Tabs.Add(new BrowserTab { Url = url, Title = url });
+            {
+                var tab = new BrowserTab { Url = url };
+                if (!tab.IsNativeStartPage)
+                    tab.Title = url;
+                Tabs.Add(tab);
+            }
             var selectedIndex = Math.Clamp(session.SelectedIndex, 0, Tabs.Count - 1);
             SelectedTab = Tabs[selectedIndex];
         }
