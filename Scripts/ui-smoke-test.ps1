@@ -101,6 +101,23 @@ try {
         Save-Screenshot '01-browser-start.png'
     }
 
+    Test-UI 'Native WinUI start page and quick-link grid' {
+        Invoke-Ui @('wait-for', 'StartPageSurface', '-t', '5000') | Out-Null
+        $inspection = Invoke-Ui @('inspect', '--interactive', '--json') | ConvertFrom-Json
+        $elements = @(Get-Elements @($inspection.windows | ForEach-Object { $_.elements }))
+        foreach ($id in @('StartPageSearchBox', 'StartPageShortcuts', 'ShortcutGoogle', 'ShortcutWikipedia', 'ShortcutGitHub')) {
+            if (-not ($elements | Where-Object { $_.automationId -eq $id })) {
+                throw "The native WinUI start page did not expose $id."
+            }
+        }
+        Save-Screenshot '01-native-start-page.png'
+        Invoke-Ui @('set-value', 'StartPageSearchBox', 'Blaze native start page smoke test') | Out-Null
+        Invoke-Ui @('send-keys', 'enter', '--via', 'send-input') | Out-Null
+        Invoke-Ui @('wait-for', 'AddressBox', '--value', 'https://www.google.com/search?q=Blaze%20native%20start%20page%20smoke%20test', '-t', '5000') | Out-Null
+        Invoke-Ui @('invoke', 'HomeButton') | Out-Null
+        Invoke-Ui @('wait-for', 'StartPageSurface', '-t', '5000') | Out-Null
+    }
+
     Test-UI 'Live WebKit navigation to HTTPS example.com' {
         Invoke-Ui @('set-value', 'AddressBox', 'https://example.com') | Out-Null
         Invoke-Ui @('send-keys', 'enter', '--via', 'send-input') | Out-Null
