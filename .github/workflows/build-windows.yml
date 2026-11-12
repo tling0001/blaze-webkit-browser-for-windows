@@ -47,7 +47,7 @@ jobs:
           # specification changes. App-only commits can therefore consume an SDK
           # build started by an earlier commit. Resolve that exact SDK-definition
           # revision rather than comparing the run to this browser commit.
-          $expectedSdkSourceSha = (& git log -1 --format=%H -- .github/workflows/build-webkit-sdk.yml eng\WebKitSdk.json).Trim()
+          $expectedSdkSourceSha = (& git log -1 --format=%H -- .github/workflows/build-webkit-sdk.yml eng/WebKitSdk.json).Trim()
           if ($LASTEXITCODE -ne 0 -or -not $expectedSdkSourceSha) { throw 'Could not determine the source revision for the pinned WebKit SDK definition.' }
           Write-Host "Waiting for versioned WebKit SDK $sdkTag from $sdkRepository (SDK definition $expectedSdkSourceSha)"
           while ($true) {
@@ -57,7 +57,7 @@ jobs:
             # Fail promptly if the SDK workflow for the current pinned SDK definition
             # has already failed. This also works for later app-only commits, and
             # avoids waiting 5.5 hours after a staging/provenance failure.
-            $sdkRunsJson = & gh run list --repo $env:GITHUB_REPOSITORY --workflow build-webkit-sdk.yml --branch main --limit 10 --json headSha,status,conclusion 2>$null
+            $sdkRunsJson = & gh run list --repo $env:GITHUB_REPOSITORY --workflow build-webkit-sdk.yml --branch main --limit 100 --json headSha,status,conclusion 2>$null
             if ($LASTEXITCODE -eq 0 -and $sdkRunsJson) {
               $sdkRuns = @($sdkRunsJson | ConvertFrom-Json)
               $matchingSdkRun = $sdkRuns | Where-Object { $_.headSha -eq $expectedSdkSourceSha } | Select-Object -First 1

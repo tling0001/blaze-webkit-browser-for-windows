@@ -1,5 +1,11 @@
 # Blaze release notes
 
+## [1.1.6] - 2026-11-12
+
+### SDK workflow tracking
+- Use Git's repository-relative forward-slash pathspecs when resolving the latest SDK workflow/specification revision.
+- Inspect a wider recent-run window so app-only builds reliably find the matching pinned SDK build.
+
 ## [1.1.5] - 2026-11-12
 
 ### SDK bootstrap reliability
