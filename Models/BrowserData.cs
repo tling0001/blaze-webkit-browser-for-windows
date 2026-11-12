@@ -17,12 +17,14 @@ public enum PopupHandlingMode
 
 public sealed class BrowserSettings
 {
+    public const string NativeStartPageUrl = "blaze://home";
     public bool TabBarAboveToolbar { get; set; } = true;
     public bool JavaScriptEnabled { get; set; } = true;
     public bool LoadImagesAutomatically { get; set; } = true;
     public bool ReduceMotion { get; set; } = false;
     public PopupHandlingMode PopupHandlingMode { get; set; } = PopupHandlingMode.Ask;
-    public string HomePage { get; set; } = "https://www.google.com";
+    public string HomePage { get; set; } = NativeStartPageUrl;
+    public bool HomePageCustomized { get; set; }
     public BrowserSearchEngine SearchEngine { get; set; } = BrowserSearchEngine.Google;
 }
 
@@ -67,3 +69,5 @@ public sealed class SitePermissionEntry
     public bool NotificationsAllowed { get; set; }
     public DateTimeOffset LastRequestedAt { get; set; } = DateTimeOffset.Now;
 }
+
+public sealed record StartPageShortcut(string Title, string Url, string Glyph, string AutomationId);
