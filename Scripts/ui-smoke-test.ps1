@@ -8,6 +8,7 @@ $workflowId = [guid]::NewGuid().ToString('N')
 $previousWorkflowId = $env:WINAPP_UI_WORKFLOW_ID
 $env:WINAPP_UI_WORKFLOW_ID = $workflowId
 $appPid = 0
+$hwnd = $null
 $results = [Collections.Generic.List[object]]::new()
 $screenshots = [Collections.Generic.List[string]]::new()
 $uiStarted = $false
@@ -27,7 +28,11 @@ function Invoke-WinAppChecked {
 
 function Invoke-Ui {
     param([string[]]$Arguments, [string]$Window)
-    $selector = if ($Window) { @('-w', $Window) } else { @('-a', "$appPid") }
+    # Once the launched process's main HWND is known, always target that exact
+    # window. A process can own additional WebKit/helper windows; letting WinApp
+    # auto-select the foreground HWND made later assertions inspect the wrong tree.
+    $targetWindow = if ($Window) { $Window } elseif ($script:hwnd) { $script:hwnd } else { $null }
+    $selector = if ($targetWindow) { @('-w', $targetWindow) } else { @('-a', "$appPid") }
     Invoke-WinAppChecked (@('ui') + $Arguments + $selector)
 }
 

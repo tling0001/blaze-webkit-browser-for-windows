@@ -1,5 +1,13 @@
 # Blaze release notes
 
+## [1.1.16] - 2026-11-12
+
+### UI automation reliability and toolbar polish
+- Keep all smoke-test interactions bound to the exact Blaze main-window HWND after initial process-scoped discovery, avoiding foreground-window selection when WebKit creates helper or popup windows.
+- Correct the loading-state glyph escape so the combined Reload/Stop button displays the actual Segoe Fluent Stop and Reload icons instead of placeholder squares.
+- Align assembly, file, informational and package version metadata with product version 1.1.16 so diagnostic logs and Windows file properties report the shipped build accurately.
+
+
 ## [1.1.15] - 2026-11-12
 
 ### Browser chrome and navigation state

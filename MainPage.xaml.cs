@@ -985,7 +985,7 @@ public sealed partial class MainPage : Page
     private void UpdateLoadingButton()
     {
         var isLoading = ViewModel.SelectedTab?.IsLoading == true;
-        ReloadStopIcon.Glyph = isLoading ? "\\uE71A" : "\\uE72C";
+        ReloadStopIcon.Glyph = isLoading ? "\uE71A" : "\uE72C";
         var accessibleName = isLoading ? "Stop loading" : "Reload page";
         AutomationProperties.SetName(ReloadStopButton, accessibleName);
         ToolTipService.SetToolTip(ReloadStopButton, isLoading ? "Stop loading" : "Reload");
