@@ -39,13 +39,13 @@ The upstream WinCairo port is an x64 development/testing port rather than a regu
 
 See [`.github/workflows/build-windows.yml`](.github/workflows/build-windows.yml).
 
-1. Check out the pinned WebKit revision and enable Windows long paths.
-2. Build the x64 WinCairo port and native `WebKitHost.dll`.
-3. Stage the complete WebKit runtime as a CI artifact.
-4. Restore and validate the WinUI project with WinApp CLI and `winapp find-api`.
+1. The separate SDK workflow checks out the pinned WebKit revision, enables Windows long paths, and builds the x64 WinCairo runtime in Release mode.
+2. Save the completed WebKit build cache before packaging, then normalize upstream `bin` outputs into the versioned SDK's stable `bin64` layout.
+3. Validate required runtime processes, `WebKit2.dll`, `WebKit2.lib`, public headers, dependency DLLs, vcpkg baselines and SHA-256 provenance; publish the SDK as an immutable GitHub Release.
+4. Normal Blaze builds download and validate that versioned SDK, compile the native `WebKitHost.dll`, and restore/verify the WinUI project with WinApp CLI and `winapp find-api`.
 5. Compile and package the self-contained WinUI application.
 6. Build the per-user `Blaze-Setup.exe` installer with Inno Setup.
-7. Run WinApp UI automation against live WebKit navigation, popup-tab creation and JavaScript tab closure.
+7. Run WinApp UI automation against the native WinUI start page and live WebKit navigation, popup-tab creation and JavaScript tab closure.
 8. Publish the installer, signed MSIX payload, public test certificate and install guide as a versioned GitHub Release.
 
 Popup/new-window tab creation and JavaScript tab closure are implemented; certificate exception UI, camera/microphone device selection and broader security hardening remain in progress. The complete WinCairo build and clean-machine installation still require successful CI validation.
