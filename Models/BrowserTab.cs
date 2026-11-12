@@ -25,12 +25,31 @@ public partial class BrowserTab : ObservableObject
         Url = "about:blank";
     }
 
+    public bool IsNativeStartPage => string.Equals(Url, BrowserSettings.NativeStartPageUrl, StringComparison.OrdinalIgnoreCase);
+
+    partial void OnUrlChanged(string value)
+    {
+        if (IsNativeStartPage)
+        {
+            Title = "Blaze";
+            CanGoBack = false;
+            CanGoForward = false;
+        }
+    }
+
     public IntPtr NativeHandle { get; set; }
     public string LastRecordedUrl { get; set; } = string.Empty;
 
     public void Navigate(string url)
     {
         Url = url;
+        if (IsNativeStartPage)
+        {
+            Title = "Blaze";
+            CanGoBack = false;
+            CanGoForward = false;
+            return;
+        }
         if (NativeHandle != IntPtr.Zero)
             WebKitNative.Navigate(NativeHandle, url);
     }
