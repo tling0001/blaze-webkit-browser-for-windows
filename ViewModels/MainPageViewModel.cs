@@ -1,5 +1,5 @@
-using System.Collections.ObjectModel;
 using System.Collections.Concurrent;
+using System.Collections.ObjectModel;
 using System.Text.Json;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -85,11 +85,15 @@ public partial class MainPageViewModel : ObservableObject
         var session = await ReadAsync<SessionState>("session.json");
         if (session?.TabUrls is { Count: > 0 })
         {
+            var migrateLegacySingleGoogleTab = !Settings.HomePageCustomized
+                && session.TabUrls.Count == 1
+                && string.Equals(session.TabUrls[0], "https://www.google.com", StringComparison.OrdinalIgnoreCase);
             foreach (var url in session.TabUrls)
             {
-                var tab = new BrowserTab { Url = url };
+                var restoredUrl = migrateLegacySingleGoogleTab ? BrowserSettings.NativeStartPageUrl : url;
+                var tab = new BrowserTab { Url = restoredUrl };
                 if (!tab.IsNativeStartPage)
-                    tab.Title = url;
+                    tab.Title = restoredUrl;
                 Tabs.Add(tab);
             }
             var selectedIndex = Math.Clamp(session.SelectedIndex, 0, Tabs.Count - 1);
