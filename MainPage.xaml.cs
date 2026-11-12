@@ -16,6 +16,18 @@ public sealed partial class MainPage : Page
 {
     public MainPageViewModel ViewModel { get; } = new();
 
+    public IReadOnlyList<StartPageShortcut> StartPageShortcuts { get; } =
+    [
+        new("Google", "https://www.google.com", "\uE721", "ShortcutGoogle"),
+        new("Bing", "https://www.bing.com", "\uE721", "ShortcutBing"),
+        new("DuckDuckGo", "https://duckduckgo.com", "\uE721", "ShortcutDuckDuckGo"),
+        new("Brave Search", "https://search.brave.com", "\uE721", "ShortcutBraveSearch"),
+        new("Wikipedia", "https://www.wikipedia.org", "\uE82D", "ShortcutWikipedia"),
+        new("YouTube", "https://www.youtube.com", "\uE768", "ShortcutYouTube"),
+        new("GitHub", "https://github.com", "\uE943", "ShortcutGitHub"),
+        new("Outlook", "https://outlook.live.com", "\uE715", "ShortcutOutlook")
+    ];
+
     private static readonly WebKitNative.DownloadCallback DownloadCallbackHandler = OnNativeDownload;
     private static readonly WebKitNative.PermissionCallback PermissionCallbackHandler = OnNativePermission;
     private static readonly WebKitNative.JavaScriptDialogCallback JavaScriptDialogCallbackHandler = OnNativeJavaScriptDialog;
@@ -217,7 +229,7 @@ public sealed partial class MainPage : Page
             return;
 
         ViewModel.SelectedTab = tab;
-        AddressBox.Text = tab.Url;
+        AddressBox.Text = tab.IsNativeStartPage ? string.Empty : tab.Url;
         UpdateBookmarkButton();
         EnsureNativeView(tab);
         LayoutNativeViews();
@@ -234,15 +246,19 @@ public sealed partial class MainPage : Page
 
     private void OnHomeClick(object sender, RoutedEventArgs e)
     {
-        ViewModel.NavigateAddressCommand.Execute(ViewModel.Settings.HomePage);
-        AddressBox.Text = ViewModel.Settings.HomePage;
+        NavigateTo(ViewModel.Settings.HomePage);
     }
 
-    private async void OnAddressQuerySubmitted(AutoSuggestBox sender, AutoSuggestBoxQuerySubmittedEventArgs args)
+    private void OnAddressQuerySubmitted(AutoSuggestBox sender, AutoSuggestBoxQuerySubmittedEventArgs args) =>
+        NavigateTo(args.QueryText);
+
+    private void OnStartPageSearchQuerySubmitted(AutoSuggestBox sender, AutoSuggestBoxQuerySubmittedEventArgs args) =>
+        NavigateTo(args.QueryText);
+
+    private void OnStartPageShortcutClick(object sender, RoutedEventArgs e)
     {
-        ViewModel.NavigateAddressCommand.Execute(args.QueryText);
-        AddressBox.Text = ViewModel.AddressText;
-        await ViewModel.SaveAsync();
+        if (sender is Button { Tag: string url })
+            NavigateTo(url);
     }
 
     private async void OnBookmarkClick(object sender, RoutedEventArgs e)
@@ -373,8 +389,8 @@ public sealed partial class MainPage : Page
         var homePage = new TextBox
         {
             Header = "Home page",
-            Text = ViewModel.Settings.HomePage,
-            PlaceholderText = "https://example.com"
+            Text = ViewModel.Settings.HomePageCustomized ? ViewModel.Settings.HomePage : string.Empty,
+            PlaceholderText = "Leave blank to use the native Blaze start page"
         };
         var searchEngine = new RadioButtons { Header = "Search engine" };
         var googleSearchOption = new RadioButton { Content = "Google" };
@@ -507,8 +523,10 @@ public sealed partial class MainPage : Page
             return;
 
         ViewModel.Settings.TabBarAboveToolbar = position.SelectedIndex == 0;
-        if (!string.IsNullOrWhiteSpace(homePage.Text))
-            ViewModel.Settings.HomePage = homePage.Text.Trim();
+        ViewModel.Settings.HomePageCustomized = !string.IsNullOrWhiteSpace(homePage.Text);
+        ViewModel.Settings.HomePage = ViewModel.Settings.HomePageCustomized
+            ? homePage.Text.Trim()
+            : BrowserSettings.NativeStartPageUrl;
         ViewModel.Settings.SearchEngine = (BrowserSearchEngine)Math.Clamp(searchEngine.SelectedIndex, 0, 3);
         ViewModel.Settings.JavaScriptEnabled = javaScript.IsOn;
         ViewModel.Settings.LoadImagesAutomatically = images.IsOn;
@@ -684,8 +702,18 @@ public sealed partial class MainPage : Page
     private void OnStateTimerTick(DispatcherQueueTimer sender, object args)
     {
         var tab = ViewModel.SelectedTab;
-        if (tab is null || tab.NativeHandle == IntPtr.Zero)
+        if (tab is null)
             return;
+        if (tab.NativeHandle == IntPtr.Zero)
+        {
+            if (tab.IsNativeStartPage)
+            {
+                AddressBox.Text = string.Empty;
+                UpdateBookmarkButton();
+                UpdateNavigationButtons();
+            }
+            return;
+        }
 
         tab.RefreshNativeState();
         if (AddressBox.FocusState == FocusState.Unfocused)
@@ -708,7 +736,13 @@ public sealed partial class MainPage : Page
     private void NavigateTo(string url)
     {
         ViewModel.NavigateAddressCommand.Execute(url);
-        AddressBox.Text = ViewModel.AddressText;
+        var tab = ViewModel.SelectedTab;
+        AddressBox.Text = tab?.IsNativeStartPage == true ? string.Empty : ViewModel.AddressText;
+        if (tab is not null && !tab.IsNativeStartPage)
+            EnsureNativeView(tab);
+        LayoutNativeViews();
+        UpdateBookmarkButton();
+        UpdateNavigationButtons();
         _ = ViewModel.SaveAsync();
     }
 
@@ -753,7 +787,7 @@ public sealed partial class MainPage : Page
 
     private void EnsureNativeView(BrowserTab tab)
     {
-        if (tab.NativeHandle != IntPtr.Zero || !_initialized)
+        if (tab.NativeHandle != IntPtr.Zero || !_initialized || tab.IsNativeStartPage)
             return;
 
         try
@@ -798,7 +832,26 @@ public sealed partial class MainPage : Page
 
     private void LayoutNativeViews()
     {
-        if (!_initialized || !_engineAvailable)
+        if (!_initialized)
+            return;
+
+        var selected = ViewModel.SelectedTab;
+        var showStartPage = selected?.IsNativeStartPage == true;
+        StartPageSurface.Visibility = showStartPage ? Visibility.Visible : Visibility.Collapsed;
+
+        if (showStartPage)
+        {
+            foreach (var tab in ViewModel.Tabs)
+            {
+                if (tab.NativeHandle != IntPtr.Zero)
+                    WebKitNative.SetBounds(tab.NativeHandle, 0, 0, 0, 0);
+            }
+            return;
+        }
+
+        if (selected is not null && selected.NativeHandle == IntPtr.Zero)
+            EnsureNativeView(selected);
+        if (!_engineAvailable)
             return;
 
         var (x, y, width, height) = GetBrowserSurfaceBounds();
@@ -829,6 +882,7 @@ public sealed partial class MainPage : Page
 
     private void UpdateBookmarkButton()
     {
+        BookmarkButton.IsEnabled = ViewModel.SelectedTab?.IsNativeStartPage != true;
         BookmarkButton.Content = ViewModel.IsBookmarked(ViewModel.SelectedTab?.Url) ? "Bookmarked" : "Bookmark";
     }
 
