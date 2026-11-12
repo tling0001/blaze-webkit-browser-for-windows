@@ -1,5 +1,19 @@
 # Blaze release notes
 
+## [1.1.14] - 2026-11-12
+
+### Startup crash diagnostics
+- Add persistent diagnostic logging at `%LOCALAPPDATA%\\Blaze\\Logs\\blaze.log`.
+- Record startup milestones and full exception details for WinUI unhandled exceptions, AppDomain unhandled exceptions and unobserved task exceptions.
+- Keep logging best-effort so a logging failure cannot prevent the browser from launching; rotate the previous log when it exceeds 2 MiB.
+- Deliberately exclude browsing URLs, page contents, cookies and form data from routine logs.
+- Attach the diagnostic log to UI smoke-test artifacts when it exists, including failed test runs.
+
+### UI smoke-test reliability
+- Use real keyboard input for AutoSuggestBox address/search fields because UI Automation does not consistently expose a writable ValuePattern for those controls.
+- Verify the start-page search and individual shortcut buttons without requiring the GridView container's AutomationId to appear in the interactive tree.
+
+
 ## [1.1.12] - 2026-11-12
 
 ### Standalone installer reliability

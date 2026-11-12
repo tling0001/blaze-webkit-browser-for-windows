@@ -189,6 +189,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'ContentDialog property verification failed.' }
           winapp find-api members AppWindow --filter Resize --json --project-dir .
           if ($LASTEXITCODE -ne 0) { throw 'AppWindow Resize API verification failed.' }
+          winapp find-api members Application --filter UnhandledException --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'Application.UnhandledException API verification failed.' }
           winapp find-api check-property TabViewItem IsClosable --json --project-dir .
           if ($LASTEXITCODE -ne 0) { throw 'TabViewItem IsClosable API verification failed.' }
           winapp find-api members AutomationProperties --filter SetAutomationId --json --project-dir .

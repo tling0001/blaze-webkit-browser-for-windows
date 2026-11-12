@@ -3,6 +3,7 @@ using Microsoft.UI;
 using Microsoft.UI.Windowing;
 using System.Runtime.InteropServices;
 using Windows.Graphics;
+using WebKitBrowser.Diagnostics;
 
 // To learn more about WinUI, the WinUI project structure,
 // and more about our project templates, see: http://aka.ms/winui-project-info.
@@ -20,18 +21,33 @@ public sealed partial class MainWindow : Window
     private static extern uint GetDpiForWindow(IntPtr hWnd);
     public MainWindow()
     {
-        InitializeComponent();
+        CrashLogger.Log("MainWindow constructor entered.");
+        try
+        {
+            CrashLogger.Log("Initializing MainWindow XAML.");
+            InitializeComponent();
+            CrashLogger.Log("MainWindow XAML initialized.");
 
-        ExtendsContentIntoTitleBar = true;
-        SetTitleBar(AppTitleBar);
+            ExtendsContentIntoTitleBar = true;
+            SetTitleBar(AppTitleBar);
+            CrashLogger.Log("Custom title bar configured.");
 
-        AppWindow.SetIcon("Assets/AppIcon.ico");
-        AppWindow.Title = "Blaze";
-        var hwnd = Win32Interop.GetWindowFromWindowId(AppWindow.Id);
-        var scale = GetDpiForWindow(hwnd) / 96.0;
-        AppWindow.Resize(new SizeInt32((int)Math.Ceiling(1360 * scale), (int)Math.Ceiling(900 * scale)));
+            AppWindow.SetIcon("Assets/AppIcon.ico");
+            AppWindow.Title = "Blaze";
+            CrashLogger.Log("Window icon and title configured.");
 
-        // Navigate the root frame to the main page on startup.
-        RootFrame.Navigate(typeof(MainPage));
+            var hwnd = Win32Interop.GetWindowFromWindowId(AppWindow.Id);
+            var scale = GetDpiForWindow(hwnd) / 96.0;
+            AppWindow.Resize(new SizeInt32((int)Math.Ceiling(1360 * scale), (int)Math.Ceiling(900 * scale)));
+            CrashLogger.Log($"Initial window size configured. DPI scale={scale:0.###}.");
+
+            RootFrame.Navigate(typeof(MainPage));
+            CrashLogger.Log("RootFrame.Navigate(MainPage) completed.");
+        }
+        catch (Exception exception)
+        {
+            CrashLogger.LogException("MainWindow construction failed.", exception);
+            throw;
+        }
     }
 }

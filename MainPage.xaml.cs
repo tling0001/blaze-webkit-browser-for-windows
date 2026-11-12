@@ -8,6 +8,7 @@ using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.UI.Xaml.Input;
 using Windows.Foundation;
 using Windows.UI.ViewManagement;
+using WebKitBrowser.Diagnostics;
 using WebKitBrowser.Models;
 using WebKitBrowser.Services;
 using WebKitBrowser.ViewModels;
@@ -47,8 +48,19 @@ public sealed partial class MainPage : Page
 
     public MainPage()
     {
-        InitializeComponent();
-        PopulateStartPageShortcuts();
+        CrashLogger.Log("MainPage constructor entered.");
+        try
+        {
+            InitializeComponent();
+            CrashLogger.Log("MainPage XAML initialized.");
+            PopulateStartPageShortcuts();
+            CrashLogger.Log($"Created {StartPageShortcuts.Count} native start-page shortcut buttons.");
+        }
+        catch (Exception exception)
+        {
+            CrashLogger.LogException("MainPage construction failed.", exception);
+            throw;
+        }
     }
 
     private void PopulateStartPageShortcuts()

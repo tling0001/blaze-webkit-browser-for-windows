@@ -41,6 +41,14 @@ function Get-Elements {
     }
 }
 
+function Set-UiText {
+    param([string]$AutomationId, [string]$Value)
+    # AutoSuggestBox is exposed as a Group by UI Automation on some WinUI builds;
+    # use actual keyboard input instead of relying on ValuePattern.
+    Invoke-Ui @('send-keys', 'ctrl+a', '--target', $AutomationId, '--via', 'send-input') | Out-Null
+    Invoke-Ui @('send-keys', $Value, '--target', $AutomationId, '--via', 'send-input') | Out-Null
+}
+
 function Save-Screenshot {
     param([string]$Name)
     $path = Join-Path $ArtifactDirectory $Name
@@ -128,13 +136,13 @@ try {
         Invoke-Ui @('wait-for', 'StartPageSurface', '-t', '5000') | Out-Null
         $inspection = Invoke-Ui @('inspect', '--interactive', '--json') | ConvertFrom-Json
         $elements = @(Get-Elements @($inspection.windows | ForEach-Object { $_.elements }))
-        foreach ($id in @('StartPageSearchBox', 'StartPageShortcuts', 'ShortcutGoogle', 'ShortcutWikipedia', 'ShortcutGitHub')) {
+        foreach ($id in @('StartPageSearchBox', 'ShortcutGoogle', 'ShortcutWikipedia', 'ShortcutGitHub')) {
             if (-not ($elements | Where-Object { $_.automationId -eq $id })) {
                 throw "The native WinUI start page did not expose $id."
             }
         }
         Save-Screenshot '01-native-start-page.png'
-        Invoke-Ui @('set-value', 'StartPageSearchBox', 'Blaze native start page smoke test') | Out-Null
+        Set-UiText 'StartPageSearchBox' 'Blaze native start page smoke test'
         Invoke-Ui @('send-keys', 'enter', '--via', 'send-input') | Out-Null
         Invoke-Ui @('wait-for', 'AddressBox', '--value', 'https://www.google.com/search?q=Blaze%20native%20start%20page%20smoke%20test', '-t', '5000') | Out-Null
         Invoke-Ui @('invoke', 'HomeButton') | Out-Null
@@ -142,7 +150,7 @@ try {
     }
 
     Test-UI 'Live WebKit navigation to HTTPS example.com' {
-        Invoke-Ui @('set-value', 'AddressBox', 'https://example.com') | Out-Null
+        Set-UiText 'AddressBox' 'https://example.com'
         Invoke-Ui @('send-keys', 'enter', '--via', 'send-input') | Out-Null
         Invoke-Ui @('wait-for', 'AddressBox', '--value', 'https://example.com/', '-t', '15000') | Out-Null
 
@@ -212,7 +220,7 @@ window.addEventListener('load', () => {
 '@ | Set-Content -LiteralPath $popupPage -Encoding utf8
 
         $popupUri = ([Uri]$popupPage).AbsoluteUri
-        Invoke-Ui @('set-value', 'AddressBox', $popupUri) | Out-Null
+        Set-UiText 'AddressBox' $popupUri
         Invoke-Ui @('send-keys', 'enter', '--via', 'send-input') | Out-Null
         Invoke-Ui @('wait-for', 'PopupPermissionDialog', '-t', '10000') | Out-Null
         Save-Screenshot '03-popup-permission.png'
@@ -289,7 +297,7 @@ window.addEventListener('load', () => {
 
         Invoke-Ui @('invoke', 'HomeButton') | Out-Null
         Invoke-Ui @('wait-for', 'AddressBox', '--value', 'https://example.org/', '-t', '10000') | Out-Null
-        Invoke-Ui @('set-value', 'AddressBox', 'Blaze search smoke test') | Out-Null
+        Set-UiText 'AddressBox' 'Blaze search smoke test'
         Invoke-Ui @('send-keys', 'enter', '--via', 'send-input') | Out-Null
         Invoke-Ui @('wait-for', 'AddressBox', '--value', 'https://www.bing.com/search?q=Blaze%20search%20smoke%20test', '-t', '5000') | Out-Null
 
@@ -303,7 +311,7 @@ window.addEventListener('load', () => {
 
     Test-UI 'Always deny rejects a pop-up without creating a tab' {
         $popupUri = ([Uri]$popupPage).AbsoluteUri
-        Invoke-Ui @('set-value', 'AddressBox', $popupUri) | Out-Null
+        Set-UiText 'AddressBox' $popupUri
         Invoke-Ui @('send-keys', 'enter', '--via', 'send-input') | Out-Null
 
         $blockedTab = $null
@@ -324,7 +332,7 @@ window.addEventListener('load', () => {
 
     Test-UI 'Always allow opens a pop-up without prompting' {
         $popupUri = ([Uri]$popupPage).AbsoluteUri
-        Invoke-Ui @('set-value', 'AddressBox', $popupUri) | Out-Null
+        Set-UiText 'AddressBox' $popupUri
         Invoke-Ui @('send-keys', 'enter', '--via', 'send-input') | Out-Null
 
         $popupTab = $null
@@ -355,7 +363,7 @@ window.addEventListener('load', () => {
 
     Test-UI 'Ignore dismisses the popup request without opening a tab' {
         $popupUri = ([Uri]$popupPage).AbsoluteUri
-        Invoke-Ui @('set-value', 'AddressBox', $popupUri) | Out-Null
+        Set-UiText 'AddressBox' $popupUri
         Invoke-Ui @('send-keys', 'enter', '--via', 'send-input') | Out-Null
         Invoke-Ui @('wait-for', 'PopupPermissionDialog', '-t', '10000') | Out-Null
         $inspection = Invoke-Ui @('inspect', '--interactive', '--json') | ConvertFrom-Json
@@ -396,7 +404,7 @@ window.addEventListener('load', () => {
 '@ | Set-Content -LiteralPath $dialogPage -Encoding utf8
 
         $dialogUri = ([Uri]$dialogPage).AbsoluteUri
-        Invoke-Ui @('set-value', 'AddressBox', $dialogUri) | Out-Null
+        Set-UiText 'AddressBox' $dialogUri
         Invoke-Ui @('send-keys', 'enter', '--via', 'send-input') | Out-Null
 
         Invoke-Ui @('wait-for', 'JavaScriptDialog_alert', '-t', '15000') | Out-Null
@@ -445,6 +453,10 @@ window.addEventListener('load', () => {
     } finally {
         if ($dialogPage -and (Test-Path -LiteralPath $dialogPage)) { Remove-Item -LiteralPath $dialogPage -Force }
         if ($popupPage -and (Test-Path -LiteralPath $popupPage)) { Remove-Item -LiteralPath $popupPage -Force }
+        $diagnosticLog = Join-Path $env:LOCALAPPDATA 'Blaze\Logs\blaze.log'
+        if (Test-Path -LiteralPath $diagnosticLog -PathType Leaf) {
+            Copy-Item -LiteralPath $diagnosticLog -Destination (Join-Path $ArtifactDirectory 'blaze-diagnostic.log') -Force
+        }
         $env:WINAPP_UI_WORKFLOW_ID = $previousWorkflowId
     }
 }
