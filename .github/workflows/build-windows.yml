@@ -43,20 +43,27 @@ jobs:
           $sdkRepository = $env:WEBKIT_SDK_REPOSITORY
           $sdkTag = $spec.releaseTag
           $deadline = (Get-Date).AddMinutes(355)
-          Write-Host "Waiting for versioned WebKit SDK $sdkTag from $sdkRepository"
+          # The SDK workflow is triggered only when its workflow or pinned SDK
+          # specification changes. App-only commits can therefore consume an SDK
+          # build started by an earlier commit. Resolve that exact SDK-definition
+          # revision rather than comparing the run to this browser commit.
+          $expectedSdkSourceSha = (& git log -1 --format=%H -- .github/workflows/build-webkit-sdk.yml eng\WebKitSdk.json).Trim()
+          if ($LASTEXITCODE -ne 0 -or -not $expectedSdkSourceSha) { throw 'Could not determine the source revision for the pinned WebKit SDK definition.' }
+          Write-Host "Waiting for versioned WebKit SDK $sdkTag from $sdkRepository (SDK definition $expectedSdkSourceSha)"
           while ($true) {
             $null = & gh release view $sdkTag --repo $sdkRepository 2>$null
             if ($LASTEXITCODE -eq 0) { break }
 
-            # Fail promptly if the SDK workflow for this exact source revision has
-            # already finished unsuccessfully. Do not sit through a 5.5-hour timeout
-            # after the engine workflow has reported a staging/provenance failure.
-            $sdkRunsJson = & gh run list --repo $env:GITHUB_REPOSITORY --workflow build-webkit-sdk.yml --branch main --limit 1 --json headSha,status,conclusion 2>$null
+            # Fail promptly if the SDK workflow for the current pinned SDK definition
+            # has already failed. This also works for later app-only commits, and
+            # avoids waiting 5.5 hours after a staging/provenance failure.
+            $sdkRunsJson = & gh run list --repo $env:GITHUB_REPOSITORY --workflow build-webkit-sdk.yml --branch main --limit 10 --json headSha,status,conclusion 2>$null
             if ($LASTEXITCODE -eq 0 -and $sdkRunsJson) {
               $sdkRuns = @($sdkRunsJson | ConvertFrom-Json)
-              if ($sdkRuns.Count -gt 0 -and $sdkRuns[0].headSha -eq $env:GITHUB_SHA -and
-                  $sdkRuns[0].status -eq 'completed' -and $sdkRuns[0].conclusion -ne 'success') {
-                throw "WebKit SDK workflow for $($env:GITHUB_SHA) completed with conclusion '$($sdkRuns[0].conclusion)'. See the Build versioned WebKit SDK run logs."
+              $matchingSdkRun = $sdkRuns | Where-Object { $_.headSha -eq $expectedSdkSourceSha } | Select-Object -First 1
+              if ($matchingSdkRun -and $matchingSdkRun.status -eq 'completed' -and
+                  $matchingSdkRun.conclusion -in @('failure', 'timed_out', 'startup_failure', 'action_required')) {
+                throw "WebKit SDK workflow for pinned SDK definition $expectedSdkSourceSha completed with conclusion '$($matchingSdkRun.conclusion)'. See the Build versioned WebKit SDK run logs."
               }
             }
             $global:LASTEXITCODE = 0

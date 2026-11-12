@@ -1,5 +1,12 @@
 # Blaze release notes
 
+## [1.1.5] - 2026-11-12
+
+### SDK bootstrap reliability
+- Resolve the latest commit that changed the pinned SDK workflow or specification and monitor that exact Actions run.
+- Let app-only commits reuse an SDK build already running or completed for the unchanged pinned engine revision.
+- Detect failed, timed-out or startup-failed SDK builds promptly without mistaking a superseded/cancelled run for the active SDK build.
+
 ## [1.1.4] - 2026-11-12
 
 ### WebKit SDK staging and provenance
@@ -8,7 +15,7 @@
 - Capture the package database from the build's manifest-installed vcpkg tree, rather than querying the unrelated Visual Studio vcpkg installation.
 - Record header and vcpkg package counts and their provenance in the SDK manifest.
 - Keep the successful pinned Release build cache intact so SDK staging retries do not repeat the multi-hour WebKit compile.
-- Make the browser workflow detect a failed SDK workflow for the same commit and fail promptly instead of waiting for the full release timeout.
+- Make the browser workflow detect a failed SDK workflow for the pinned SDK-definition revision and fail promptly instead of waiting for the full release timeout.
 
 ## [1.1.3] - 2026-11-11
 

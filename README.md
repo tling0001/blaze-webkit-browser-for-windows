@@ -41,7 +41,7 @@ See [`.github/workflows/build-windows.yml`](.github/workflows/build-windows.yml)
 
 1. The separate SDK workflow checks out the pinned WebKit revision, enables Windows long paths, and builds the x64 WinCairo runtime in Release mode.
 2. Save the completed WebKit build cache before packaging, then normalize upstream `bin` outputs into the versioned SDK's stable `bin64` layout.
-3. Stage the public headers from WebKit's CMake `WebKit/Headers` output, record the actual manifest-installed vcpkg package database, validate required runtime processes, `WebKit2.dll`, `WebKit2.lib`, dependency DLLs, pinned baselines and SHA-256 provenance; then publish the SDK as an immutable GitHub Release.
+3. Stage the public headers from WebKit's CMake `WebKit/Headers` output, record the actual manifest-installed vcpkg package database, validate required runtime processes, `WebKit2.dll`, `WebKit2.lib`, dependency DLLs, pinned baselines and SHA-256 provenance; then publish the SDK as an immutable GitHub Release. App-only commits reuse the SDK run associated with the most recent SDK workflow/specification change.
 4. Normal Blaze builds download and validate that versioned SDK, compile the native `WebKitHost.dll`, and restore/verify the WinUI project with WinApp CLI and `winapp find-api`.
 5. Compile and package the self-contained WinUI application.
 6. Build the per-user `Blaze-Setup.exe` installer with Inno Setup.
