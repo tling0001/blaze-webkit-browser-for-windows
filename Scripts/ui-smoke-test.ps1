@@ -137,6 +137,34 @@ try {
         Save-Screenshot '02-example-domain.png'
     }
 
+    Test-UI 'Ctrl+L, Ctrl+T, Ctrl+W and Ctrl+R keyboard accelerators' {
+        Invoke-Ui @('send-keys', 'ctrl+l', '--via', 'send-input') | Out-Null
+        Invoke-Ui @('send-keys', 'https://example.com', '--via', 'send-input') | Out-Null
+        Invoke-Ui @('send-keys', 'enter', '--via', 'send-input') | Out-Null
+        Invoke-Ui @('wait-for', 'AddressBox', '--value', 'https://example.com/', '-t', '10000') | Out-Null
+        Invoke-Ui @('send-keys', 'ctrl+r', '--via', 'send-input') | Out-Null
+        Invoke-Ui @('wait-for', 'AddressBox', '--value', 'https://example.com/', '-t', '5000') | Out-Null
+        $before = Invoke-Ui @('inspect', '--interactive', '--json') | ConvertFrom-Json
+        $beforeElements = @(Get-Elements @($before.windows | ForEach-Object { $_.elements }))
+        $beforeTabs = @($beforeElements | Where-Object { $_.automationId -like 'BrowserTab_*' })
+        Invoke-Ui @('send-keys', 'ctrl+t', '--via', 'send-input') | Out-Null
+        Invoke-Ui @('wait-for', 'StartPageSurface', '-t', '5000') | Out-Null
+        $after = Invoke-Ui @('inspect', '--interactive', '--json') | ConvertFrom-Json
+        $afterElements = @(Get-Elements @($after.windows | ForEach-Object { $_.elements }))
+        $afterTabs = @($afterElements | Where-Object { $_.automationId -like 'BrowserTab_*' })
+        if ($afterTabs.Count -ne ($beforeTabs.Count + 1)) { throw 'Ctrl+T did not add exactly one browser tab.' }
+        Invoke-Ui @('send-keys', 'ctrl+w', '--via', 'send-input') | Out-Null
+        for ($attempt = 0; $attempt -lt 20; $attempt++) {
+            $closed = Invoke-Ui @('inspect', '--interactive', '--json') | ConvertFrom-Json
+            $closedElements = @(Get-Elements @($closed.windows | ForEach-Object { $_.elements }))
+            $closedTabs = @($closedElements | Where-Object { $_.automationId -like 'BrowserTab_*' })
+            if ($closedTabs.Count -eq $beforeTabs.Count) { break }
+            Start-Sleep -Milliseconds 250
+        }
+        if ($closedTabs.Count -ne $beforeTabs.Count) { throw 'Ctrl+W did not close the active browser tab.' }
+        Invoke-Ui @('wait-for', 'AddressBox', '--value', 'https://example.com/', '-t', '5000') | Out-Null
+    }
+
     Test-UI 'WebKit window.open creates and closes a native browser tab' {
         @'
 <!doctype html>

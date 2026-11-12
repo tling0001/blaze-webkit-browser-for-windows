@@ -13,7 +13,7 @@ The upstream WinCairo port is an x64 development/testing port rather than a regu
 - Native WinUI 3 / Windows App SDK, C#, MVVM, CommunityToolkit.Mvvm
 - Native C++ bridge to WebKit's WinCairo WKView
 - Windows x64 only
-- GitHub Actions builds the pinned WebKit engine, WinUI application, signed MSIX payload and `Blaze-Setup.exe` installer
+- GitHub Actions builds the pinned WebKit engine, self-contained unpackaged WinUI application, and standalone per-user Inno Setup `.exe` installer
 
 ## Browser functionality
 
@@ -46,7 +46,7 @@ See [`.github/workflows/build-windows.yml`](.github/workflows/build-windows.yml)
 5. Compile and package the self-contained WinUI application.
 6. Build the per-user `Blaze-Setup.exe` installer with Inno Setup.
 7. Run WinApp UI automation against the native WinUI start page and live WebKit navigation, popup-tab creation and JavaScript tab closure.
-8. Publish the installer, signed MSIX payload, public test certificate and install guide as a versioned GitHub Release.
+8. Publish the standalone EXE installer and install guide as a versioned GitHub Release.
 
 Popup/new-window tab creation and JavaScript tab closure are implemented; certificate exception UI, camera/microphone device selection and broader security hardening remain in progress. The complete WinCairo build and clean-machine installation still require successful CI validation.
 
@@ -54,9 +54,9 @@ The project `Version` property is the single release-version source. Blaze uses 
 
 ## Install
 
-Download `Blaze-Setup-<version>-x64.exe` from [GitHub Releases](https://github.com/tling0001/blaze-webkit-browser-for-windows/releases). Run it as your normal user; it imports the release's public test certificate into the current-user stores and installs the signed WinUI package. No administrator elevation is requested.
+Download `Blaze-Setup-<version>-x64.exe` from [GitHub Releases](https://github.com/tling0001/blaze-webkit-browser-for-windows/releases). Run it as your normal user. It installs the self-contained browser under `%LOCALAPPDATA%\\Programs\\Blaze` without MSIX, test certificates, or administrator elevation.
 
-For manual installation, see [`INSTALL.md`](INSTALL.md).
+For installation and uninstall instructions, see [`INSTALL.md`](INSTALL.md).
 
 ## Development
 

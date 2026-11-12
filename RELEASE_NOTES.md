@@ -1,5 +1,16 @@
 # Blaze release notes
 
+## [1.1.12] - 2026-11-12
+
+### Standalone installer reliability
+- Detect and use the preinstalled Inno Setup compiler from PATH, standard installation locations, Chocolatey package locations, or its registered install location before attempting any installation.
+- Treat Chocolatey installation as a fallback only, avoiding the non-zero “already installed” result from breaking packaging.
+- Create the release output directory before invoking Inno Setup and verify the exact versioned standalone installer exists.
+
+### Installation documentation and keyboard coverage
+- Replace obsolete MSIX and test-certificate instructions with the actual per-user standalone EXE install and uninstall workflow.
+- Extend live WinUI automation to exercise Ctrl+L, Ctrl+T, Ctrl+W and Ctrl+R against the native browser window and WebKit page.
+
 ## [1.1.11] - 2026-11-12
 
 ### Standalone Windows installer

@@ -244,10 +244,54 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          choco install innosetup --yes --no-progress
-          if ($LASTEXITCODE -ne 0) { throw 'Inno Setup installation failed.' }
-          $iscc = Get-ChildItem 'C:\Program Files (x86)\Inno Setup*' -Filter 'ISCC.exe' -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $iscc) { throw 'Inno Setup compiler ISCC.exe was not found.' }
+          # Prefer the runner's preinstalled compiler; Chocolatey reports an
+          # already-installed package as a non-zero result.
+          $isccPath = (Get-Command 'ISCC.exe' -ErrorAction SilentlyContinue | Select-Object -First 1).Source
+          $roots = [Collections.Generic.List[string]]::new()
+          foreach ($root in @($env:ProgramFiles, ${env:ProgramFiles(x86)})) {
+            if ($root -and (Test-Path -LiteralPath $root)) { $roots.Add($root) }
+          }
+          if ($env:ChocolateyInstall) {
+            $chocoRoot = Join-Path $env:ChocolateyInstall 'lib\innosetup'
+            if (Test-Path -LiteralPath $chocoRoot) { $roots.Add($chocoRoot) }
+          }
+          $candidates = @(
+            (Join-Path $env:ProgramFiles 'Inno Setup 6\ISCC.exe'),
+            (Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe')
+          )
+          if ($env:ChocolateyInstall) {
+            $candidates += @(
+              (Join-Path $env:ChocolateyInstall 'lib\innosetup\tools\ISCC.exe'),
+              (Join-Path $env:ChocolateyInstall 'lib\innosetup\tools\InnoSetup\ISCC.exe')
+            )
+          }
+          foreach ($candidate in $candidates) {
+            if (-not $isccPath -and $candidate -and (Test-Path -LiteralPath $candidate -PathType Leaf)) { $isccPath = $candidate }
+          }
+          if (-not $isccPath) {
+            $keys = @('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*','HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*','HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*')
+            foreach ($entry in @(Get-ItemProperty $keys -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -like 'Inno Setup*' })) {
+              if ($entry.InstallLocation) { $roots.Add([string]$entry.InstallLocation) }
+            }
+            foreach ($root in $roots) {
+              $found = Get-ChildItem -LiteralPath $root -Filter 'ISCC.exe' -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1
+              if ($found) { $isccPath = $found.FullName; break }
+            }
+          }
+          if (-not $isccPath) {
+            Write-Host 'Inno Setup compiler not found; installing as a fallback.'
+            choco install innosetup --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { throw 'Inno Setup fallback installation failed.' }
+            $isccPath = (Get-Command 'ISCC.exe' -ErrorAction SilentlyContinue | Select-Object -First 1).Source
+            if (-not $isccPath) {
+              foreach ($candidate in $candidates) {
+                if ($candidate -and (Test-Path -LiteralPath $candidate -PathType Leaf)) { $isccPath = $candidate; break }
+              }
+            }
+          }
+          if (-not $isccPath -or -not (Test-Path -LiteralPath $isccPath -PathType Leaf)) { throw 'ISCC.exe was not found in PATH, standard or registered install locations, or after fallback installation.' }
+          $iscc = Get-Item -LiteralPath $isccPath
+          Write-Host "Using Inno Setup compiler: $($iscc.FullName)"
           [xml]$project = Get-Content -LiteralPath 'WebKitBrowser.csproj' -Raw
           $versionNode = $project.SelectSingleNode("/*[local-name()='Project']/*[local-name()='PropertyGroup']/*[local-name()='Version']")
           if (-not $versionNode) { throw 'Blaze project version was not found.' }
@@ -255,6 +299,7 @@ jobs:
           $env:BLAZE_VERSION = $version
           $publishDir = Join-Path $PWD 'publish\win-x64'
           if (-not (Test-Path -LiteralPath (Join-Path $publishDir 'Blaze.exe') -PathType Leaf)) { throw 'Unpackaged Blaze publish output is missing.' }
+          New-Item -ItemType Directory -Path (Join-Path $PWD 'release-assets') -Force | Out-Null
           & $iscc.FullName /Qp Installer\Blaze.iss
           if ($LASTEXITCODE -ne 0) { throw 'Building Blaze-Setup.exe failed.' }
           $installer = Join-Path $PWD "release-assets\Blaze-Setup-$version-x64.exe"
