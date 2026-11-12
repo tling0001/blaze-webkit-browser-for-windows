@@ -1,5 +1,12 @@
 # Blaze release notes
 
+## [1.1.9] - 2026-11-12
+
+### WinUI XAML compiler reliability
+- Fix the missing `Microsoft.UI.Xaml.Automation` namespace import used by native WinUI accessibility metadata.
+- Build the eight native start-page shortcut buttons directly with WinUI controls instead of a runtime-bound `DataTemplate` that triggered the WinUI 2.6.5 MarkupCompilePass2 internal error.
+- Preserve shortcut names, AutomationIds, Fluent glyphs, sizing, keyboard-accessible Button semantics, and the existing GridView layout.
+
 ## [1.1.8] - 2026-11-12
 
 ### WinUI build compatibility

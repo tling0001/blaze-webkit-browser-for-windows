@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media.Animation;
 using Windows.Foundation;
@@ -46,6 +47,49 @@ public sealed partial class MainPage : Page
     public MainPage()
     {
         InitializeComponent();
+        PopulateStartPageShortcuts();
+    }
+
+    private void PopulateStartPageShortcuts()
+    {
+        foreach (var shortcut in StartPageShortcuts)
+        {
+            var icon = new FontIcon
+            {
+                Glyph = shortcut.Glyph,
+                FontSize = 24,
+                FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Segoe Fluent Icons"),
+                Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["AccentTextFillColorPrimaryBrush"]
+            };
+
+            var title = new TextBlock
+            {
+                Text = shortcut.Title,
+                Style = (Style)Application.Current.Resources["BodyTextBlockStyle"]
+            };
+
+            var content = new StackPanel
+            {
+                Spacing = 12,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            content.Children.Add(icon);
+            content.Children.Add(title);
+
+            var button = new Button
+            {
+                Width = 176,
+                Height = 112,
+                Padding = new Thickness(16),
+                Tag = shortcut.Url,
+                Content = content
+            };
+            button.Click += OnStartPageShortcutClick;
+            AutomationProperties.SetName(button, shortcut.Title);
+            AutomationProperties.SetAutomationId(button, shortcut.AutomationId);
+            StartPageShortcutsGrid.Items.Add(button);
+        }
     }
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
