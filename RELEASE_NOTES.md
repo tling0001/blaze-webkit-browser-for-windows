@@ -1,5 +1,12 @@
 # Blaze release notes
 
+## [1.1.8] - 2026-11-12
+
+### WinUI build compatibility
+- Match the WinUI 2.6.5 `TabView.AddTabButtonClick` event's actual `object` event-argument signature.
+- Use runtime bindings for the native start-page shortcut template so the XAML compiler does not require an unresolved project-local `x:DataType` during MarkupCompilePass2.
+- Keep the shortcut list strongly typed in the page while binding its public item properties through the standard WinUI `Binding` mechanism.
+
 ## [1.1.7] - 2026-11-12
 
 ### WinCairo native host compatibility

@@ -89,7 +89,7 @@ public sealed partial class MainPage : Page
             DestroyNativeView(tab);
     }
 
-    private void OnAddTabButtonClick(TabView sender, TabViewAddTabButtonClickEventArgs args)
+    private void OnAddTabButtonClick(TabView sender, object args)
     {
         var tab = ViewModel.AddTab();
         var item = AddTabItem(tab);

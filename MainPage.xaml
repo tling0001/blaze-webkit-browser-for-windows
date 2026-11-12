@@ -3,7 +3,6 @@
     x:Class="WebKitBrowser.MainPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:models="using:WebKitBrowser.Models"
     Loaded="OnLoaded"
     Unloaded="OnUnloaded">
 
@@ -266,22 +265,22 @@
                         </ItemsPanelTemplate>
                     </GridView.ItemsPanel>
                     <GridView.ItemTemplate>
-                        <DataTemplate x:DataType="models:StartPageShortcut">
+                        <DataTemplate>
                             <Button
                                 Width="176"
                                 Height="112"
                                 Padding="16"
                                 Click="OnStartPageShortcutClick"
-                                Tag="{x:Bind Url}"
-                                AutomationProperties.Name="{x:Bind Title}"
-                                AutomationProperties.AutomationId="{x:Bind AutomationId}">
+                                Tag="{Binding Url}"
+                                AutomationProperties.Name="{Binding Title}"
+                                AutomationProperties.AutomationId="{Binding AutomationId}">
                                 <StackPanel Spacing="12" HorizontalAlignment="Center" VerticalAlignment="Center">
                                     <FontIcon
-                                        Glyph="{x:Bind Glyph}"
+                                        Glyph="{Binding Glyph}"
                                         FontSize="24"
                                         FontFamily="{ThemeResource SymbolThemeFontFamily}"
                                         Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
-                                    <TextBlock Text="{x:Bind Title}" Style="{StaticResource BodyTextBlockStyle}" />
+                                    <TextBlock Text="{Binding Title}" Style="{StaticResource BodyTextBlockStyle}" />
                                 </StackPanel>
                             </Button>
                         </DataTemplate>
