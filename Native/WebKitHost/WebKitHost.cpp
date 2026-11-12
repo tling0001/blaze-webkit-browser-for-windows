@@ -701,7 +701,7 @@ void WB_SetPopupCallbacks(WB_VIEW_HANDLE view, WB_NEW_PAGE_CALLBACK newPageCallb
     view->popupUserData = userData;
 }
 
-void WB_ResolveJavaScriptDialog(void* listener, int dialogType, BOOL accepted, const wchar_t* response)
+void WB_ResolveJavaScriptDialog(const void* listener, int dialogType, BOOL accepted, const wchar_t* response)
 {
     if (!listener)
         return;

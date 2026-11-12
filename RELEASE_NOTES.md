@@ -1,5 +1,12 @@
 # Blaze release notes
 
+## [1.1.7] - 2026-11-12
+
+### WinCairo native host compatibility
+- Preserve WebKit's const-qualified JavaScript dialog result-listener pointers across the native callback ABI.
+- Keep the retained listener pointer const-qualified through asynchronous WinUI dialog resolution, matching upstream WinCairo public headers.
+- Fix the native host compile errors affecting JavaScript alert, confirm, prompt and before-unload dialogs.
+
 ## [1.1.6] - 2026-11-12
 
 ### SDK workflow tracking
