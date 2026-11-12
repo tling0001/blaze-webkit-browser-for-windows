@@ -14,6 +14,7 @@ on:
 
 permissions:
   contents: write
+  actions: read
 
 concurrency:
   # Keep the newest build for each ref; cancel older queued or running builds immediately.
@@ -41,12 +42,26 @@ jobs:
           $spec = Get-Content -LiteralPath 'eng\WebKitSdk.json' -Raw | ConvertFrom-Json
           $sdkRepository = $env:WEBKIT_SDK_REPOSITORY
           $sdkTag = $spec.releaseTag
-          $deadline = (Get-Date).AddMinutes(330)
+          $deadline = (Get-Date).AddMinutes(355)
           Write-Host "Waiting for versioned WebKit SDK $sdkTag from $sdkRepository"
           while ($true) {
             $null = & gh release view $sdkTag --repo $sdkRepository 2>$null
             if ($LASTEXITCODE -eq 0) { break }
-            if ((Get-Date) -ge $deadline) { throw "WebKit SDK release $sdkTag was not published within 330 minutes. Check Build versioned WebKit SDK." }
+
+            # Fail promptly if the SDK workflow for this exact source revision has
+            # already finished unsuccessfully. Do not sit through a 5.5-hour timeout
+            # after the engine workflow has reported a staging/provenance failure.
+            $sdkRunsJson = & gh run list --repo $env:GITHUB_REPOSITORY --workflow build-webkit-sdk.yml --branch main --limit 1 --json headSha,status,conclusion 2>$null
+            if ($LASTEXITCODE -eq 0 -and $sdkRunsJson) {
+              $sdkRuns = @($sdkRunsJson | ConvertFrom-Json)
+              if ($sdkRuns.Count -gt 0 -and $sdkRuns[0].headSha -eq $env:GITHUB_SHA -and
+                  $sdkRuns[0].status -eq 'completed' -and $sdkRuns[0].conclusion -ne 'success') {
+                throw "WebKit SDK workflow for $($env:GITHUB_SHA) completed with conclusion '$($sdkRuns[0].conclusion)'. See the Build versioned WebKit SDK run logs."
+              }
+            }
+            $global:LASTEXITCODE = 0
+
+            if ((Get-Date) -ge $deadline) { throw "WebKit SDK release $sdkTag was not published within 355 minutes. Check Build versioned WebKit SDK." }
             Start-Sleep -Seconds 30
           }
           $download = Join-Path $PWD 'webkit-sdk-download'

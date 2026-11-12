@@ -196,9 +196,14 @@ jobs:
 
           $release = Join-Path $sourceRoot 'WebKitBuild\Release'
           $stage = Join-Path $workspace 'webkit-sdk'
-          $includeRoot = Join-Path $release 'include'
-          $header = Join-Path $includeRoot 'WebKit\WKView.h'
-          if (-not (Test-Path -LiteralPath $header -PathType Leaf)) { throw "Missing public WebKit C API header: $header" }
+          # CMake's WebKit_CopyHeaders target stages public headers in WebKit/Headers,
+          # not Release/include. The build log confirms WKView.h is generated there.
+          $webKitHeaderRoot = Join-Path $release 'WebKit\Headers'
+          $header = Join-Path $webKitHeaderRoot 'WebKit\WKView.h'
+          if (-not (Test-Path -LiteralPath $header -PathType Leaf)) {
+            $headerCandidates = @(Get-ChildItem -LiteralPath $release -Filter 'WKView.h' -Recurse -File -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName)
+            throw "Missing public WinCairo WKView.h. Expected $header. Found: $($headerCandidates -join '; ')"
+          }
 
           # The pinned WinCairo CMake build writes x64 outputs to bin, not bin64.
           # Normalize that upstream layout to the stable bin64 SDK contract used by Blaze.
@@ -233,7 +238,28 @@ jobs:
             Where-Object { $_.Name -match '^(Test.*|test.*|.*TestRunnerInjectedBundle)\.(exe|dll)$' -or $_.Extension -in @('.pdb', '.ilk', '.exp') } |
             Remove-Item -Force
 
-          Copy-Item -LiteralPath $includeRoot -Destination $stage -Recurse -Force
+          # Normalize the upstream CMake header trees into one SDK include root.
+          # Keep each public framework's directory name so <WebKit/...>, <JavaScriptCore/...>
+          # and the related public includes resolve exactly as they do in the upstream build.
+          $stageInclude = Join-Path $stage 'include'
+          New-Item -ItemType Directory -Path $stageInclude -Force | Out-Null
+          foreach ($relativeHeaderRoot in @(
+            'WebKit\Headers',
+            'JavaScriptCore\Headers',
+            'WTF\Headers',
+            'PAL\Headers',
+            'WebGPU\Headers',
+            'ANGLE\Headers',
+            'bmalloc\Headers'
+          )) {
+            $headerRoot = Join-Path $release $relativeHeaderRoot
+            if (Test-Path -LiteralPath $headerRoot -PathType Container) {
+              Copy-Item -Path (Join-Path $headerRoot '*') -Destination $stageInclude -Recurse -Force
+            }
+          }
+          if (-not (Test-Path -LiteralPath (Join-Path $stageInclude 'WebKit\WKView.h') -PathType Leaf)) {
+            throw 'The normalized SDK include tree does not contain WebKit\WKView.h after copying the upstream public headers.'
+          }
 
           $runtime = Join-Path $stage 'runtime'
           New-Item -ItemType Directory -Path $runtime -Force | Out-Null
@@ -260,15 +286,18 @@ jobs:
           if (-not $crt) { throw 'Visual C++ x64 app-local CRT files were not found.' }
           Copy-Item -Path (Join-Path $crt.FullName '*.dll') -Destination $runtime -Force
 
-          $vcpkgExe = Join-Path $vs 'VC\vcpkg\vcpkg.exe'
-          if (-not (Test-Path -LiteralPath $vcpkgExe)) { throw "Visual Studio vcpkg executable was not found: $vcpkgExe" }
-          Push-Location $release
-          try {
-            $dependencies = & $vcpkgExe list
-            if ($LASTEXITCODE -ne 0 -or -not $dependencies) { throw 'Could not capture the resolved vcpkg dependency list.' }
+          # Record the exact manifest-installed package database used by this build.
+          # It lives under the CMake build tree; querying the Visual Studio vcpkg root
+          # would describe a different installation and produce misleading provenance.
+          $vcpkgStatus = Join-Path $release 'vcpkg_installed\vcpkg\status'
+          if (-not (Test-Path -LiteralPath $vcpkgStatus -PathType Leaf)) {
+            throw "The build's vcpkg package status database is missing: $vcpkgStatus"
           }
-          finally { Pop-Location }
+          $dependencies = Get-Content -LiteralPath $vcpkgStatus -Raw
+          if ([string]::IsNullOrWhiteSpace($dependencies)) { throw 'The build vcpkg package status database is empty.' }
           $dependencies | Set-Content -LiteralPath (Join-Path $stage 'dependencies.lock.txt') -Encoding utf8
+          $vcpkgPackageCount = [regex]::Matches($dependencies, '(?m)^Package: ').Count
+          if ($vcpkgPackageCount -lt 1) { throw 'The build vcpkg status database contains no installed package records.' }
 
           $spec = Get-Content -LiteralPath 'blaze\eng\WebKitSdk.json' -Raw | ConvertFrom-Json
           $manifest = [ordered]@{
@@ -286,6 +315,11 @@ jobs:
             toolchain = $spec.toolchain
             visualStudioInstallation = $vs
             importLibrary = 'bin64\WebKit2.lib'
+            publicHeaderDirectory = 'include\WebKit'
+            publicHeaderFileCount = (Get-ChildItem -LiteralPath $stageInclude -File -Recurse).Count
+            vcpkgStatusFile = 'dependencies.lock.txt'
+            vcpkgPackageCount = $vcpkgPackageCount
+            vcpkgInstalledRoot = 'WebKitBuild\Release\vcpkg_installed\vcpkg'
             runtimeFileCount = (Get-ChildItem -LiteralPath $runtime -File -Recurse).Count
             engineBinaryDirectory = (Split-Path -Leaf $binaryRoot)
             disabledBuildTargets = @('API tests', 'layout tests', 'WebDriver', 'MiniBrowser')
@@ -316,7 +350,7 @@ jobs:
           WebKitRequirements baseline: $($spec.webkitRequirementsBaseline)
           Archive normalizes the pinned WinCairo bin output to bin64 for the stable SDK contract.
           It includes WebKit runtime binaries/processes, public headers, import library,
-          dependency DLLs, app-local Visual C++ runtime DLLs and resolved vcpkg package list.
+          dependency DLLs, app-local Visual C++ runtime DLLs and the exact manifest-installed vcpkg status database.
           API/layout tests, WebDriver and MiniBrowser are excluded from the production SDK build.
           SHA-256 is recorded in sdk-manifest.json and sdk.sha256.
           "@ | Set-Content -LiteralPath (Join-Path $workspace 'sdk-release-notes.md') -Encoding utf8

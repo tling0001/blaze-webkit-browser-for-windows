@@ -1,5 +1,15 @@
 # Blaze release notes
 
+## [1.1.4] - 2026-11-12
+
+### WebKit SDK staging and provenance
+- Stage the public C API headers from WebKit's actual CMake output directory, `WebKit/Headers`, instead of the nonexistent `Release/include` path.
+- Normalize the WebKit, JavaScriptCore, WTF, PAL, WebGPU, ANGLE and bmalloc public header trees into the SDK include root.
+- Capture the package database from the build's manifest-installed vcpkg tree, rather than querying the unrelated Visual Studio vcpkg installation.
+- Record header and vcpkg package counts and their provenance in the SDK manifest.
+- Keep the successful pinned Release build cache intact so SDK staging retries do not repeat the multi-hour WebKit compile.
+- Make the browser workflow detect a failed SDK workflow for the same commit and fail promptly instead of waiting for the full release timeout.
+
 ## [1.1.3] - 2026-11-11
 
 ### Native WinUI start page
