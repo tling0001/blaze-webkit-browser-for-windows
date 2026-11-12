@@ -5,6 +5,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media.Animation;
+using Microsoft.UI.Xaml.Input;
 using Windows.Foundation;
 using Windows.UI.ViewManagement;
 using WebKitBrowser.Models;
@@ -284,6 +285,34 @@ public sealed partial class MainPage : Page
     }
 
     private void OnBrowserSurfaceSizeChanged(object sender, SizeChangedEventArgs e) => LayoutNativeViews();
+
+    private void OnFocusAddressAccelerator(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
+    {
+        AddressBox.Text = ViewModel.SelectedTab?.IsNativeStartPage == true
+            ? string.Empty
+            : ViewModel.SelectedTab?.Url ?? string.Empty;
+        AddressBox.Focus(FocusState.Programmatic);
+        args.Handled = true;
+    }
+
+    private void OnNewTabAccelerator(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
+    {
+        OnAddTabButtonClick(TabStrip, EventArgs.Empty);
+        args.Handled = true;
+    }
+
+    private void OnCloseTabAccelerator(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
+    {
+        if (ViewModel.SelectedTab is { } tab)
+            CloseBrowserTab(tab);
+        args.Handled = true;
+    }
+
+    private void OnReloadAccelerator(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
+    {
+        ViewModel.ReloadCommand.Execute(null);
+        args.Handled = true;
+    }
 
     private void OnBackClick(object sender, RoutedEventArgs e) => ViewModel.GoBackCommand.Execute(null);
     private void OnForwardClick(object sender, RoutedEventArgs e) => ViewModel.GoForwardCommand.Execute(null);

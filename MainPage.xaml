@@ -7,6 +7,12 @@
     Unloaded="OnUnloaded">
 
     <Grid x:Name="LayoutRoot" RowSpacing="0">
+        <Grid.KeyboardAccelerators>
+            <KeyboardAccelerator Key="L" Modifiers="Control" Invoked="OnFocusAddressAccelerator" />
+            <KeyboardAccelerator Key="T" Modifiers="Control" Invoked="OnNewTabAccelerator" />
+            <KeyboardAccelerator Key="W" Modifiers="Control" Invoked="OnCloseTabAccelerator" />
+            <KeyboardAccelerator Key="R" Modifiers="Control" Invoked="OnReloadAccelerator" />
+        </Grid.KeyboardAccelerators>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />

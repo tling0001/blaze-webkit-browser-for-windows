@@ -8,24 +8,32 @@ AppId={{44C86CE5-2F2D-412F-9565-A731B6070756}
 AppName=Blaze
 AppVersion={#AppVersion}
 AppPublisher=Blaze contributors
-CreateAppDir=no
+DefaultDirName={localappdata}\Programs\Blaze
+DefaultGroupName=Blaze
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64
 OutputDir=..\release-assets
 OutputBaseFilename=Blaze-Setup-{#AppVersion}-x64
 SetupIconFile=..\Assets\AppIcon.ico
-Uninstallable=no
+Uninstallable=yes
+UninstallDisplayIcon={app}\Blaze.exe
+DisableProgramGroupPage=yes
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
 CloseApplications=yes
 RestartApplications=no
 
+[Tasks]
+Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"
+
 [Files]
-Source: "..\release-assets\Blaze-{#AppVersion}-x64.msix"; DestDir: "{tmp}"; DestName: "Blaze.msix"; Flags: deleteafterinstall
-Source: "..\release-assets\Blaze-signing.cer"; DestDir: "{tmp}"; DestName: "Blaze-signing.cer"; Flags: deleteafterinstall
-Source: "Install-Blaze.ps1"; DestDir: "{tmp}"; Flags: deleteafterinstall
+Source: "..\publish\win-x64\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+[Icons]
+Name: "{autoprograms}\Blaze"; Filename: "{app}\Blaze.exe"
+Name: "{autodesktop}\Blaze"; Filename: "{app}\Blaze.exe"; Tasks: desktopicon
 
 [Run]
-Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{tmp}\Install-Blaze.ps1"" -PackagePath ""{tmp}\Blaze.msix"" -CertificatePath ""{tmp}\Blaze-signing.cer"""; Flags: runhidden waituntilterminated; StatusMsg: "Installing Blaze..."
+Filename: "{app}\Blaze.exe"; Description: "Launch Blaze"; Flags: postinstall nowait skipifsilent

@@ -12,17 +12,17 @@
     <PublishProfile Condition="Exists('Properties\PublishProfiles\win-$(Platform).pubxml')">win-$(Platform).pubxml</PublishProfile>
     <UseWinUI>true</UseWinUI>
     <WinUISDKReferences>false</WinUISDKReferences>
-    <EnableMsixTooling>true</EnableMsixTooling>
-    <AppxPackageSigningEnabled>true</AppxPackageSigningEnabled>
+    <EnableMsixTooling>false</EnableMsixTooling>
+    <AppxPackageSigningEnabled>false</AppxPackageSigningEnabled>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <Version>1.1.10</Version>
-    <AssemblyVersion>1.1.10.0</AssemblyVersion>
-    <FileVersion>1.1.10.0</FileVersion>
-    <InformationalVersion>1.1.10</InformationalVersion>
+    <Version>1.1.11</Version>
+    <AssemblyVersion>1.1.11.0</AssemblyVersion>
+    <FileVersion>1.1.11.0</FileVersion>
+    <InformationalVersion>1.1.11</InformationalVersion>
     <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
-    <WindowsPackageType>MSIX</WindowsPackageType>
-    <AppxPackageVersion>1.1.10.0</AppxPackageVersion>
+    <WindowsPackageType>None</WindowsPackageType>
+    <AppxPackageVersion>1.1.11.0</AppxPackageVersion>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <SelfContained>true</SelfContained>
   </PropertyGroup>

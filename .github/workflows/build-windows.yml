@@ -148,7 +148,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           if (-not (Test-Path 'WebKitBrowser.csproj')) { throw 'Official WinUI scaffold is missing.' }
-          dotnet restore WebKitBrowser.csproj -r win-x64 -p:Configuration=Release -p:PublishReadyToRun=true
+          dotnet restore WebKitBrowser.csproj -r win-x64 -p:Configuration=Release -p:PublishReadyToRun=true -p:WindowsPackageType=None -p:EnableMsixTooling=false -p:AppxPackageSigningEnabled=false
           if ($LASTEXITCODE -ne 0) { throw 'WinUI restore failed.' }
 
       - name: Verify WinUI APIs against restored references
@@ -195,6 +195,16 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'AutomationProperties.SetAutomationId API verification failed.' }
           winapp find-api members AutomationProperties --filter SetName --json --project-dir .
           if ($LASTEXITCODE -ne 0) { throw 'AutomationProperties.SetName API verification failed.' }
+          winapp find-api KeyboardAccelerator --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'KeyboardAccelerator API lookup failed.' }
+          winapp find-api members UIElement --filter KeyboardAccelerators --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'UIElement keyboard accelerator collection verification failed.' }
+          winapp find-api check-property KeyboardAccelerator Key Modifiers --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'Keyboard accelerator key and modifier verification failed.' }
+          winapp find-api members KeyboardAccelerator --filter Invoked --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'Keyboard accelerator Invoked event verification failed.' }
+          winapp find-api check-property KeyboardAcceleratorInvokedEventArgs Handled --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'Keyboard accelerator handled-state verification failed.' }
           winapp find-api check-property UIElement Transitions --json --project-dir .
           if ($LASTEXITCODE -ne 0) { throw 'UIElement.Transitions API verification failed.' }
           winapp find-api check-property ContentDialog ContentTransitions --json --project-dir .
@@ -212,54 +222,23 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          dotnet build WebKitBrowser.csproj --configuration Release --no-restore -p:Platform=x64 -p:RuntimeIdentifier=win-x64 -p:PublishReadyToRun=true
+          dotnet build WebKitBrowser.csproj --configuration Release --no-restore -p:Platform=x64 -p:RuntimeIdentifier=win-x64 -p:PublishReadyToRun=true -p:WindowsPackageType=None -p:EnableMsixTooling=false -p:AppxPackageSigningEnabled=false
           if ($LASTEXITCODE -ne 0) { throw 'WinUI app compilation failed.' }
 
-      - name: Generate release signing certificate
+      - name: Publish unpackaged self-contained WinUI browser
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          winapp cert generate --manifest .\Package.appxmanifest
-          if ($LASTEXITCODE -ne 0 -or -not (Test-Path 'devcert.pfx')) { throw 'WinApp CLI could not generate the package signing certificate.' }
-
-      - name: Package and sign the WinUI browser
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $projectMetadata = [xml](Get-Content -LiteralPath "WebKitBrowser.csproj" -Raw)
-          $version = $projectMetadata.SelectSingleNode("/*[local-name()='Project']/*[local-name()='PropertyGroup']/*[local-name()='Version']").InnerText.Trim()
-          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "Invalid Blaze product version: $version" }
-
-          $output = & winapp package .\WebKitBrowser.csproj --arch x64 --cert .\devcert.pfx --self-contained 2>&1
-          $exitCode = $LASTEXITCODE
-          $output | ForEach-Object { Write-Host $_ }
-          if ($exitCode -ne 0) { throw 'WinApp CLI MSIX packaging failed.' }
-
-          $outputText = $output -join [Environment]::NewLine
-          $reported = [regex]::Matches($outputText, '(?i)(?:[A-Z]:\\|\.\\|/|[A-Za-z0-9_.-]+\\)[^\r\n"'']+\.msix(?:bundle)?')
-          if ($reported.Count -eq 0) { throw 'WinApp CLI did not report an MSIX artifact path; refusing to guess an output directory.' }
-          $packagePath = $reported[$reported.Count - 1].Value.Trim()
-          $packagePath = $packagePath.Trim([char[]]@('"', "'", ' ', '.', ':'))
-          if (-not [IO.Path]::IsPathRooted($packagePath)) { $packagePath = Join-Path $PWD $packagePath }
-          if (-not (Test-Path -LiteralPath $packagePath)) { throw "Reported MSIX package does not exist: $packagePath" }
-
-          $releaseDir = Join-Path $PWD 'release-assets'
-          New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
-          Copy-Item -LiteralPath $packagePath -Destination (Join-Path $releaseDir "Blaze-$version-x64.msix") -Force
-
-          $certificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new((Resolve-Path 'devcert.pfx').Path, 'password')
-          [System.IO.File]::WriteAllBytes((Join-Path $releaseDir 'Blaze-signing.cer'), $certificate.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert))
-          $certificate.Dispose()
-
-          @"
-          Blaze $version (x64)
-
-          1. Import Blaze-signing.cer into the Current User Trusted Root and Trusted People certificate stores.
-          2. Install Blaze-$version-x64.msix with App Installer or Add-AppxPackage.
-          3. The certificate file contains only the public certificate. The private signing key is not included.
-
-          This is a testing build of the upstream WinCairo WebKit port.
-          "@ | Set-Content -LiteralPath (Join-Path $releaseDir 'INSTALL.txt') -Encoding utf8
+          $publishDir = Join-Path $PWD 'publish\win-x64'
+          if (Test-Path -LiteralPath $publishDir) { Remove-Item -LiteralPath $publishDir -Recurse -Force }
+          dotnet publish WebKitBrowser.csproj --configuration Release --no-restore -p:Platform=x64 -p:RuntimeIdentifier=win-x64 -p:PublishReadyToRun=true -p:WindowsPackageType=None -p:EnableMsixTooling=false -p:AppxPackageSigningEnabled=false -p:WindowsAppSDKSelfContained=true -p:SelfContained=true -o $publishDir
+          if ($LASTEXITCODE -ne 0) { throw 'Publishing the unpackaged self-contained WinUI browser failed.' }
+          foreach ($required in @('Blaze.exe','WebKitHost.dll','WebKit2.dll','webkit-sdk-manifest.json')) {
+            if (-not (Test-Path -LiteralPath (Join-Path $publishDir $required) -PathType Leaf)) {
+              throw "Published Blaze runtime is incomplete: missing $required."
+            }
+          }
+          Write-Host "Published $((Get-ChildItem -LiteralPath $publishDir -File -Recurse).Count) files for the standalone EXE installer."
 
       - name: Build Blaze EXE installer
         shell: pwsh
@@ -274,6 +253,8 @@ jobs:
           if (-not $versionNode) { throw 'Blaze project version was not found.' }
           $version = $versionNode.InnerText.Trim()
           $env:BLAZE_VERSION = $version
+          $publishDir = Join-Path $PWD 'publish\win-x64'
+          if (-not (Test-Path -LiteralPath (Join-Path $publishDir 'Blaze.exe') -PathType Leaf)) { throw 'Unpackaged Blaze publish output is missing.' }
           & $iscc.FullName /Qp Installer\Blaze.iss
           if ($LASTEXITCODE -ne 0) { throw 'Building Blaze-Setup.exe failed.' }
           $installer = Join-Path $PWD "release-assets\Blaze-Setup-$version-x64.exe"
@@ -295,11 +276,11 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-      - name: Upload signed MSIX and public signing certificate
+      - name: Upload standalone Blaze EXE installer
         uses: actions/upload-artifact@v6
         with:
           name: Blaze-Windows-x64
-          path: release-assets/*
+          path: release-assets/Blaze-Setup-*-x64.exe
           if-no-files-found: error
           retention-days: 14
 
@@ -349,9 +330,9 @@ jobs:
           TARGET_SHA: ${{ github.sha }}
         shell: bash
         run: |
-          mapfile -d '' assets < <(find release-assets -maxdepth 1 -type f \( -name '*.exe' -o -name '*.msix' -o -name '*.cer' -o -name 'INSTALL.txt' \) -print0)
-          if [ "${#assets[@]}" -lt 4 ]; then
-            echo "Expected the Blaze EXE installer, signed MSIX, public certificate and install guide." >&2
+          mapfile -d '' assets < <(find release-assets -maxdepth 1 -type f -name 'Blaze-Setup-*-x64.exe' -print0)
+          if [ "${#assets[@]}" -lt 1 ]; then
+            echo "Expected the standalone Blaze EXE installer." >&2
             find release-assets -maxdepth 2 -type f -print >&2
             exit 1
           fi

@@ -1,5 +1,16 @@
 # Blaze release notes
 
+## [1.1.11] - 2026-11-12
+
+### Standalone Windows installer
+- Replace the MSIX-wrapped EXE installer with a genuine per-user Inno Setup installer containing the unpackaged, self-contained WinUI application and the pinned Apple WebKit WinCairo runtime.
+- Publish the WinUI app with `WindowsPackageType=None`; remove MSIX generation, development-certificate creation, certificate trust instructions and App Installer dependencies from release automation.
+- Install under `%LOCALAPPDATA%\\Programs\\Blaze`, add Start menu and optional desktop shortcuts, and provide normal uninstall support without touching browser profile data in `%LOCALAPPDATA%\\Blaze`.
+
+### Browser keyboard shortcuts
+- Add Ctrl+L to focus the address/search box, Ctrl+T to open a tab, Ctrl+W to close the active tab, and Ctrl+R to reload the current page.
+- Implement shortcuts as native WinUI `KeyboardAccelerator` controls so they participate in WinUI keyboard routing and accessibility conventions.
+
 ## [1.1.10] - 2026-11-12
 
 ### Release build restore consistency
