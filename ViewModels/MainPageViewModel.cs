@@ -52,6 +52,9 @@ public partial class MainPageViewModel : ObservableObject
     {
         Directory.CreateDirectory(_dataDirectory);
         Settings = await ReadAsync<BrowserSettings>("settings.json") ?? new BrowserSettings();
+        // Migrate the old uncustomized Google default to the native WinUI start page.
+        if (!Settings.HomePageCustomized && string.Equals(Settings.HomePage, "https://www.google.com", StringComparison.OrdinalIgnoreCase))
+            Settings.HomePage = BrowserSettings.NativeStartPageUrl;
 
         var savedBookmarks = await ReadAsync<List<BookmarkEntry>>("bookmarks.json") ?? [];
         var savedHistory = await ReadAsync<List<HistoryEntry>>("history.json") ?? [];
@@ -89,7 +92,7 @@ public partial class MainPageViewModel : ObservableObject
 
     public BrowserTab AddTab(string? initialUrl = null)
     {
-        var tab = new BrowserTab { Url = initialUrl ?? "about:blank" };
+        var tab = new BrowserTab { Url = initialUrl ?? Settings.HomePage };
         Tabs.Add(tab);
         SelectedTab = tab;
         return tab;
@@ -160,7 +163,7 @@ public partial class MainPageViewModel : ObservableObject
 
     public bool ToggleBookmark(BrowserTab? tab)
     {
-        if (tab is null || string.IsNullOrWhiteSpace(tab.Url) || tab.Url == "about:blank")
+        if (tab is null || string.IsNullOrWhiteSpace(tab.Url) || tab.Url == "about:blank" || tab.IsNativeStartPage)
             return false;
 
         var existing = Bookmarks.FirstOrDefault(item => string.Equals(item.Url, tab.Url, StringComparison.OrdinalIgnoreCase));
@@ -304,6 +307,9 @@ public partial class MainPageViewModel : ObservableObject
 
     private static string NormalizeAddress(string input, BrowserSettings settings)
     {
+        if (string.Equals(input, BrowserSettings.NativeStartPageUrl, StringComparison.OrdinalIgnoreCase))
+            return BrowserSettings.NativeStartPageUrl;
+
         if (Uri.TryCreate(input, UriKind.Absolute, out var absolute) &&
             (absolute.Scheme == Uri.UriSchemeHttp || absolute.Scheme == Uri.UriSchemeHttps ||
              absolute.Scheme == "about" || absolute.Scheme == "file"))
