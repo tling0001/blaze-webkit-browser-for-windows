@@ -97,11 +97,22 @@ try {
     # Exercise the exact Release payload that is placed inside the Inno Setup installer.
     # The previous test used 'winapp run', which rebuilt/launched Debug and could pass
     # while the published Release installer behaved differently on a user's machine.
-    $releaseExe = Join-Path $PWD 'publish\\win-x64\\Blaze.exe'
+    $releaseDirectory = Join-Path (Join-Path $PWD 'publish') 'win-x64'
+    $releaseExe = Join-Path $releaseDirectory 'Blaze.exe'
     if (-not (Test-Path -LiteralPath $releaseExe -PathType Leaf)) {
         throw "Published Release executable was not found: $releaseExe"
     }
-    $releaseDirectory = Split-Path -Parent $releaseExe
+
+    # Capture a full dump if Release activation fails inside WinUI. This can
+    # preserve the native stowed exception hidden behind XamlParseException.
+    $dumpDirectory = Join-Path $ArtifactDirectory 'crash-dumps'
+    New-Item -ItemType Directory -Force -Path $dumpDirectory | Out-Null
+    $dumpKey = 'HKCU:\Software\Microsoft\Windows\Windows Error Reporting\LocalDumps\Blaze.exe'
+    New-Item -Path $dumpKey -Force | Out-Null
+    New-ItemProperty -Path $dumpKey -Name DumpFolder -PropertyType ExpandString -Value $dumpDirectory -Force | Out-Null
+    New-ItemProperty -Path $dumpKey -Name DumpType -PropertyType DWord -Value 2 -Force | Out-Null
+    New-ItemProperty -Path $dumpKey -Name DumpCount -PropertyType DWord -Value 3 -Force | Out-Null
+
     $process = Start-Process -FilePath $releaseExe -WorkingDirectory $releaseDirectory -PassThru
     if (-not $process -or $process.Id -le 0) {
         throw 'Could not launch the published Release executable.'

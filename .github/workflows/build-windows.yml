@@ -233,7 +233,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $publishDir = Join-Path $PWD 'publish\win-x64'
           if (Test-Path -LiteralPath $publishDir) { Remove-Item -LiteralPath $publishDir -Recurse -Force }
-          dotnet publish WebKitBrowser.csproj --configuration Release --no-restore -p:Platform=x64 -p:RuntimeIdentifier=win-x64 -p:PublishReadyToRun=true -p:WindowsPackageType=None -p:EnableMsixTooling=false -p:AppxPackageSigningEnabled=false -p:WindowsAppSDKSelfContained=true -p:SelfContained=true -o $publishDir
+          dotnet publish WebKitBrowser.csproj --configuration Release --no-restore -p:Platform=x64 -p:RuntimeIdentifier=win-x64 -p:PublishReadyToRun=false -p:WindowsPackageType=None -p:EnableMsixTooling=false -p:AppxPackageSigningEnabled=false -p:WindowsAppSDKSelfContained=true -p:SelfContained=true -o $publishDir
           if ($LASTEXITCODE -ne 0) { throw 'Publishing the unpackaged self-contained WinUI browser failed.' }
           foreach ($required in @('Blaze.exe','WebKitHost.dll','WebKit2.dll','webkit-sdk-manifest.json')) {
             if (-not (Test-Path -LiteralPath (Join-Path $publishDir $required) -PathType Leaf)) {

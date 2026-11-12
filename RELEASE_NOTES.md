@@ -1,5 +1,14 @@
 # Blaze release notes
 
+## [1.1.18] - 2026-11-12
+
+### Release startup diagnostics
+- Disable ReadyToRun for the unpackaged WinUI Release publish while isolating a Release-only XAML activation failure; keep the app self-contained.
+- Fix the smoke test's Release executable path construction using nested Join-Path calls.
+- Enable per-process Windows Error Reporting full dumps during CI smoke testing and upload any dump with the diagnostic artifacts to expose hidden WinUI stowed exceptions.
+- Keep testing the actual Release publish output and preserve the standalone Inno Setup installer.
+
+
 ## [1.1.17] - 2026-11-12
 
 ### Release-build smoke testing and startup diagnostics
