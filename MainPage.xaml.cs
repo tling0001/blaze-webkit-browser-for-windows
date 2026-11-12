@@ -704,16 +704,15 @@ public sealed partial class MainPage : Page
         var tab = ViewModel.SelectedTab;
         if (tab is null)
             return;
-        if (tab.NativeHandle == IntPtr.Zero)
+        if (tab.IsNativeStartPage)
         {
-            if (tab.IsNativeStartPage)
-            {
-                AddressBox.Text = string.Empty;
-                UpdateBookmarkButton();
-                UpdateNavigationButtons();
-            }
+            AddressBox.Text = string.Empty;
+            UpdateBookmarkButton();
+            UpdateNavigationButtons();
             return;
         }
+        if (tab.NativeHandle == IntPtr.Zero)
+            return;
 
         tab.RefreshNativeState();
         if (AddressBox.FocusState == FocusState.Unfocused)
