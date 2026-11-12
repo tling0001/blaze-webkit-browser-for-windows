@@ -158,7 +158,9 @@ public sealed partial class MainPage : Page
             return;
         }
 
-        var tab = ViewModel.AddTab();
+        // A popup owns a real WebKit page immediately; it must not inherit the
+        // native start-page URL used by ordinary new tabs.
+        var tab = ViewModel.AddTab("about:blank");
         tab.NativeHandle = nativeHandle;
         var item = AddTabItem(tab);
         TabStrip.SelectedItem = item;
