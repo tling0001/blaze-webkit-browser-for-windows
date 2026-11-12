@@ -88,9 +88,32 @@ try {
     $appPid = [int]$launch.ProcessId
     $uiStarted = $true
 
-    $windows = @(Invoke-Ui @('list-windows', '--json') | ConvertFrom-Json)
-    $main = $windows | Where-Object { $_.hwnd -and $_.hwnd -ne '0' -and $_.title -eq 'Blaze' } | Select-Object -First 1
-    if (-not $main) { throw 'The launched WinUI browser window was not found.' }
+    # WinUI activation is asynchronous. A successful detached launch can
+    # return before App.OnLaunched has created and activated MainWindow.
+    # Poll the process-scoped window list instead of racing the first frame.
+    $windows = @()
+    $main = $null
+    $lastWindowOutput = ''
+    for ($attempt = 0; $attempt -lt 40; $attempt++) {
+        $windowOutput = @(Invoke-Ui @('list-windows', '--json'))
+        $lastWindowOutput = $windowOutput -join [Environment]::NewLine
+        try { $windows = @($lastWindowOutput | ConvertFrom-Json) } catch { $windows = @() }
+        $main = $windows | Where-Object {
+            $_.hwnd -and $_.hwnd -ne '0' -and $_.title -like 'Blaze*'
+        } | Select-Object -First 1
+        if ($main) { break }
+
+        $process = Get-Process -Id $appPid -ErrorAction SilentlyContinue
+        if (-not $process) {
+            throw "The WinUI browser process $appPid exited before its main window appeared. Window enumeration: $lastWindowOutput"
+        }
+        Start-Sleep -Milliseconds 500
+    }
+    if (-not $main) {
+        $process = Get-Process -Id $appPid -ErrorAction SilentlyContinue
+        $processState = if ($process) { "PID $appPid is running; MainWindowHandle=$($process.MainWindowHandle)" } else { "PID $appPid is no longer running" }
+        throw "The launched WinUI browser window was not found after 20 seconds. $processState. Last window enumeration: $lastWindowOutput"
+    }
     $hwnd = [string]$main.hwnd
 
     Test-UI 'WinUI browser window and address control' {
