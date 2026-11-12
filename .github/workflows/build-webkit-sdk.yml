@@ -210,8 +210,8 @@ jobs:
             throw "WebKit2.dll was not found in the expected WinCairo output folders. Found: $($candidates -join '; '). Release root: $release"
           }
 
+          # CMake may place the import library in a separate archive-output folder (lib64).
           $importLibrary = Get-ChildItem -LiteralPath $release -Filter 'WebKit2.lib' -Recurse -File |
-            Where-Object { $_.FullName.StartsWith($binaryRoot, [StringComparison]::OrdinalIgnoreCase) } |
             Select-Object -First 1
           if (-not $importLibrary) { throw "WebKit2.lib was not found beside the WinCairo runtime in $binaryRoot." }
 
