@@ -1,5 +1,13 @@
 # Blaze release notes
 
+## [1.1.20] - 2026-11-12
+
+### Release smoke-test argument and process discovery fix
+- Pass MSBuild properties to `dotnet run` using the explicit `--property:` syntax so they are not confused with the CLI's `-p/--project` option.
+- Identify the launched `Blaze.exe` by its parent process ID instead of converting the `Win32_Process.CreationDate` DMTF value, which failed on the GitHub Actions runner.
+- Keep the Release smoke test on the .NET CLI launch path and preserve stdout/stderr diagnostics.
+
+
 ## [1.1.19] - 2026-11-12
 
 ### Release startup and smoke-test path

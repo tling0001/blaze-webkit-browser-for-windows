@@ -99,7 +99,6 @@ try {
     # with a raw Start-Process of the published apphost.
     $stdoutPath = Join-Path $ArtifactDirectory 'dotnet-run.stdout.log'
     $stderrPath = Join-Path $ArtifactDirectory 'dotnet-run.stderr.log'
-    $dotnetStartedAt = Get-Date
 
     # Capture a full dump if Release activation fails inside WinUI. This can
     # preserve the native stowed exception hidden behind XamlParseException.
@@ -111,7 +110,7 @@ try {
     New-ItemProperty -Path $dumpKey -Name DumpType -PropertyType DWord -Value 2 -Force | Out-Null
     New-ItemProperty -Path $dumpKey -Name DumpCount -PropertyType DWord -Value 3 -Force | Out-Null
 
-    $dotnetArgs = @('run', '--project', 'WebKitBrowser.csproj', '--configuration', 'Release', '--no-restore', '-p:Platform=x64', '-p:RuntimeIdentifier=win-x64', '-p:PublishReadyToRun=false')
+    $dotnetArgs = @('run', '--project', 'WebKitBrowser.csproj', '--configuration', 'Release', '--no-restore', '--property:Platform=x64', '--property:RuntimeIdentifier=win-x64', '--property:PublishReadyToRun=false')
     $dotnetRunner = Start-Process -FilePath 'dotnet' -WorkingDirectory $PWD -PassThru -ArgumentList $dotnetArgs -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
     if (-not $dotnetRunner -or $dotnetRunner.Id -le 0) {
         throw 'Could not start the Release app through dotnet run.'
@@ -122,14 +121,14 @@ try {
     # by process creation time so UI Automation scopes to Blaze.exe, not dotnet.
     $appProcess = $null
     for ($attempt = 0; $attempt -lt 80; $attempt++) {
-        $candidates = @(Get-CimInstance Win32_Process -Filter "Name = 'Blaze.exe'" -ErrorAction SilentlyContinue)
+        # Win32_Process exposes ParentProcessId without parsing its
+        # locale/time-zone-sensitive DMTF CreationDate field. The apphost is
+        # launched directly by this dotnet run process.
+        $parentProcessId = [int]$dotnetRunner.Id
+        $candidates = @(Get-CimInstance Win32_Process -Filter "Name = 'Blaze.exe' AND ParentProcessId = $parentProcessId" -ErrorAction SilentlyContinue)
         foreach ($candidate in $candidates) {
-            $created = $null
-            if ($candidate.CreationDate) { $created = [Management.ManagementDateTimeConverter]::ToDateTime($candidate.CreationDate) }
-            if ($created -and $created -ge $dotnetStartedAt) {
-                $appProcess = Get-Process -Id ([int]$candidate.ProcessId) -ErrorAction SilentlyContinue
-                if ($appProcess) { break }
-            }
+            $appProcess = Get-Process -Id ([int]$candidate.ProcessId) -ErrorAction SilentlyContinue
+            if ($appProcess) { break }
         }
         if ($appProcess) { break }
         $dotnetRunner.Refresh()
