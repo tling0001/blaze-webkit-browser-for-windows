@@ -94,14 +94,12 @@ try {
     $ArtifactDirectory = [IO.Path]::GetFullPath($ArtifactDirectory)
     New-Item -ItemType Directory -Force -Path $ArtifactDirectory | Out-Null
 
-    # Exercise the exact Release payload that is placed inside the Inno Setup installer.
-    # The previous test used 'winapp run', which rebuilt/launched Debug and could pass
-    # while the published Release installer behaved differently on a user's machine.
-    $releaseDirectory = Join-Path (Join-Path $PWD 'publish') 'win-x64'
-    $releaseExe = Join-Path $releaseDirectory 'Blaze.exe'
-    if (-not (Test-Path -LiteralPath $releaseExe -PathType Leaf)) {
-        throw "Published Release executable was not found: $releaseExe"
-    }
+    # Run the Release configuration through the .NET CLI, mirroring the
+    # normal WinUI development workflow instead of bypassing MSBuild activation
+    # with a raw Start-Process of the published apphost.
+    $stdoutPath = Join-Path $ArtifactDirectory 'dotnet-run.stdout.log'
+    $stderrPath = Join-Path $ArtifactDirectory 'dotnet-run.stderr.log'
+    $dotnetStartedAt = Get-Date
 
     # Capture a full dump if Release activation fails inside WinUI. This can
     # preserve the native stowed exception hidden behind XamlParseException.
@@ -113,16 +111,46 @@ try {
     New-ItemProperty -Path $dumpKey -Name DumpType -PropertyType DWord -Value 2 -Force | Out-Null
     New-ItemProperty -Path $dumpKey -Name DumpCount -PropertyType DWord -Value 3 -Force | Out-Null
 
-    $process = Start-Process -FilePath $releaseExe -WorkingDirectory $releaseDirectory -PassThru
-    if (-not $process -or $process.Id -le 0) {
-        throw 'Could not launch the published Release executable.'
+    $dotnetArgs = @('run', '--project', 'WebKitBrowser.csproj', '--configuration', 'Release', '--no-restore', '-p:Platform=x64', '-p:RuntimeIdentifier=win-x64', '-p:PublishReadyToRun=false')
+    $dotnetRunner = Start-Process -FilePath 'dotnet' -WorkingDirectory $PWD -PassThru -ArgumentList $dotnetArgs -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
+    if (-not $dotnetRunner -or $dotnetRunner.Id -le 0) {
+        throw 'Could not start the Release app through dotnet run.'
     }
-    $appPid = [int]$process.Id
-    $uiStarted = $true
-    Write-Host "Smoke testing published Release executable. PID=$appPid; Path=$releaseExe"
+    Write-Host "Starting Release WinUI app through dotnet run. dotnet PID=$($dotnetRunner.Id)"
 
-    # WinUI activation is asynchronous. A successful detached launch can
-    # return before App.OnLaunched has created and activated MainWindow.
+    # dotnet run is the parent process; discover the actual WinUI apphost child
+    # by process creation time so UI Automation scopes to Blaze.exe, not dotnet.
+    $appProcess = $null
+    for ($attempt = 0; $attempt -lt 80; $attempt++) {
+        $candidates = @(Get-CimInstance Win32_Process -Filter "Name = 'Blaze.exe'" -ErrorAction SilentlyContinue)
+        foreach ($candidate in $candidates) {
+            $created = $null
+            if ($candidate.CreationDate) { $created = [Management.ManagementDateTimeConverter]::ToDateTime($candidate.CreationDate) }
+            if ($created -and $created -ge $dotnetStartedAt) {
+                $appProcess = Get-Process -Id ([int]$candidate.ProcessId) -ErrorAction SilentlyContinue
+                if ($appProcess) { break }
+            }
+        }
+        if ($appProcess) { break }
+        $dotnetRunner.Refresh()
+        if ($dotnetRunner.HasExited) {
+            $stdout = if (Test-Path $stdoutPath) { Get-Content $stdoutPath -Raw } else { '' }
+            $stderr = if (Test-Path $stderrPath) { Get-Content $stderrPath -Raw } else { '' }
+            throw "dotnet run exited with code $($dotnetRunner.ExitCode) before Blaze.exe started. stdout: $stdout stderr: $stderr"
+        }
+        Start-Sleep -Milliseconds 250
+    }
+    if (-not $appProcess) {
+        $stdout = if (Test-Path $stdoutPath) { Get-Content $stdoutPath -Raw } else { '' }
+        $stderr = if (Test-Path $stderrPath) { Get-Content $stderrPath -Raw } else { '' }
+        throw "dotnet run did not create the Blaze WinUI process within 20 seconds. stdout: $stdout stderr: $stderr"
+    }
+    $appPid = [int]$appProcess.Id
+    $uiStarted = $true
+    Write-Host "Smoke testing Release WinUI process launched by dotnet run. App PID=$appPid; dotnet PID=$($dotnetRunner.Id)"
+
+    # WinUI activation is asynchronous. Poll process-scoped windows instead
+    # of racing App.OnLaunched and the first native window frame.
     # Poll the process-scoped window list instead of racing the first frame.
     $windows = @()
     $main = $null
@@ -137,15 +165,17 @@ try {
         if ($main) { break }
 
         $process = Get-Process -Id $appPid -ErrorAction SilentlyContinue
-        if (-not $process) {
-            throw "The WinUI browser process $appPid exited before its main window appeared. Window enumeration: $lastWindowOutput"
+        if (-not (Get-Process -Id $appPid -ErrorAction SilentlyContinue)) {
+            $stdout = if (Test-Path $stdoutPath) { Get-Content $stdoutPath -Raw } else { '' }
+            $stderr = if (Test-Path $stderrPath) { Get-Content $stderrPath -Raw } else { '' }
+            throw "The WinUI browser process $appPid exited before its main window appeared. Window enumeration: $lastWindowOutput stdout: $stdout stderr: $stderr"
         }
         Start-Sleep -Milliseconds 500
     }
     if (-not $main) {
         $process = Get-Process -Id $appPid -ErrorAction SilentlyContinue
         $processState = if ($process) { "PID $appPid is running; MainWindowHandle=$($process.MainWindowHandle)" } else { "PID $appPid is no longer running" }
-        throw "The launched WinUI browser window was not found after 20 seconds. $processState. Last window enumeration: $lastWindowOutput"
+        throw "The dotnet-launched Release WinUI browser window was not found after 20 seconds. $processState. Last window enumeration: $lastWindowOutput"
     }
     $hwnd = [string]$main.hwnd
 

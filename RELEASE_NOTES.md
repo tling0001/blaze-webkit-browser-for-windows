@@ -1,5 +1,14 @@
 # Blaze release notes
 
+## [1.1.19] - 2026-11-12
+
+### Release startup and smoke-test path
+- Launch the Release configuration through `dotnet run` rather than directly starting the published apphost, matching the .NET CLI development launch path while still testing Release binaries.
+- Discover and scope UI automation to the actual `Blaze.exe` child process created by `dotnet run`, and retain stdout/stderr as CI diagnostics if startup fails.
+- Use the same ReadyToRun-disabled Release setting for restore, build, run and publish to eliminate conflicting Release configurations during diagnosis.
+- Preserve the standalone self-contained Inno Setup installer and the pinned Apple WebKit WinCairo runtime.
+
+
 ## [1.1.18] - 2026-11-12
 
 ### Release startup diagnostics

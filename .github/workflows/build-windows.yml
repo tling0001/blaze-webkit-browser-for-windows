@@ -148,7 +148,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           if (-not (Test-Path 'WebKitBrowser.csproj')) { throw 'Official WinUI scaffold is missing.' }
-          dotnet restore WebKitBrowser.csproj -r win-x64 -p:Configuration=Release -p:PublishReadyToRun=true -p:WindowsPackageType=None -p:EnableMsixTooling=false -p:AppxPackageSigningEnabled=false
+          dotnet restore WebKitBrowser.csproj -r win-x64 -p:Configuration=Release -p:PublishReadyToRun=false -p:WindowsPackageType=None -p:EnableMsixTooling=false -p:AppxPackageSigningEnabled=false
           if ($LASTEXITCODE -ne 0) { throw 'WinUI restore failed.' }
 
       - name: Verify WinUI APIs against restored references
@@ -224,7 +224,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          dotnet build WebKitBrowser.csproj --configuration Release --no-restore -p:Platform=x64 -p:RuntimeIdentifier=win-x64 -p:PublishReadyToRun=true -p:WindowsPackageType=None -p:EnableMsixTooling=false -p:AppxPackageSigningEnabled=false
+          dotnet build WebKitBrowser.csproj --configuration Release --no-restore -p:Platform=x64 -p:RuntimeIdentifier=win-x64 -p:PublishReadyToRun=false -p:WindowsPackageType=None -p:EnableMsixTooling=false -p:AppxPackageSigningEnabled=false
           if ($LASTEXITCODE -ne 0) { throw 'WinUI app compilation failed.' }
 
       - name: Publish unpackaged self-contained WinUI browser
