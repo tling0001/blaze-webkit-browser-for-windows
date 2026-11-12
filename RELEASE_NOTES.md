@@ -1,5 +1,19 @@
 # Blaze release notes
 
+## [1.1.3] - 2026-11-11
+
+### Native WinUI start page
+- Make new tabs open a native WinUI start page instead of loading a third-party search website by default.
+- Add a native start-page search box and accessible, keyboard-focusable quick-link buttons in a responsive GridView.
+- Keep custom home-page URLs optional; leaving the setting blank restores the native Blaze start page.
+- Migrate the previous uncustomized Google homepage default to the native start page.
+
+### WebKit SDK build and staging
+- Fix the SDK staging path: the pinned WinCairo build emits WebKit2.dll and helper processes under WebKitBuild/Release/bin; normalize those outputs to the SDK's stable bin64 layout.
+- Validate WebKit2.dll, WebKit2.lib, WebKitWebProcess, WebKitNetworkProcess and WKView.h before publishing.
+- Save the successful Release build cache before staging so packaging/provenance retries do not rebuild WebKit.
+- Keep Release configuration and omit optional API/layout test, WebDriver and MiniBrowser targets from the production SDK build.
+
 ## [1.1.2] - 2026-11-11
 
 ### Browser settings
