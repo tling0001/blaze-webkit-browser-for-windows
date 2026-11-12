@@ -1,5 +1,11 @@
 # Blaze release notes
 
+## [1.1.10] - 2026-11-12
+
+### Release build restore consistency
+- Restore the WinUI project using the same Release configuration and ReadyToRun setting as the subsequent build, ensuring the `win-x64` ReadyToRun runtime package is present when `dotnet build --no-restore` runs.
+- Keep ReadyToRun optimization enabled for the packaged x64 release rather than disabling it to work around an incomplete restore graph.
+
 ## [1.1.9] - 2026-11-12
 
 ### WinUI XAML compiler reliability
