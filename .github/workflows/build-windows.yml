@@ -116,6 +116,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'WinUI Gallery TextBox pattern lookup failed.' }
           winapp find-ui "FontIcon Segoe Fluent Icons toolbar Button"
           if ($LASTEXITCODE -ne 0) { throw 'WinUI Gallery Fluent icon-button lookup failed.' }
+          winapp find-ui "GridView responsive tile buttons quick links"
+          if ($LASTEXITCODE -ne 0) { throw 'WinUI Gallery GridView quick-link pattern lookup failed.' }
           winapp find-ui "ContentDialog native dialog animations"
           if ($LASTEXITCODE -ne 0) { throw 'WinUI Gallery ContentDialog pattern lookup failed.' }
 
@@ -141,6 +143,16 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'TabView close event verification failed.' }
           winapp find-api check-property AutoSuggestBox QueryIcon --json --project-dir .
           if ($LASTEXITCODE -ne 0) { throw 'AutoSuggestBox QueryIcon verification failed.' }
+          winapp find-api GridView --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'GridView API lookup failed.' }
+          winapp find-api check-property GridView ItemsSource IsItemClickEnabled SelectionMode ItemsPanel --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'GridView quick-link properties verification failed.' }
+          winapp find-api check-property ItemsWrapGrid Orientation MaximumRowsOrColumns --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'ItemsWrapGrid responsive layout verification failed.' }
+          winapp find-api check-property FontIcon Glyph FontFamily FontSize --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'FontIcon Segoe Fluent glyph verification failed.' }
+          winapp find-api check-property Button Tag Padding Width Height --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'Native quick-link Button properties verification failed.' }
           winapp find-api members AutoSuggestBox --filter QuerySubmitted --json --project-dir .
           if ($LASTEXITCODE -ne 0) { throw 'AutoSuggestBox QuerySubmitted verification failed.' }
           winapp find-api check-property RadioButtons SelectedIndex ItemsSource --json --project-dir .
