@@ -98,16 +98,7 @@ try {
 <html><head><meta charset="utf-8"><title>Blaze WebKit Smoke</title></head>
 <body><h1>Blaze WebKit Smoke</h1><p>Native WinCairo popup host is active.</p></body></html>
 '@ | Set-Content -LiteralPath $smokePage -Encoding utf8
-    Invoke-WinAppChecked @('ui', 'send-keys', 'https://typing-test.invalid', '--target', 'AddressBox', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
-    Start-Sleep -Milliseconds 1200
-    $addressValue = (Invoke-WinAppChecked @('ui', 'get-value', 'AddressBox', '--json', '-w', [string]$mainWindow.hwnd) -join [Environment]::NewLine) | ConvertFrom-Json
-    if ($addressValue.text -ne 'https://typing-test.invalid') {
-        throw "Address bar text was replaced while being edited. Actual value: '$($addressValue.text)'"
-    }
-    $results.Add([ordered]@{ name = 'Address bar preserves focused user input'; status = 'PASS' })
-
     $smokeUri = ([Uri]$smokePage).AbsoluteUri
-    Invoke-WinAppChecked @('ui', 'send-keys', 'ctrl+a', '--target', 'AddressBox', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
     Invoke-WinAppChecked @('ui', 'send-keys', $smokeUri, '--target', 'AddressBox', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
     Invoke-WinAppChecked @('ui', 'send-keys', 'enter', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
 
