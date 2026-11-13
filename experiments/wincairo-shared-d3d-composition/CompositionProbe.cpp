@@ -127,6 +127,7 @@ int consumeSharedTexture(HANDLE sharedHandle, D3D_DRIVER_TYPE driverType, LUID r
 
     ComPtr<ID3D11Texture2D> sharedTexture;
     hr = device1->OpenSharedResource1(sharedHandle, IID_PPV_ARGS(&sharedTexture));
+    CloseHandle(sharedHandle);
     if (FAILED(hr)) {
         printHr(L"ID3D11Device1::OpenSharedResource1", hr);
         return 13;
