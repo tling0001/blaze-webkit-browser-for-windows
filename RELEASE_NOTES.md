@@ -1,5 +1,17 @@
 # Blaze release notes
 
+## [1.1.25] - 2026-11-12
+
+### Dialogs and settings
+- Hide the native WebKit owned-window host while WinUI modal dialogs are open, then restore the selected page after the dialog closes. This prevents WebKit pixels from covering settings, permission prompts and other modal UI.
+- Split browser settings into General, Privacy, Appearance and Advanced tabs with independently scrollable content.
+- Keep the experimental ContentExternalOutputLink investigation explicit: the API is an external composition output target, not a supported HWND-import bridge for WinCairo. No nonfunctional rendering-mode switch is exposed.
+- Make the Windows UI smoke test address the app by process ID rather than retaining a potentially stale top-level HWND across UI automation operations.
+
+### Diagnostics
+- Continue recording toolbar actions in the crash log; the intermittent native crash remains under investigation and is not marked as resolved.
+
+
 ## [1.1.24] - 2026-11-12
 
 ### Browser stability and input
