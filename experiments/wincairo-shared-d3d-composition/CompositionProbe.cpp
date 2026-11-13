@@ -9,7 +9,6 @@
 #include <iostream>
 #include <iterator>
 #include <string>
-#include <stdexcept>
 #include <vector>
 
 using Microsoft::WRL::ComPtr;
@@ -583,12 +582,12 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
     return true;
 }
 
-void probeAngleRuntime()
+bool probeAngleRuntime()
 {
     HMODULE module = LoadLibraryW(L"libEGL.dll");
     if (!module) {
         std::wcout << L"ANGLE EGL probe: SKIP (libEGL.dll is not present beside the staged WinCairo runtime).\n";
-        return;
+        return true;
     }
 
     auto getProcAddress = reinterpret_cast<EglGetProcAddress>(GetProcAddress(module, "eglGetProcAddress"));
@@ -599,7 +598,7 @@ void probeAngleRuntime()
     if (!getProcAddress || !initialize || !queryString || !terminate) {
         std::wcout << L"ANGLE EGL probe: SKIP (required EGL entry points are unavailable).\n";
         FreeLibrary(module);
-        return;
+        return false;
     }
 
     auto getPlatformDisplay = reinterpret_cast<EglGetPlatformDisplay>(
@@ -622,7 +621,7 @@ void probeAngleRuntime()
     if (!display || !initialize(display, &major, &minor)) {
         std::wcout << L"ANGLE EGL probe: SKIP (ANGLE could not initialize a D3D11 display on this runner).\n";
         FreeLibrary(module);
-        return;
+        return false;
     }
 
     const char* vendor = queryString(display, EGL_VENDOR_VALUE);
@@ -651,6 +650,7 @@ void probeAngleRuntime()
     auto queryDeviceString = reinterpret_cast<EglQueryDeviceString>(
         getProcAddress("eglQueryDeviceStringEXT"));
 
+    bool angleRenderPassed = false;
     EGLAttrib deviceValue = 0;
     if (queryDisplayAttrib && queryDeviceAttrib && queryDeviceString
         && queryDisplayAttrib(display, EGL_DEVICE_EXT_VALUE, &deviceValue)
@@ -678,15 +678,15 @@ void probeAngleRuntime()
                     << std::hex << static_cast<unsigned long>(adapterDescription.AdapterLuid.HighPart)
                     << L":" << adapterDescription.AdapterLuid.LowPart << std::dec << L"\n";
             }
-            if (!renderThroughAngleD3DTexture(display, getProcAddress, d3dDevice))
-                throw std::runtime_error("ANGLE EGL D3D texture import/render test failed.");
+            angleRenderPassed = renderThroughAngleD3DTexture(display, getProcAddress, d3dDevice);
         }
     } else {
-        std::wcout << L"ANGLE EGL device query: unavailable.\n";
+        std::wcerr << L"FAIL: ANGLE EGL device query did not expose its D3D11 device.\n";
     }
 
     terminate(display);
     FreeLibrary(module);
+    return angleRenderPassed;
 }
 }
 
@@ -714,7 +714,8 @@ int wmain(int argc, wchar_t** argv)
     }
 
     std::wcout << L"Blaze WinCairo shared-D3D capability probe\n";
-    probeAngleRuntime();
+    if (!probeAngleRuntime())
+        return 2;
     if (!runCrossProcessSharedTextureProbe())
         return 1;
 
