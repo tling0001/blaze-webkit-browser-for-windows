@@ -37,8 +37,8 @@ public sealed partial class MainPage : Page
     private static readonly WebKitNative.JavaScriptDialogCallback JavaScriptDialogCallbackHandler = OnNativeJavaScriptDialog;
     private static readonly WebKitNative.NewPageCallback NewPageCallbackHandler = OnNativeNewPage;
     private static readonly WebKitNative.ClosePageCallback ClosePageCallbackHandler = OnNativePageClose;
-    private const string SafariMacOS27UserAgent =
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.2 Safari/605.1.15";
+    private const string SafariWindowsUserAgent =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.2 Safari/605.1.15";
 
     private readonly Dictionary<TabViewItem, BrowserTab> _tabItems = [];
     private readonly Dictionary<string, TabHeaderVisuals> _tabHeaders = [];
@@ -1232,7 +1232,7 @@ public sealed partial class MainPage : Page
         WebKitNative.SetPermissionCallback(tab.NativeHandle, PermissionCallbackHandler, callbackHandle);
         WebKitNative.SetJavaScriptDialogCallback(tab.NativeHandle, JavaScriptDialogCallbackHandler, callbackHandle);
         WebKitNative.SetPopupCallbacks(tab.NativeHandle, NewPageCallbackHandler, ClosePageCallbackHandler, callbackHandle);
-        WebKitNative.SetUserAgent(tab.NativeHandle, SafariMacOS27UserAgent);
+        WebKitNative.SetUserAgent(tab.NativeHandle, SafariWindowsUserAgent);
     }
 
     private void DestroyNativeView(BrowserTab tab)
