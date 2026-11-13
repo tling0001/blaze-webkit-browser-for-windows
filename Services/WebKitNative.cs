@@ -18,10 +18,14 @@ internal static class WebKitNative
     internal static extern void Destroy(IntPtr view);
 
     [DllImport(Library, EntryPoint = "WB_SetBounds", CallingConvention = CallingConvention.Cdecl)]
-    internal static extern void SetBounds(IntPtr view, int x, int y, int width, int height);
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool SetBounds(IntPtr view, int x, int y, int width, int height);
 
     [DllImport(Library, EntryPoint = "WB_GetWindow", CallingConvention = CallingConvention.Cdecl)]
     internal static extern IntPtr GetWindow(IntPtr view);
+
+    [DllImport(Library, EntryPoint = "WB_GetHostWindow", CallingConvention = CallingConvention.Cdecl)]
+    internal static extern IntPtr GetHostWindow(IntPtr view);
 
     [DllImport(Library, EntryPoint = "WB_Navigate", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Unicode)]
     internal static extern void Navigate(IntPtr view, string url);
