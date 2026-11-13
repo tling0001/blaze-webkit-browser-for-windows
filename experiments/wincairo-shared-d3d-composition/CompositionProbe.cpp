@@ -272,22 +272,41 @@ bool runCrossProcessSharedTextureProbe()
     }
     executable.resize(executableLength);
 
+    // An anonymous pipe transfers the target-process handle value after DuplicateHandle.
+    // The pipe read handle is inherited; the D3D shared handle itself is duplicated
+    // directly into the child and is never treated as a globally valid HANDLE value.
+    SECURITY_ATTRIBUTES security{ sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE };
+    HANDLE pipeRead = nullptr;
+    HANDLE pipeWrite = nullptr;
+    if (!CreatePipe(&pipeRead, &pipeWrite, &security, 0)
+        || !SetHandleInformation(pipeWrite, HANDLE_FLAG_INHERIT, 0)) {
+        if (pipeRead) CloseHandle(pipeRead);
+        if (pipeWrite) CloseHandle(pipeWrite);
+        CloseHandle(sharedHandle);
+        std::wcerr << L"FAIL: CreatePipe error=" << GetLastError() << L"\n";
+        return false;
+    }
+
     STARTUPINFOW startup{};
     startup.cb = sizeof(startup);
     PROCESS_INFORMATION process{};
-    std::wstring commandLine = L"\"" + executable + L"\" --consume ";
-    // Create the child suspended so the duplicated handle is valid before it starts.
-    commandLine += L"0 " + std::to_wstring(adapterLuid.HighPart) + L" "
-        + std::to_wstring(adapterLuid.LowPart) + L" " + std::to_wstring(static_cast<int>(driverType));
+    std::wstring commandLine = L"\"" + executable + L"\" --consume "
+        + std::to_wstring(reinterpret_cast<uintptr_t>(pipeRead)) + L" "
+        + std::to_wstring(adapterLuid.HighPart) + L" "
+        + std::to_wstring(adapterLuid.LowPart) + L" "
+        + std::to_wstring(static_cast<int>(driverType));
     std::vector<wchar_t> mutableCommandLine(commandLine.begin(), commandLine.end());
     mutableCommandLine.push_back(L'\0');
 
-    if (!CreateProcessW(executable.c_str(), mutableCommandLine.data(), nullptr, nullptr, FALSE,
+    if (!CreateProcessW(executable.c_str(), mutableCommandLine.data(), nullptr, nullptr, TRUE,
                         CREATE_SUSPENDED, nullptr, nullptr, &startup, &process)) {
+        CloseHandle(pipeRead);
+        CloseHandle(pipeWrite);
         CloseHandle(sharedHandle);
         std::wcerr << L"FAIL: CreateProcessW error=" << GetLastError() << L"\n";
         return false;
     }
+    CloseHandle(pipeRead);
 
     HANDLE remoteHandle = nullptr;
     if (!DuplicateHandle(GetCurrentProcess(), sharedHandle, process.hProcess, &remoteHandle,
@@ -296,60 +315,22 @@ bool runCrossProcessSharedTextureProbe()
         TerminateProcess(process.hProcess, 20);
         CloseHandle(process.hThread);
         CloseHandle(process.hProcess);
+        CloseHandle(pipeWrite);
         CloseHandle(sharedHandle);
         return false;
     }
 
-    // Replace the placeholder with the target process's handle value.
-    commandLine = L"\"" + executable + L"\" --consume "
-        + std::to_wstring(reinterpret_cast<uintptr_t>(remoteHandle)) + L" "
-        + std::to_wstring(adapterLuid.HighPart) + L" "
-        + std::to_wstring(adapterLuid.LowPart) + L" "
-        + std::to_wstring(static_cast<int>(driverType));
-    mutableCommandLine.assign(commandLine.begin(), commandLine.end());
-    mutableCommandLine.push_back(L'\0');
-    // The process was created suspended; update its command line before execution is not
-    // supported by Win32. Use a startup environment variable instead would add complexity,
-    // so this probe uses a small inherited command-line bootstrap below.
-    // Terminate and relaunch now that the remote handle value is known.
-    TerminateProcess(process.hProcess, 0);
-    WaitForSingleObject(process.hProcess, 5000);
-    CloseHandle(process.hThread);
-    CloseHandle(process.hProcess);
-
-    if (!CreateProcessW(executable.c_str(), mutableCommandLine.data(), nullptr, nullptr, FALSE,
-                        CREATE_SUSPENDED, nullptr, nullptr, &startup, &process)) {
-        CloseHandle(sharedHandle);
-        std::wcerr << L"FAIL: CreateProcessW (handle bootstrap) error=" << GetLastError() << L"\n";
-        return false;
-    }
-
-    // Duplicate the original shared handle into the second child process.
-    HANDLE secondRemoteHandle = nullptr;
-    if (!DuplicateHandle(GetCurrentProcess(), sharedHandle, process.hProcess, &secondRemoteHandle,
-                         0, FALSE, DUPLICATE_SAME_ACCESS)) {
-        std::wcerr << L"FAIL: DuplicateHandle (child) error=" << GetLastError() << L"\n";
+    const std::string remoteHandleText = std::to_string(reinterpret_cast<uintptr_t>(remoteHandle));
+    DWORD bytesWritten = 0;
+    const BOOL sent = WriteFile(pipeWrite, remoteHandleText.data(),
+                                static_cast<DWORD>(remoteHandleText.size()), &bytesWritten, nullptr);
+    CloseHandle(pipeWrite);
+    if (!sent || bytesWritten != remoteHandleText.size()) {
+        std::wcerr << L"FAIL: sending duplicated handle to child failed. Error=" << GetLastError() << L"\n";
         TerminateProcess(process.hProcess, 21);
         CloseHandle(process.hThread);
         CloseHandle(process.hProcess);
         CloseHandle(sharedHandle);
-        return false;
-    }
-
-    // Recreate with the exact duplicated handle value. This two-pass bootstrap is
-    // intentionally replaced by a named inherited event/handle protocol in the next probe.
-    // The current probe validates OS sharing only when the remote handle value is stable.
-    if (reinterpret_cast<uintptr_t>(secondRemoteHandle) != reinterpret_cast<uintptr_t>(remoteHandle)) {
-        // Different processes can receive different handle values. Pass the actual value
-        // by terminating and relaunching once more; the final child handle is duplicated
-        // after process creation, so a fixed command line cannot carry it. This path is
-        // handled by the environment block in the final implementation.
-        TerminateProcess(process.hProcess, 0);
-        WaitForSingleObject(process.hProcess, 5000);
-        CloseHandle(process.hThread);
-        CloseHandle(process.hProcess);
-        CloseHandle(sharedHandle);
-        std::wcerr << L"FAIL: child handle bootstrap requires an explicit IPC channel.\n";
         return false;
     }
 
@@ -531,7 +512,17 @@ int wmain(int argc, wchar_t** argv)
     CoInitializeEx(nullptr, COINIT_MULTITHREADED);
 
     if (argc >= 6 && std::wstring(argv[1]) == L"--consume") {
-        const auto rawHandle = static_cast<uintptr_t>(_wcstoui64(argv[2], nullptr, 10));
+        const auto pipeHandle = reinterpret_cast<HANDLE>(static_cast<uintptr_t>(_wcstoui64(argv[2], nullptr, 10)));
+        char handleText[64]{};
+        DWORD bytesRead = 0;
+        if (!ReadFile(pipeHandle, handleText, sizeof(handleText) - 1, &bytesRead, nullptr) || !bytesRead) {
+            std::wcerr << L"FAIL: child could not receive its duplicated shared handle. Error=" << GetLastError() << L"\\n";
+            CloseHandle(pipeHandle);
+            return 9;
+        }
+        CloseHandle(pipeHandle);
+        handleText[bytesRead] = '\\0';
+        const auto rawHandle = static_cast<uintptr_t>(_strtoui64(handleText, nullptr, 10));
         LUID luid{};
         luid.HighPart = static_cast<LONG>(_wcstoui64(argv[3], nullptr, 10));
         luid.LowPart = static_cast<DWORD>(_wcstoui64(argv[4], nullptr, 10));
