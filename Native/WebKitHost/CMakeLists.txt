@@ -21,7 +21,7 @@ add_library(WebKitHost SHARED WebKitHost.cpp WebKitHost.def)
 target_compile_features(WebKitHost PRIVATE cxx_std_20)
 target_compile_definitions(WebKitHost PRIVATE WEBKITHOST_EXPORTS WIN32_LEAN_AND_MEAN NOMINMAX)
 target_include_directories(WebKitHost PRIVATE "${WEBKIT_INCLUDE_DIR}")
-target_link_libraries(WebKitHost PRIVATE "${WEBKIT_LIBRARY}" user32 shell32 ole32)
+target_link_libraries(WebKitHost PRIVATE "${WEBKIT_LIBRARY}" user32 shell32 ole32 comctl32)
 set_target_properties(WebKitHost PROPERTIES
   OUTPUT_NAME "WebKitHost"
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"

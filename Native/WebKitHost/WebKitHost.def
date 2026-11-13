@@ -3,6 +3,8 @@ EXPORTS
     WB_Create
     WB_Destroy
     WB_SetBounds
+    WB_GetWindow
+    WB_GetHostWindow
     WB_Navigate
     WB_GoBack
     WB_GoForward

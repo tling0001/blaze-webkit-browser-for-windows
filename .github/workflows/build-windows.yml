@@ -231,6 +231,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Windows UISettings animation preference API verification failed.' }
           winapp find-api check-property FlyoutBase AreOpenCloseAnimationsEnabled --json --project-dir .
           if ($LASTEXITCODE -ne 0) { throw 'Native WinUI FlyoutBase animation API verification failed.' }
+          winapp find-api members AutomationProperties --filter SetAccessibilityView --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'WinUI AutomationProperties accessibility-view API verification failed.' }
+          winapp find-api AccessibilityView --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'WinUI AccessibilityView enum is unavailable.' }
 
       - name: Compile WinUI app and include WebKit runtime
         shell: pwsh

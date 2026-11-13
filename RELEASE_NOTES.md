@@ -1,5 +1,18 @@
 # Blaze release notes
 
+## [1.1.23] - 2026-11-12
+
+### Native WebKit presentation in WinUI 3
+- Host each native WinCairo view in a borderless owned popup HWND above the WinUI window, avoiding the final WinUI DirectComposition layer that can obscure ordinary child HWND output.
+- Keep the WebKit HWND as a normal native child of the popup host so WebKit's standard compositor and native mouse, keyboard, and wheel input paths remain intact.
+- Maintain one owned popup host per browser tab, position it from the XAML content bounds, track owner-window moves and DPI changes, hide inactive tabs, and destroy each host with its WebKit view.
+- Hide the native host while the start page or engine-error overlay is visible, leaving WinUI chrome and dialogs unobstructed.
+
+### Browser chrome and address editing
+- Put tab favicons before titles and reduce the custom tab header width to 112 DIPs, truncating long titles within the remaining space.
+- Keep the address bar's typed text stable while it is focused or being edited; synchronize it from the active page only after focus leaves or navigation/tab selection changes.
+- Extend the Release smoke test to verify focused address-bar text remains intact, open a local HTML page through native WinCairo, confirm its owned host is visible and above the WinUI surface, and verify its document title reaches the tab UI.
+
 ## [1.1.22] - 2026-11-12
 
 ### Website favicons
