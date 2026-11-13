@@ -1,6 +1,6 @@
 # WinCairo GPU-to-WinUI composition prototype
 
-Status: P1 ANGLE legacy DXGI shared-handle import succeeds on the hosted Windows runner, but the current pixel-verification probe reports that the producer D3D11 device does not yet observe the expected ANGLE-rendered pixels. WebKit WCScene output integration and WinUI presentation remain unimplemented.
+Status: P1 ANGLE legacy DXGI shared-handle import/render and producer-device pixel verification pass on the hosted Windows runner. P1.5 now tests presenting that GPU texture through a DirectComposition swap chain and visual on a temporary HWND. Actual WebKit WCScene output transport and presentation inside the WinUI browser remain unimplemented.
 
 ## Current pinned rendering path
 
@@ -19,7 +19,7 @@ This means the correct seam is **WCSceneContext's presentation target**, not the
 Use a D3D11 shared texture as the process boundary and a WinUI composition swap chain as the presentation boundary.
 
 - The browser/UI process owns a D3D11 device compatible with the WinUI composition device and creates a small ring (2–3) of BGRA8 shared textures with legacy DXGI handles and keyed-mutex synchronization.
-- A broker duplicates the legacy DXGI handles into the WebKit GPU process. Handle lifetime is explicit; never serialize raw process-local HANDLE values as if they were globally valid.
+- Transport the shared-resource identifier through an explicit WebKit IPC message. The current ANGLE import uses a legacy DXGI share-handle token; do not pass it through DuplicateHandle or CloseHandle as though it were an NT HANDLE. If switching to NT handles, verify the pinned ANGLE import path supports OpenSharedResource1.
 - The GPU process opens the shared resources on the same adapter. ANGLE's EGL D3D texture-client-buffer/share-handle interop is the first candidate for exposing the texture to WebKit's GL context. Verify the exact ANGLE extensions and adapter/device compatibility at runtime; do not assume an EGL extension is present just because ANGLE is bundled.
 - `WCScene` renders the root layer into the imported texture/FBO, then signals frame readiness. No `glReadPixels`, CPU staging texture, or bitmap IPC is allowed on this path.
 - The UI process copies or binds the completed shared texture into a `IDXGISwapChain1` created with `DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT` and `DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL`, using `CreateSwapChainForComposition`. Attach it through the supported WinUI `SwapChainPanel` interop or a supported composition visual bridge.
@@ -27,7 +27,7 @@ Use a D3D11 shared texture as the process boundary and a WinUI composition swap 
 
 ### Important design checks
 
-- The pinned ANGLE runtime exposes both D3D texture-client-buffer and D3D shared-handle client-buffer extensions; the P1 probe validates the latter using an legacy DXGI shared handle from a second device on the same adapter.
+- The pinned ANGLE runtime exposes D3D texture-client-buffer, D3D shared-handle client-buffer, and keyed-mutex/query-surface-pointer extensions. The P1 probe validates cross-device legacy DXGI shared-handle import and GLES rendering; explicit keyed-mutex acquisition is the next synchronization gate.
 - Cross-process D3D resource sharing requires compatible adapter/device configuration and correct handle duplication/security.
 - Avoid relying on a legacy shared-handle API if the pinned ANGLE import path only supports it; compare legacy-handle support and keyed mutex/fence requirements.
 - A direct composition swap chain is preferable to copying into a second texture if WinUI can consume the same device/resource. If the UI and GPU process devices cannot share a swap chain, use a shared texture ring and one GPU-side copy, never CPU readback.
@@ -38,18 +38,18 @@ Use a D3D11 shared texture as the process boundary and a WinUI composition swap 
 `CompositionProbe.cpp` is a standalone Windows x64 diagnostic built by the experimental browser workflow. P0 validates D3D11 resource transport. P1 now exercises the pinned ANGLE runtime itself:
 
 - Reports ANGLE EGL vendor/version, display/device extensions and the ANGLE D3D11 adapter LUID when `libEGL.dll` can initialize a D3D11 display.
-- Creates a BGRA8 D3D11 texture using an legacy DXGI shared handle and keyed mutex.
+- Creates a BGRA8 D3D11 texture using a legacy DXGI shared handle.
 - Duplicates the shared handle into a child process, transferring the child-local handle value through an inherited anonymous pipe (not by assuming HANDLE values are global).
-- Opens the texture on a second D3D11 device on the same adapter, synchronizes with the keyed mutex, and verifies a known pixel pattern.
+- Opens the texture on a second D3D11 device on the same adapter and verifies a known pixel pattern.
 - Queries the D3D11 device actually owned by the initialized ANGLE EGL display.
-- Creates a BGRA8 NT-shared D3D11 texture on a second device on the same adapter, so ANGLE must open a real cross-device shared resource rather than receive a same-device texture pointer.
-- Creates an legacy DXGI shared handle from the producer texture and imports it with `eglCreatePbufferFromClientBuffer(EGL_D3D_TEXTURE_2D_SHARE_HANDLE_ANGLE)`, exercising ANGLE's `OpenSharedResource` / `OpenSharedResource1` path.
+- Creates a BGRA8 legacy-shared D3D11 texture on a second device on the same adapter, so ANGLE must open a real cross-device shared resource rather than receive a same-device texture pointer.
+- Creates a legacy DXGI shared handle from the producer texture and imports it with `eglCreatePbufferFromClientBuffer(EGL_D3D_TEXTURE_2D_SHARE_HANDLE_ANGLE)`, exercising ANGLE's `OpenSharedResource` / `OpenSharedResource1` path.
 - Requires `EGL_BIND_TO_TEXTURE_RGBA` and explicitly sets `EGL_TEXTURE_TARGET=EGL_TEXTURE_2D` plus `EGL_TEXTURE_FORMAT=EGL_TEXTURE_RGBA`, matching ANGLE's documented DirectX interop setup.
 - First renders a known clear color to a normal EGL pbuffer as a control, then renders to the imported legacy DXGI shared-handle pbuffer.
 - Checks framebuffer completeness, GL errors and GLES pixel readback for each surface, calls `eglSwapBuffers`, and unbinds the EGL surface.
 - Reads the texture back through a D3D11 staging resource and logs the resulting BGRA pixel values. This readback is diagnostic-only and is not used by the proposed renderer.
 
-The test fails the workflow if the staged ANGLE runtime is missing, cannot initialize, does not expose its D3D11 device, cannot import the texture, or produces incorrect pixels. The previous hosted-runner run confirmed the normal EGL pbuffer renders correctly while the imported pbuffer reports a complete framebuffer but reads back transparent black. Inspection found that the probe omitted the documented texture target/format attributes and did not require an RGBA texture-bindable EGL config. The next run tests this concrete setup error; shared-handle rendering remains unvalidated until the pixel check passes. It still does **not** modify WebKit `WCSceneContext` or present actual WebKit page frames through WinUI.
+The hosted-runner P1 test now passes: ANGLE imports the legacy shared texture, renders the expected GLES color, and the producer D3D11 device verifies the corresponding BGRA pixels. P1.5 adds a temporary HWND, `CreateSwapChainForComposition`, a DirectComposition visual, and a GPU-only copy/Present operation. This validates the Windows composition presentation primitives but does not yet prove pixel-perfect on-screen output or connect WebKit `WCScene` frames to the WinUI browser.
 ## Prototype milestones
 
 ### P0 — capability probe (no visible product change)
@@ -64,7 +64,10 @@ The test fails the workflow if the staged ANGLE runtime is missing, cannot initi
 - Render a known GLES pattern and verify the D3D11 resource after GPU completion.
 - Keep the staging readback confined to the test harness.
 
-### P2 — WebKit scene output adapter
+### P1.5 — DirectComposition presentation (new diagnostic)
+- Create a D3D11 composition swap chain and attach it to a DirectComposition visual on a temporary HWND.
+- Copy the ANGLE-rendered shared texture into the swap-chain back buffer on the GPU and call Present/Commit.
+- Keep this test separate from WinUI; it validates DComp primitives, not the WinUI composition bridge.
 - Add an opt-in WebKit port setting for a composition output handle.
 - Replace the HWND-specific `WCSceneContext` construction with a surface-provider interface.
 - Keep the current HWND EGL surface as the default/fallback.

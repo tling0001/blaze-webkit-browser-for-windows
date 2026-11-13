@@ -210,7 +210,7 @@ public partial class MainPageViewModel : ObservableObject
         {
             var target = BuildSearchUrl(search.Term!, Settings.SearchEngine);
             if (seenTargets.Add(target))
-                results.Add((new AddressSuggestion(search.Term, $"Search you used · {search.Count} visit(s)", target, "\uE721"), 1200 + search.Count * 50));
+                results.Add((new AddressSuggestion(search.Term!, $"Search you used · {search.Count} visit(s)", target, "\uE721"), 1200 + search.Count * 50));
         }
 
         var looksLikeAddress = query.Contains('.') && !query.Contains(' ')
@@ -441,10 +441,7 @@ public partial class MainPageViewModel : ObservableObject
             return absolute.ToString();
 
         if (input.Contains(' ') || !input.Contains('.'))
-        {
-            var query = Uri.EscapeDataString(input);
             return BuildSearchUrl(input, settings.SearchEngine);
-        }
 
         return "https://" + input;
     }

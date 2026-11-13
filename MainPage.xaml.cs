@@ -1614,7 +1614,8 @@ public sealed partial class MainPage : Page
     private void UpdateBookmarkButton()
     {
         var isBookmarked = ViewModel.IsBookmarked(ViewModel.SelectedTab?.Url);
-        BookmarkButton.IsEnabled = ViewModel.SelectedTab?.IsNativeStartPage != true;
+        BookmarkButton.IsEnabled = ViewModel.SelectedTab?.IsNativeStartPage != true
+            && !IsInternalBrowserUrl(ViewModel.SelectedTab?.Url);
         var accessibleName = isBookmarked ? "Remove bookmark" : "Add bookmark";
         AutomationProperties.SetName(BookmarkButton, accessibleName);
         ToolTipService.SetToolTip(BookmarkButton, accessibleName);

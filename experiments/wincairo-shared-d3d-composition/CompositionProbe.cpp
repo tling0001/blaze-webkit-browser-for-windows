@@ -1,6 +1,7 @@
 #include <Windows.h>
 #include <d3d11_1.h>
 #include <dxgi1_2.h>
+#include <dcomp.h>
 #include <wrl/client.h>
 
 #include <algorithm>
@@ -342,6 +343,77 @@ bool hasExtension(const char* extensions, const char* target)
         position = end;
     }
     return false;
+}
+
+bool presentWithDirectComposition(ID3D11Device* device, ID3D11DeviceContext* context, ID3D11Texture2D* source)
+{
+    HWND window = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, L"STATIC",
+        L"Blaze DirectComposition Probe", WS_OVERLAPPEDWINDOW,
+        CW_USEDEFAULT, CW_USEDEFAULT, 420, 320, nullptr, nullptr,
+        GetModuleHandleW(nullptr), nullptr);
+    if (!window) {
+        std::wcerr << L"FAIL: could not create the DirectComposition probe HWND. Error=" << GetLastError() << L"\n";
+        return false;
+    }
+    auto fail = [&](const wchar_t* operation, HRESULT hr) {
+        printHr(operation, hr);
+        DestroyWindow(window);
+        return false;
+    };
+    ComPtr<IDXGIDevice> dxgiDevice;
+    HRESULT hr = device->QueryInterface(IID_PPV_ARGS(&dxgiDevice));
+    if (FAILED(hr)) return fail(L"Query IDXGIDevice for DirectComposition", hr);
+    ComPtr<IDXGIAdapter> adapter;
+    hr = dxgiDevice->GetAdapter(&adapter);
+    if (FAILED(hr)) return fail(L"Get DXGI adapter for DirectComposition", hr);
+    ComPtr<IDXGIFactory2> factory;
+    hr = adapter->GetParent(IID_PPV_ARGS(&factory));
+    if (FAILED(hr)) return fail(L"Get IDXGIFactory2 for DirectComposition", hr);
+    DXGI_SWAP_CHAIN_DESC1 description{};
+    description.Width = kWidth;
+    description.Height = kHeight;
+    description.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    description.SampleDesc.Count = 1;
+    description.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+    description.BufferCount = 2;
+    description.Scaling = DXGI_SCALING_STRETCH;
+    description.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
+    description.AlphaMode = DXGI_ALPHA_MODE_IGNORE;
+    ComPtr<IDXGISwapChain1> swapChain;
+    hr = factory->CreateSwapChainForComposition(device, &description, nullptr, &swapChain);
+    if (FAILED(hr)) return fail(L"CreateSwapChainForComposition", hr);
+    ComPtr<IDCompositionDevice> compositionDevice;
+    hr = DCompositionCreateDevice(dxgiDevice.Get(), IID_PPV_ARGS(&compositionDevice));
+    if (FAILED(hr)) return fail(L"DCompositionCreateDevice", hr);
+    ComPtr<IDCompositionTarget> target;
+    hr = compositionDevice->CreateTargetForHwnd(window, FALSE, &target);
+    if (FAILED(hr)) return fail(L"IDCompositionDevice::CreateTargetForHwnd", hr);
+    ComPtr<IDCompositionVisual> visual;
+    hr = compositionDevice->CreateVisual(&visual);
+    if (FAILED(hr)) return fail(L"IDCompositionDevice::CreateVisual", hr);
+    hr = visual->SetContent(swapChain.Get());
+    if (FAILED(hr)) return fail(L"IDCompositionVisual::SetContent", hr);
+    hr = target->SetRoot(visual.Get());
+    if (FAILED(hr)) return fail(L"IDCompositionTarget::SetRoot", hr);
+    hr = compositionDevice->Commit();
+    if (FAILED(hr)) return fail(L"Initial DirectComposition Commit", hr);
+    ShowWindow(window, SW_SHOWNOACTIVATE);
+    UpdateWindow(window);
+    ComPtr<ID3D11Texture2D> backBuffer;
+    hr = swapChain->GetBuffer(0, IID_PPV_ARGS(&backBuffer));
+    if (FAILED(hr)) return fail(L"Get DirectComposition swap-chain back buffer", hr);
+    context->CopyResource(backBuffer.Get(), source);
+    context->Flush();
+    hr = swapChain->Present(1, 0);
+    if (FAILED(hr)) return fail(L"Present ANGLE-rendered texture through DirectComposition", hr);
+    hr = compositionDevice->Commit();
+    if (FAILED(hr)) return fail(L"Commit DirectComposition frame", hr);
+    Sleep(150);
+    target->SetRoot(nullptr);
+    compositionDevice->Commit();
+    DestroyWindow(window);
+    std::wcout << L"PASS: DirectComposition presented the ANGLE-rendered D3D11 texture through a composition swap chain and visual (GPU copy only; no CPU pixel upload).\n";
+    return true;
 }
 
 bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcAddress,
@@ -706,6 +778,8 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
         return false;
     }
 
+    if (!presentWithDirectComposition(producerDevice.Get(), producerContext.Get(), texture.Get()))
+        return false;
     std::wcout << L"PASS: ANGLE imported a legacy DXGI shared D3D11 texture from a second device on the same adapter, rendered through EGL, and the producer device verified the resulting BGRA pixels.\n";
     return true;
 }

@@ -1,5 +1,24 @@
 # Blaze release notes
 
+## [1.1.37] - 2026-11-13
+
+### Internal pages and tab behavior
+- Add smoke assertions for the History and Settings internal URLs and verify both pages open in their own tabs from a WebKit page.
+- Verify entering a web address from Settings replaces the internal surface with a live WebKit view in that same tab.
+- Disable bookmarking for private `blaze://` pages.
+
+### Warning cleanup and test targeting
+- Resolve the final nullable warning in the saved-search suggestion title.
+- Target every post-discovery WinApp UI operation at the exact WinUI main HWND. Keep process targeting only for initial window discovery, avoiding the second owned WebKit HWND selection ambiguity.
+
+### DirectComposition GPU presentation experiment
+- Extend the ANGLE shared-texture probe to create a DirectComposition swap chain and visual on a temporary HWND.
+- Copy the ANGLE-rendered D3D11 texture to the composition swap-chain back buffer on the GPU, then Present and Commit without CPU pixel upload.
+- Link the experimental probe against `dcomp.lib` and document the scope: this validates DComp presentation primitives, not yet the WinUI integration or WebKit WCScene bridge.
+
+### Validation
+- Pending GitHub Actions Release build, warning scan, ANGLE/DComp probe, installer integration, and expanded internal-page/WebKit smoke tests.
+
 ## [1.1.36] - 2026-11-13
 
 ### Internal browser pages and tab navigation
