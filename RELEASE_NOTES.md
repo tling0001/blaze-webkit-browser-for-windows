@@ -1,5 +1,23 @@
 # Blaze release notes
 
+## [1.1.39] - 2026-11-13
+
+### Experimental GPU renderer
+- Require keyed-mutex-capable D3D11 shared textures in the ANGLE import diagnostic.
+- Synchronize producer initialization, ANGLE surface rendering, and producer readback with explicit keys 0 → 1 → 2 → 3.
+- Query the imported EGL surface's `EGL_DXGI_KEYED_MUTEX_ANGLE` pointer and acquire/release it around GLES rendering; no unsynchronized producer readback is accepted.
+- Keep DirectComposition presentation GPU-only. This still does not connect real WebKit `WCScene` frames to WinUI; versioned WebKit SDK source changes, IPC frame transport, and a WinUI composition bridge remain the next milestone.
+
+### Win32 WebKit activation
+- Mark the owned native host as no-activate and subclass the actual WKView HWND to return `MA_NOACTIVATE` on mouse activation while transferring keyboard focus to WebKit.
+- Preserve the WinUI owner as the foreground top-level window so Mica and title-bar active state remain consistent when clicking page content.
+
+### Build quality
+- Remove incorrect `OneWay` bindings from immutable address-suggestion template records, eliminating the three WMC1506 XAML warnings without suppressing diagnostics.
+
+### Validation
+- Pending hosted Release build, warning scan, keyed-mutex EGL import/render, DirectComposition presentation, installer, and native-focus smoke test.
+
 ## [1.1.38] - 2026-11-13
 
 ### Native WebKit focus and tab automation

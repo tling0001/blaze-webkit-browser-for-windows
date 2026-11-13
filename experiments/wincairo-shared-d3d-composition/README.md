@@ -1,6 +1,6 @@
 # WinCairo GPU-to-WinUI composition prototype
 
-Status: P1 ANGLE legacy DXGI shared-handle import/render and producer-device pixel verification pass on the hosted Windows runner. P1.5 now tests presenting that GPU texture through a DirectComposition swap chain and visual on a temporary HWND. Actual WebKit WCScene output transport and presentation inside the WinUI browser remain unimplemented.
+Status: P1.5 ANGLE import/render plus DirectComposition GPU presentation pass on the hosted Windows runner. This is still a diagnostic harness: actual WebKit WCScene output transport and WinUI composition integration remain unimplemented. The 1.1.39 probe adds explicit keyed-mutex synchronization around the ANGLE surface and producer readback; its result is pending Actions.
 
 ## Current pinned rendering path
 
@@ -27,7 +27,7 @@ Use a D3D11 shared texture as the process boundary and a WinUI composition swap 
 
 ### Important design checks
 
-- The pinned ANGLE runtime exposes D3D texture-client-buffer, D3D shared-handle client-buffer, and keyed-mutex/query-surface-pointer extensions. The P1 probe validates cross-device legacy DXGI shared-handle import and GLES rendering. Explicit keyed-mutex acquisition remains the next synchronization gate before production composition.
+- The pinned ANGLE runtime exposes D3D texture-client-buffer, D3D shared-handle client-buffer, and keyed-mutex/query-surface-pointer extensions. The 1.1.39 diagnostic validates one cross-device legacy DXGI shared-handle import with an explicit EGL keyed-mutex handoff. A multi-frame ring and WebKit IPC remain required before production composition.
 - Cross-process D3D resource sharing requires compatible adapter/device configuration and correct handle duplication/security.
 - Avoid relying on a legacy shared-handle API if the pinned ANGLE import path only supports it; compare legacy-handle support and keyed mutex/fence requirements.
 - A direct composition swap chain is preferable to copying into a second texture if WinUI can consume the same device/resource. If the UI and GPU process devices cannot share a swap chain, use a shared texture ring and one GPU-side copy, never CPU readback.
@@ -49,7 +49,7 @@ Use a D3D11 shared texture as the process boundary and a WinUI composition swap 
 - Checks framebuffer completeness, GL errors and GLES pixel readback for each surface, calls `eglSwapBuffers`, and unbinds the EGL surface.
 - Reads the texture back through a D3D11 staging resource and logs the resulting BGRA pixel values. This readback is diagnostic-only and is not used by the proposed renderer.
 
-The hosted-runner P1 test now passes: ANGLE imports the legacy shared texture, renders the expected GLES color, and the producer D3D11 device verifies the corresponding BGRA pixels. P1.5 adds a temporary HWND, `CreateSwapChainForComposition`, a DirectComposition visual, and a GPU-only copy/Present operation. This validates the Windows composition presentation primitives but does not yet prove pixel-perfect on-screen output or connect WebKit `WCScene` frames to the WinUI browser.
+The hosted-runner P1 test verifies ANGLE import/render and producer-device BGRA readback. P1.5 presents that texture through a temporary HWND, `CreateSwapChainForComposition`, a DirectComposition visual, and a GPU-only copy/Present operation. The 1.1.39 iteration now sets `D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX`, hands key 0→1 to ANGLE, queries `EGL_DXGI_KEYED_MUTEX_ANGLE` (`0x33A2`), acquires key 1 for GLES rendering, releases key 2 after `glFinish`, and requires the producer to acquire key 2 before readback and release key 3. It is not considered validated until Actions confirms each handoff and the pixel assertion.
 ## Prototype milestones
 
 ### P0 — capability probe (no visible product change)

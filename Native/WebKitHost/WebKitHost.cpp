@@ -435,6 +435,21 @@ WB_VIEW_HANDLE createNativeView(HWND parent, int x, int y, int width, int height
 
 constexpr wchar_t NativeSurfaceHostClass[] = L"Blaze.WebKit.NativeSurfaceHost";
 
+constexpr UINT_PTR NativeWebKitSubclassId = 0xB1A2E;
+LRESULT CALLBACK nativeWebKitWindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam,
+    UINT_PTR subclassId, DWORD_PTR)
+{
+    if (message == WM_MOUSEACTIVATE) {
+        // The WKView HWND is the hit-test target. Keep the WinUI owner active
+        // (and preserve Mica/title-bar treatment) while focusing WebKit input.
+        SetFocus(window);
+        return MA_NOACTIVATE;
+    }
+    if (message == WM_NCDESTROY)
+        RemoveWindowSubclass(window, nativeWebKitWindowProc, subclassId);
+    return DefSubclassProc(window, message, wParam, lParam);
+}
+
 LRESULT CALLBACK nativeSurfaceHostProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 {
     if (message == WM_MOUSEACTIVATE) {
@@ -569,7 +584,7 @@ WB_VIEW_HANDLE createNativeView(HWND parent, int x, int y, int width, int height
     // A borderless owned popup is a separate top-level HWND. Unlike a child
     // HWND, it is not covered by WinUI's final DirectComposition surface.
     auto hostWindow = CreateWindowExW(
-        WS_EX_TOOLWINDOW,
+        WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
         NativeSurfaceHostClass,
         L"",
         WS_POPUP | WS_CLIPSIBLINGS | WS_CLIPCHILDREN,
@@ -604,6 +619,15 @@ WB_VIEW_HANDLE createNativeView(HWND parent, int x, int y, int width, int height
     if (!result) {
         WKViewSetIsInWindow(nativeView, false);
         WKRelease(nativeView);
+        DestroyWindow(hostWindow);
+        return nullptr;
+    }
+
+    if (!SetWindowSubclass(nativeWindow, nativeWebKitWindowProc, NativeWebKitSubclassId,
+            reinterpret_cast<DWORD_PTR>(parent))) {
+        WKViewSetIsInWindow(nativeView, false);
+        WKRelease(nativeView);
+        delete result;
         DestroyWindow(hostWindow);
         return nullptr;
     }

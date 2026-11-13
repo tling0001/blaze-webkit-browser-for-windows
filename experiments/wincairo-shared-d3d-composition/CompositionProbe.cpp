@@ -450,8 +450,8 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
     using EglCreateContext = EGLContext (WINAPI*)(EGLDisplay, EGLConfig, EGLContext, const EGLint*);
     using EglCreatePbufferSurface = EGLSurface (WINAPI*)(EGLDisplay, EGLConfig, const EGLint*);
     using EglCreatePbufferFromClientBuffer = EGLSurface (WINAPI*)(EGLDisplay, EGLint, void*, EGLConfig, const EGLint*);
+    using EglQuerySurfacePointer = EGLBoolean (WINAPI*)(EGLDisplay, EGLSurface, EGLint, void**);
     using EglMakeCurrent = EGLBoolean (WINAPI*)(EGLDisplay, EGLSurface, EGLSurface, EGLContext);
-    using EglSwapBuffers = EGLBoolean (WINAPI*)(EGLDisplay, EGLSurface);
     using EglDestroySurface = EGLBoolean (WINAPI*)(EGLDisplay, EGLSurface);
     using EglDestroyContext = EGLBoolean (WINAPI*)(EGLDisplay, EGLContext);
     using EglGetError = EGLint (WINAPI*)();
@@ -472,8 +472,8 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
     auto createContext = reinterpret_cast<EglCreateContext>(egl("eglCreateContext"));
     auto createPlainPbuffer = reinterpret_cast<EglCreatePbufferSurface>(egl("eglCreatePbufferSurface"));
     auto createPbuffer = reinterpret_cast<EglCreatePbufferFromClientBuffer>(egl("eglCreatePbufferFromClientBuffer"));
+    auto querySurfacePointer = reinterpret_cast<EglQuerySurfacePointer>(egl("eglQuerySurfacePointerANGLE"));
     auto makeCurrent = reinterpret_cast<EglMakeCurrent>(egl("eglMakeCurrent"));
-    auto swapBuffers = reinterpret_cast<EglSwapBuffers>(egl("eglSwapBuffers"));
     auto destroySurface = reinterpret_cast<EglDestroySurface>(egl("eglDestroySurface"));
     auto destroyContext = reinterpret_cast<EglDestroyContext>(egl("eglDestroyContext"));
     auto getError = reinterpret_cast<EglGetError>(egl("eglGetError"));
@@ -487,8 +487,8 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
     auto glCheckFramebufferStatus = reinterpret_cast<GlCheckFramebufferStatus>(egl("glCheckFramebufferStatus"));
     auto glGetError = reinterpret_cast<GlGetError>(egl("glGetError"));
 
-    if (!chooseConfig || !getConfigAttrib || !bindApi || !createContext || !createPlainPbuffer || !createPbuffer || !makeCurrent
-        || !swapBuffers || !destroySurface || !destroyContext || !getError
+    if (!chooseConfig || !getConfigAttrib || !bindApi || !createContext || !createPlainPbuffer || !createPbuffer || !querySurfacePointer || !makeCurrent
+        || !destroySurface || !destroyContext || !getError
         || !glViewport || !glClearColor || !glClear || !glFinish || !glFlush || !glReadPixels
         || !glBindFramebuffer || !glCheckFramebufferStatus || !glGetError) {
         std::wcerr << L"FAIL: ANGLE EGL/GL entry points required for D3D shared-handle import are unavailable.\n";
@@ -536,12 +536,29 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
     description.SampleDesc.Count = 1;
     description.Usage = D3D11_USAGE_DEFAULT;
     description.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
-    description.MiscFlags = D3D11_RESOURCE_MISC_SHARED;
+    description.MiscFlags = D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX;
 
     ComPtr<ID3D11Texture2D> texture;
     HRESULT hr = producerDevice->CreateTexture2D(&description, nullptr, &texture);
     if (FAILED(hr)) {
         printHr(L"Create cross-device ANGLE shared D3D11 texture", hr);
+        return false;
+    }
+
+    ComPtr<IDXGIKeyedMutex> producerMutex;
+    hr = texture.As(&producerMutex);
+    if (FAILED(hr) || !producerMutex) {
+        printHr(L"Query producer IDXGIKeyedMutex", FAILED(hr) ? hr : E_NOINTERFACE);
+        return false;
+    }
+    hr = producerMutex->AcquireSync(0, 10000);
+    if (hr != S_OK) {
+        printHr(L"Producer AcquireSync key 0 before EGL import", hr);
+        return false;
+    }
+    hr = producerMutex->ReleaseSync(1);
+    if (hr != S_OK) {
+        printHr(L"Producer ReleaseSync key 1 before EGL import", hr);
         return false;
     }
 
@@ -630,9 +647,19 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
                    << std::hex << error << std::dec << L").\n";
     }
     if (!config || !surface) {
-        std::wcerr << L"FAIL: no ES2 pbuffer config accepted the BGRA8 legacy DXGI shared D3D11 handle.\n";
-                return false;
+        std::wcerr << L"FAIL: no ES2 pbuffer config accepted the BGRA8 keyed-mutex legacy DXGI shared D3D11 handle.\n";
+        return false;
     }
+
+    constexpr EGLint EGL_DXGI_KEYED_MUTEX_ANGLE_VALUE = 0x33A2;
+    void* rawAngleMutex = nullptr;
+    if (!querySurfacePointer(display, surface, EGL_DXGI_KEYED_MUTEX_ANGLE_VALUE, &rawAngleMutex) || !rawAngleMutex) {
+        std::wcerr << L"FAIL: eglQuerySurfacePointerANGLE(EGL_DXGI_KEYED_MUTEX_ANGLE) returned no mutex; EGL error=0x"
+                   << std::hex << getError() << std::dec << L"\n";
+        destroySurface(display, surface);
+        return false;
+    }
+    auto* angleMutex = static_cast<IDXGIKeyedMutex*>(rawAngleMutex);
 
     if (!bindApi(EGL_OPENGL_ES_API_VALUE)) {
         std::wcerr << L"FAIL: eglBindAPI(OpenGL ES) failed; EGL error=0x"
@@ -685,6 +712,10 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
         if (!baselineMatches || baselineError != 0 || baselineFramebuffer != 0x8CD5 /* GL_FRAMEBUFFER_COMPLETE */) {
             std::wcerr << L"FAIL: normal EGL pbuffer did not render the expected GLES clear.\\n";
         } else if (makeCurrent(display, surface, surface, context)) {
+            const HRESULT acquireResult = angleMutex->AcquireSync(1, 10000);
+            if (acquireResult != S_OK) {
+                printHr(L"ANGLE EGL surface AcquireSync key 1", acquireResult);
+            } else {
             glBindFramebuffer(0x8D40 /* GL_FRAMEBUFFER */, 0);
             glViewport(0, 0, static_cast<int>(kWidth), static_cast<int>(kHeight));
             glClearColor(0.125f, 0.25f, 0.75f, 1.0f);
@@ -706,12 +737,16 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
                        << (glPixelMatches ? L" (PASS)" : L" (MISMATCH)") << L"\\n";
             glFlush();
             glFinish();
-            if (swapBuffers(display, surface) && glError == 0
+            const HRESULT releaseResult = angleMutex->ReleaseSync(2);
+            if (releaseResult != S_OK) {
+                printHr(L"ANGLE EGL surface ReleaseSync key 2", releaseResult);
+            } else if (glPixelMatches && glError == 0
                 && framebufferStatus == 0x8CD5 /* GL_FRAMEBUFFER_COMPLETE */) {
                 rendered = true;
             } else {
                 std::wcerr << L"FAIL: imported pbuffer render/flush failed; EGL error=0x"
                            << std::hex << getError() << std::dec << L"\\n";
+            }
             }
         } else {
             std::wcerr << L"FAIL: eglMakeCurrent for imported shared-handle pbuffer failed; EGL error=0x"
@@ -738,6 +773,12 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
                 return false;
     }
 
+    hr = producerMutex->AcquireSync(2, 10000);
+    if (hr != S_OK) {
+        printHr(L"Producer AcquireSync key 2 before ANGLE readback", hr);
+        return false;
+    }
+
     D3D11_TEXTURE2D_DESC stagingDescription = description;
     stagingDescription.Usage = D3D11_USAGE_STAGING;
     stagingDescription.BindFlags = 0;
@@ -748,6 +789,7 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
     hr = producerDevice->CreateTexture2D(&stagingDescription, nullptr, &staging);
     if (FAILED(hr)) {
         printHr(L"Create ANGLE render verification staging texture", hr);
+        producerMutex->ReleaseSync(3);
         return false;
     }
 
@@ -757,6 +799,7 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
     hr = producerContext->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &mapped);
     if (FAILED(hr)) {
         printHr(L"Map ANGLE-rendered shared D3D texture", hr);
+        producerMutex->ReleaseSync(3);
         return false;
     }
 
@@ -769,6 +812,11 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
                << static_cast<unsigned>(pixel[(kHeight / 2) * mapped.RowPitch + (kWidth / 2) * 4 + 2]) << L", "
                << static_cast<unsigned>(pixel[(kHeight / 2) * mapped.RowPitch + (kWidth / 2) * 4 + 3]) << L"\n";
     producerContext->Unmap(staging.Get(), 0);
+    hr = producerMutex->ReleaseSync(3);
+    if (hr != S_OK) {
+        printHr(L"Producer ReleaseSync key 3 after ANGLE readback", hr);
+        return false;
+    }
     if (!glPixelMatches) {
         std::wcerr << L"FAIL: GLES readback did not contain the requested clear color.\n";
         return false;
@@ -780,7 +828,7 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
 
     if (!presentWithDirectComposition(producerDevice.Get(), producerContext.Get(), texture.Get()))
         return false;
-    std::wcout << L"PASS: ANGLE imported a legacy DXGI shared D3D11 texture from a second device on the same adapter, rendered through EGL, and the producer device verified the resulting BGRA pixels.\n";
+    std::wcout << L"PASS: ANGLE imported a legacy keyed-mutex DXGI shared D3D11 texture, acquired/released the EGL surface mutex around GLES rendering, and the producer device verified BGRA pixels after the key-2 handoff.\n";
     return true;
 }
 
