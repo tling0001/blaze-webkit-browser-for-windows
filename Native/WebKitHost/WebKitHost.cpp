@@ -763,6 +763,20 @@ HWND WB_GetHostWindow(WB_VIEW_HANDLE view)
     return view ? view->hostWindow : nullptr;
 }
 
+void WB_SetUserAgent(WB_VIEW_HANDLE view, const wchar_t* userAgent)
+{
+    if (!view || !view->view || !userAgent || !*userAgent)
+        return;
+    const auto utf8 = toUtf8(userAgent);
+    if (utf8.empty())
+        return;
+    auto value = WKStringCreateWithUTF8CString(utf8.c_str());
+    if (!value)
+        return;
+    WKPageSetCustomUserAgent(WKViewGetPage(view->view), value);
+    WKRelease(value);
+}
+
 void WB_Navigate(WB_VIEW_HANDLE view, const wchar_t* url)
 {
     if (!view || !view->view || !url || !*url)

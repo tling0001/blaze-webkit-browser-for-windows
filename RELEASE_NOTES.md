@@ -1,5 +1,38 @@
 # Blaze release notes
 
+## [1.1.26] - 2026-11-12
+
+### Browser identity
+- Change the Safari-style user agent platform token from macOS to Windows while retaining the configured Safari/WebKit version tokens.
+
+### Release validation
+- Fix the Release UI smoke test's native-content screenshot selector: target the owned WinCairo host window explicitly instead of selecting both top-level Blaze windows by process.
+- Capture the Settings-over-WebKit state against the WinUI main window explicitly.
+- Keep the installed-app integration test and the native WinCairo content checks mandatory.
+
+## [1.1.25] - 2026-11-12
+
+### Dialogs and settings
+- Hide the native WebKit owned-window host while WinUI modal dialogs are open, then restore the selected page after the dialog closes. This prevents WebKit pixels from covering settings, permission prompts and other modal UI.
+- Split browser settings into General, Privacy, Appearance and Advanced tabs with independently scrollable content.
+- Keep the experimental ContentExternalOutputLink investigation explicit: the API is an external composition output target, not a supported HWND-import bridge for WinCairo. No nonfunctional rendering-mode switch is exposed.
+- Make the Windows UI smoke test address the app by process ID rather than retaining a potentially stale top-level HWND across UI automation operations.
+
+### Diagnostics
+- Continue recording toolbar actions in the crash log; the intermittent native crash remains under investigation and is not marked as resolved.
+
+
+## [1.1.24] - 2026-11-12
+
+### Browser stability and input
+- Restore adaptive TabView tab widths: favicons remain left of titles, while each tab sizes naturally from its title instead of forcing every tab to 112 DIPs.
+- Move keyboard focus out of the address bar after Enter submits a navigation, and close the suggestion popup.
+- Add privacy-safe toolbar action breadcrumbs to the existing crash log so a native failure can be correlated with the last browser action.
+- Set the WinCairo page user agent to Safari 27.2 for macOS, using Apple's frozen macOS platform token and Safari's current version token.
+
+### Hosting options
+- Keep the proven Win32 owned-window host as the active rendering path. ContentExternalOutputLink remains experimental in the current stable Windows App SDK dependency and is not silently presented as an implemented rendering mode; its integration requires the experimental API projection and a verified WinCairo external-output connection.
+
 ## [1.1.23] - 2026-11-12
 
 ### Native WebKit presentation in WinUI 3
