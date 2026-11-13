@@ -1,5 +1,18 @@
 # Blaze release notes
 
+## [1.1.27] - 2026-11-12
+
+### WebKit GPU composition experiment
+- Add a standalone x64 D3D11 capability probe for NT shared textures, cross-process handle duplication, keyed-mutex synchronization and child-process content verification.
+- Report ANGLE EGL vendor, version, display/device extensions and D3D adapter identity when the staged runtime exposes an initializable ANGLE display.
+- Build and run the probe in the experimental Windows Actions workflow without changing the stable WinCairo HWND renderer or enabling an unverified composition mode.
+- Explicitly distinguish successful D3D shared-resource transport from the still-unproven ANGLE texture import and WebKit WCScene output integration.
+
+### Browser consistency
+- Align the favicon discovery HTTP User-Agent with the browser's Safari-style Windows User-Agent.
+
+
+
 ## [1.1.26] - 2026-11-12
 
 ### Browser identity
