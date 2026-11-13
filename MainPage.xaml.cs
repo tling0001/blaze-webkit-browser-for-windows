@@ -455,15 +455,47 @@ public sealed partial class MainPage : Page
         NavigateTo(ViewModel.Settings.HomePage);
     }
 
+    private bool _addressSubmissionQueued;
+
     private void OnAddressQuerySubmitted(AutoSuggestBox sender, AutoSuggestBoxQuerySubmittedEventArgs args)
     {
-        CrashLogger.Log("Address action: Submit navigation.");
-        _isAddressEditing = false;
-        NavigateTo(args.QueryText);
+        var query = args.QueryText?.Trim();
+        CrashLogger.Log($"Address action: Submit navigation (query length: {query?.Length ?? 0}).");
         sender.IsSuggestionListOpen = false;
-        // Move focus out of the address control after Enter, as in a desktop browser.
-        App.DispatcherQueue.TryEnqueue(() =>
-            FocusManager.TryMoveFocus(FocusNavigationDirection.Next));
+        _isAddressEditing = false;
+
+        if (string.IsNullOrWhiteSpace(query) || _addressSubmissionQueued)
+            return;
+
+        // AutoSuggestBox raises QuerySubmitted while it is still processing Enter.
+        // Defer native WKPageLoadURL and focus changes until that routed input
+        // event has completely unwound; this avoids re-entering WinUI/WebKit
+        // from inside the address control's keyboard handling.
+        _addressSubmissionQueued = true;
+        if (!App.DispatcherQueue.TryEnqueue(() =>
+        {
+            try
+            {
+                if (_isPageUnloading)
+                    return;
+
+                NavigateTo(query);
+                BackButton.Focus(FocusState.Programmatic);
+            }
+            catch (Exception exception)
+            {
+                CrashLogger.LogException("Address-bar navigation failed.", exception);
+                ViewModel.StatusMessage = "The address could not be opened. Check the crash log for details.";
+            }
+            finally
+            {
+                _addressSubmissionQueued = false;
+            }
+        }))
+        {
+            _addressSubmissionQueued = false;
+            CrashLogger.Log("Address navigation could not be queued because the UI dispatcher is shutting down.");
+        }
     }
 
     private void OnAddressGotFocus(object sender, RoutedEventArgs e) => _isAddressEditing = true;
