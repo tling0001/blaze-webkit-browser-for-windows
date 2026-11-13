@@ -8,6 +8,7 @@ $previousWorkflowId = $env:WINAPP_UI_WORKFLOW_ID
 $env:WINAPP_UI_WORKFLOW_ID = $workflowId
 $dotnetRunner = $null
 $appProcess = $null
+$smokePage = $null
 $results = [Collections.Generic.List[object]]::new()
 $ArtifactDirectory = [IO.Path]::GetFullPath($ArtifactDirectory)
 New-Item -ItemType Directory -Force -Path $ArtifactDirectory | Out-Null
@@ -24,6 +25,11 @@ function Invoke-WinAppChecked {
 }
 
 try {
+    $diagnosticLog = Join-Path $env:LOCALAPPDATA 'Blaze\Logs\blaze.log'
+    if (Test-Path -LiteralPath $diagnosticLog -PathType Leaf) {
+        Remove-Item -LiteralPath $diagnosticLog -Force
+    }
+
     $stdoutPath = Join-Path $ArtifactDirectory 'dotnet-run.stdout.log'
     $stderrPath = Join-Path $ArtifactDirectory 'dotnet-run.stderr.log'
     $dotnetArgs = @(
@@ -61,7 +67,7 @@ try {
     $mainWindow = $null
     $lastWindowOutput = ''
     for ($attempt = 0; $attempt -lt 40; $attempt++) {
-        $windowOutput = @(Invoke-WinAppChecked @('ui', 'list-windows', '--json', '-a', [string]$appProcessId))
+        $windowOutput = @(Invoke-WinAppChecked @('ui', 'list-windows', '--json', '-w', [string]$mainWindow.hwnd))
         $lastWindowOutput = $windowOutput -join [Environment]::NewLine
         try { $windows = @($lastWindowOutput | ConvertFrom-Json) } catch { $windows = @() }
         $mainWindow = $windows | Where-Object {
@@ -84,10 +90,110 @@ try {
         throw 'The WinUI startup screenshot was not delivered.'
     }
     $results.Add([ordered]@{ name = 'Startup screenshot captured'; status = 'PASS'; detail = $screenshot })
+
+    # Exercise native WinCairo with a local page (no network dependency).
+    $smokePage = Join-Path $env:TEMP ("blaze-webkit-smoke-" + [guid]::NewGuid().ToString('N') + '.html')
+    @'
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Blaze WebKit Smoke</title></head>
+<body><h1>Blaze WebKit Smoke</h1><p>Native WinCairo popup host is active.</p></body></html>
+'@ | Set-Content -LiteralPath $smokePage -Encoding utf8
+    Invoke-WinAppChecked @('ui', 'send-keys', 'https://typing-test.invalid', '--target', 'AddressBox', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
+    Start-Sleep -Milliseconds 1200
+    $addressValue = (Invoke-WinAppChecked @('ui', 'get-value', 'AddressBox', '--json', '-w', [string]$mainWindow.hwnd) -join [Environment]::NewLine) | ConvertFrom-Json
+    if ($addressValue.text -ne 'https://typing-test.invalid') {
+        throw "Address bar text was replaced while being edited. Actual value: '$($addressValue.text)'"
+    }
+    $results.Add([ordered]@{ name = 'Address bar preserves focused user input'; status = 'PASS' })
+
+    $smokeUri = ([Uri]$smokePage).AbsoluteUri
+    Invoke-WinAppChecked @('ui', 'send-keys', 'ctrl+a', '--target', 'AddressBox', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
+    Invoke-WinAppChecked @('ui', 'send-keys', $smokeUri, '--target', 'AddressBox', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
+    Invoke-WinAppChecked @('ui', 'send-keys', 'enter', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
+
+    $nativeHostCreated = $false
+    $pageTitleObserved = $false
+    $hostHandle = [IntPtr]::Zero
+    $childHandle = [IntPtr]::Zero
+    $diagnosticLog = Join-Path $env:LOCALAPPDATA 'Blaze\Logs\blaze.log'
+    for ($attempt = 0; $attempt -lt 60; $attempt++) {
+        if (Test-Path -LiteralPath $diagnosticLog -PathType Leaf) {
+            $logText = Get-Content -LiteralPath $diagnosticLog -Raw
+            if ($logText -match 'Created native WebKit view in owned popup host') {
+                $nativeHostCreated = $true
+            }
+            if ($logText -match 'Host HWND=([0-9A-F]+); child HWND=([0-9A-F]+)') {
+                $hostHandle = [IntPtr]([Convert]::ToInt64($matches[1], 16))
+                $childHandle = [IntPtr]([Convert]::ToInt64($matches[2], 16))
+            }
+        }
+        if ($nativeHostCreated) {
+            $inspection = (Invoke-WinAppChecked @('ui', 'inspect', '--interactive', '--json', '-w', [string]$mainWindow.hwnd)) -join [Environment]::NewLine
+            if ($inspection -match 'Blaze WebKit Smoke') {
+                $pageTitleObserved = $true
+                break
+            }
+        }
+        Start-Sleep -Milliseconds 250
+    }
+    if (-not $nativeHostCreated) {
+        throw 'The local test page did not create its owned native WebKit popup host.'
+    }
+    $results.Add([ordered]@{ name = 'Native WebKit popup host created'; status = 'PASS' })
+    if ($hostHandle -eq [IntPtr]::Zero -or $childHandle -eq [IntPtr]::Zero) {
+        throw 'The native WebKit host or child HWND was not reported by the browser.'
+    }
+    Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+namespace BlazeSmoke {
+    [StructLayout(LayoutKind.Sequential)]
+    public struct NativePoint { public int X; public int Y; public NativePoint(int x, int y) { X = x; Y = y; } }
+    [StructLayout(LayoutKind.Sequential)]
+    public struct NativeRect { public int Left; public int Top; public int Right; public int Bottom; }
+    public static class Native {
+        [DllImport("user32.dll", SetLastError = true)] public static extern bool GetWindowRect(IntPtr hwnd, out NativeRect rect);
+        [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(NativePoint point);
+        [DllImport("user32.dll")] public static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
+        [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hwnd);
+    }
+}
+'@
+    if (-not [BlazeSmoke.Native]::IsWindowVisible($childHandle)) {
+        throw 'The native WebKit child HWND is not visible after navigation.'
+    }
+    $hostRect = New-Object BlazeSmoke.NativeRect
+    if (-not [BlazeSmoke.Native]::GetWindowRect($hostHandle, [ref]$hostRect)) {
+        throw 'GetWindowRect failed for the native WebKit host window.'
+    }
+    $center = [BlazeSmoke.NativePoint]::new(
+        [int](($hostRect.Left + $hostRect.Right) / 2),
+        [int](($hostRect.Top + $hostRect.Bottom) / 2))
+    $hitWindow = [BlazeSmoke.Native]::WindowFromPoint($center)
+    $hitRoot = [BlazeSmoke.Native]::GetAncestor($hitWindow, 2) # GA_ROOT
+    if ($hitRoot -ne $hostHandle) {
+        throw ("The WebKit host is not the top hit-test window over the page area. Hit HWND: 0x{0:X}" -f $hitWindow.ToInt64())
+    }
+    $results.Add([ordered]@{ name = 'Native WebKit host is above the WinUI page surface'; status = 'PASS' })
+
+    if (-not $pageTitleObserved) {
+        throw 'The local WinCairo test page did not load or its document title did not reach the tab UI.'
+    }
+    $results.Add([ordered]@{ name = 'Local WebKit page title reached the tab'; status = 'PASS' })
+
+    $contentScreenshot = Join-Path $ArtifactDirectory 'blaze-webkit-content.png'
+    Invoke-WinAppChecked @('ui', 'screenshot', '--capture-screen', '--output', $contentScreenshot, '-w', [string]$mainWindow.hwnd) | Out-Null
+    if (-not (Test-Path -LiteralPath $contentScreenshot -PathType Leaf) -or (Get-Item -LiteralPath $contentScreenshot).Length -eq 0) {
+        throw 'The native WebKit content screenshot was not delivered.'
+    }
+    $results.Add([ordered]@{ name = 'Native WebKit content screenshot captured'; status = 'PASS'; detail = $contentScreenshot })
 } catch {
     $results.Add([ordered]@{ name = 'Launch smoke test'; status = 'FAIL'; detail = "$_" })
     Write-Warning $_
 } finally {
+    if ($smokePage -and (Test-Path -LiteralPath $smokePage)) {
+        Remove-Item -LiteralPath $smokePage -Force -ErrorAction SilentlyContinue
+    }
     if ($appProcess -and (Get-Process -Id $appProcess.Id -ErrorAction SilentlyContinue)) {
         Stop-Process -Id $appProcess.Id -Force -ErrorAction SilentlyContinue
         Wait-Process -Id $appProcess.Id -Timeout 10 -ErrorAction SilentlyContinue
