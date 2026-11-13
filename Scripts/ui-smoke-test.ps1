@@ -67,7 +67,7 @@ try {
     $mainWindow = $null
     $lastWindowOutput = ''
     for ($attempt = 0; $attempt -lt 40; $attempt++) {
-        $windowOutput = @(Invoke-WinAppChecked @('ui', 'list-windows', '--json', '-w', [string]$mainWindow.hwnd))
+        $windowOutput = @(Invoke-WinAppChecked @('ui', 'list-windows', '--json', '-a', [string]$appProcessId))
         $lastWindowOutput = $windowOutput -join [Environment]::NewLine
         try { $windows = @($lastWindowOutput | ConvertFrom-Json) } catch { $windows = @() }
         $mainWindow = $windows | Where-Object {
