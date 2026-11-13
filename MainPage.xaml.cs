@@ -946,9 +946,12 @@ public sealed partial class MainPage : Page
         var tab = ViewModel.SelectedTab;
         if (tab is null)
             return;
+
+        // Periodic page-state refresh must never overwrite the user's focused address-bar edit.
+        var addressBoxIsIdle = !_isAddressEditing && AddressBox.FocusState == FocusState.Unfocused;
         if (tab.IsNativeStartPage)
         {
-            if (!_isAddressEditing && AddressBox.FocusState == FocusState.Unfocused)
+            if (addressBoxIsIdle)
                 AddressBox.Text = string.Empty;
             UpdateBookmarkButton();
             UpdateNavigationButtons();
@@ -956,7 +959,7 @@ public sealed partial class MainPage : Page
         }
 
         UpdateLoadingButton();
-        if (!_isAddressEditing && AddressBox.FocusState == FocusState.Unfocused)
+        if (addressBoxIsIdle)
             AddressBox.Text = tab.Url;
         UpdateBookmarkButton();
         UpdateNavigationButtons();
