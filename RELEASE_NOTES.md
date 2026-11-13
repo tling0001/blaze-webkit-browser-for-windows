@@ -9,6 +9,7 @@
 - Explicitly distinguish successful D3D shared-resource transport from the still-unproven ANGLE texture import and WebKit WCScene output integration.
 
 ### Browser consistency
+- Add a slim, native WinUI page-loading progress indicator driven by WebKit's estimated load progress; hide it for the start page and idle tabs.
 - Align the favicon discovery HTTP User-Agent with the browser's Safari-style Windows User-Agent.
 
 
