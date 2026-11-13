@@ -605,18 +605,31 @@ public sealed partial class MainPage : Page
 
     private async Task<ContentDialogResult> ShowDialogAsync(ContentDialog dialog)
     {
-        // ContentDialog is modal per XamlRoot. Serialize native dialogs so
-        // simultaneous WebKit permission callbacks cannot throw or overlap.
+        // The WebKit host is an owned top-level HWND and intentionally sits above
+        // the WinUI composition surface. Hide it while any modal WinUI surface is
+        // active so dialogs, pickers and their dimming layer remain visible.
         await _dialogGate.WaitAsync();
         try
         {
+            SuspendNativeViewsForDialog();
             dialog.Transitions = CreateEntranceTransitions();
             dialog.ContentTransitions = CreateEntranceTransitions();
             return await dialog.ShowAsync();
         }
         finally
         {
+            if (!_isPageUnloading)
+                LayoutNativeViews();
             _dialogGate.Release();
+        }
+    }
+
+    private void SuspendNativeViewsForDialog()
+    {
+        foreach (var tab in ViewModel.Tabs)
+        {
+            if (tab.NativeHandle != IntPtr.Zero)
+                WebKitNative.SetBounds(tab.NativeHandle, 0, 0, 0, 0);
         }
     }
 
@@ -656,6 +669,7 @@ public sealed partial class MainPage : Page
         AutomationProperties.SetName(homePage, "Home page");
         AutomationProperties.SetAutomationId(searchEngine, "SearchEngine");
         AutomationProperties.SetName(searchEngine, "Search engine");
+
         var javaScript = new ToggleSwitch { Header = "Enable JavaScript", IsOn = ViewModel.Settings.JavaScriptEnabled };
         var images = new ToggleSwitch { Header = "Load images automatically", IsOn = ViewModel.Settings.LoadImagesAutomatically };
         var reduceMotion = new ToggleSwitch { Header = "Reduce motion", IsOn = ViewModel.Settings.ReduceMotion };
@@ -681,20 +695,22 @@ public sealed partial class MainPage : Page
         AutomationProperties.SetAutomationId(reduceMotion, "ReduceMotion");
         AutomationProperties.SetAutomationId(popupHandling, "PopupHandlingMode");
         AutomationProperties.SetName(popupHandling, "Pop-up windows");
-        var panel = new StackPanel { Spacing = 12, MinWidth = 340 };
-        panel.Children.Add(position);
-        panel.Children.Add(homePage);
-        panel.Children.Add(searchEngine);
-        panel.Children.Add(javaScript);
-        panel.Children.Add(images);
-        panel.Children.Add(reduceMotion);
-        panel.Children.Add(popupHandling);
-        panel.Children.Add(new TextBlock
+
+        var generalPanel = new StackPanel { Spacing = 14, MinWidth = 420, Padding = new Thickness(12) };
+        generalPanel.Children.Add(position);
+        generalPanel.Children.Add(homePage);
+        generalPanel.Children.Add(searchEngine);
+
+        var privacyPanel = new StackPanel { Spacing = 12, MinWidth = 420, Padding = new Thickness(12) };
+        privacyPanel.Children.Add(javaScript);
+        privacyPanel.Children.Add(images);
+        privacyPanel.Children.Add(popupHandling);
+        privacyPanel.Children.Add(new TextBlock
         {
             Text = "Automatic asks whether to allow each requested new window. Dismissing the prompt ignores that request.",
             TextWrapping = TextWrapping.Wrap
         });
-        panel.Children.Add(new TextBlock
+        privacyPanel.Children.Add(new TextBlock
         {
             Text = "Site permissions",
             FontSize = 16,
@@ -703,12 +719,12 @@ public sealed partial class MainPage : Page
 
         var permissionControls = new List<(SitePermissionEntry Site, ToggleSwitch Location, ToggleSwitch Notifications)>();
         if (ViewModel.SitePermissions.Count == 0)
-            panel.Children.Add(new TextBlock { Text = "No sites have requested location or notification access." });
+            privacyPanel.Children.Add(new TextBlock { Text = "No sites have requested location or notification access." });
         else
         {
             foreach (var site in ViewModel.SitePermissions)
             {
-                panel.Children.Add(new TextBlock
+                privacyPanel.Children.Add(new TextBlock
                 {
                     Text = site.Origin,
                     FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
@@ -719,26 +735,68 @@ public sealed partial class MainPage : Page
                 AutomationProperties.SetAutomationId(location, "AllowLocation_" + SiteAutomationToken(site.Origin));
                 AutomationProperties.SetAutomationId(notifications, "AllowNotifications_" + SiteAutomationToken(site.Origin));
                 permissionControls.Add((site, location, notifications));
-                panel.Children.Add(location);
-                panel.Children.Add(notifications);
+                privacyPanel.Children.Add(location);
+                privacyPanel.Children.Add(notifications);
             }
         }
-        panel.Children.Add(new TextBlock
+        privacyPanel.Children.Add(new TextBlock
         {
             Text = "Camera and microphone requests are denied until a device-selection permission flow is available.",
             TextWrapping = TextWrapping.Wrap
         });
 
+        var appearancePanel = new StackPanel { Spacing = 12, MinWidth = 420, Padding = new Thickness(12) };
+        appearancePanel.Children.Add(reduceMotion);
+        appearancePanel.Children.Add(new TextBlock
+        {
+            Text = "Reduce motion respects both this preference and the Windows animation setting. When enabled, page and popup transitions are suppressed.",
+            TextWrapping = TextWrapping.Wrap
+        });
+
+        var advancedPanel = new StackPanel { Spacing = 12, MinWidth = 420, Padding = new Thickness(12) };
+        advancedPanel.Children.Add(new TextBlock
+        {
+            Text = "WebKit rendering host",
+            FontSize = 16,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
+        });
+        advancedPanel.Children.Add(new TextBlock
+        {
+            Text = "Win32 owned-window hosting is the active, validated renderer. ContentExternalOutputLink is an experimental composition output-target API; it does not provide a supported way to import the WinCairo WKView HWND into the WinUI visual tree. An opt-in browser mode will appear here only after a real WebKit output bridge is implemented and verified.",
+            TextWrapping = TextWrapping.Wrap
+        });
+        advancedPanel.Children.Add(new TextBlock
+        {
+            Text = "The experimental Windows App SDK API is intentionally not activated by a cosmetic toggle. The stable renderer remains available and is not changed by this setting page.",
+            TextWrapping = TextWrapping.Wrap
+        });
+
+        var settingsTabs = new TabView
+        {
+            IsAddTabButtonVisible = false,
+            IsTabStripVisible = true,
+            CanReorderTabs = false,
+            MinWidth = 480,
+            MaxWidth = 720,
+            MaxHeight = 620
+        };
+        AddSettingsTab(settingsTabs, "General", "SettingsGeneralTab", generalPanel);
+        AddSettingsTab(settingsTabs, "Privacy", "SettingsPrivacyTab", privacyPanel);
+        AddSettingsTab(settingsTabs, "Appearance", "SettingsAppearanceTab", appearancePanel);
+        AddSettingsTab(settingsTabs, "Advanced", "SettingsAdvancedTab", advancedPanel);
+
         var dialog = new ContentDialog
         {
             Title = "Settings",
-            Content = new ScrollViewer { Content = panel, MaxHeight = 620 },
+            Content = settingsTabs,
             PrimaryButtonText = "Save",
             SecondaryButtonText = "Clear browsing data",
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Primary,
             XamlRoot = XamlRoot
         };
+        AutomationProperties.SetAutomationId(dialog, "BrowserSettingsDialog");
+        AutomationProperties.SetName(dialog, "Browser settings");
 
         var result = await ShowDialogAsync(dialog);
         if (result == ContentDialogResult.Secondary)
@@ -792,6 +850,24 @@ public sealed partial class MainPage : Page
         ApplyTabBarPlacement();
         LayoutNativeViews();
         await ViewModel.SaveAsync();
+    }
+
+    private static void AddSettingsTab(TabView tabs, string title, string automationId, UIElement content)
+    {
+        var item = new TabViewItem
+        {
+            Header = title,
+            Content = new ScrollViewer
+            {
+                Content = content,
+                VerticalScrollMode = ScrollMode.Auto,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                MaxHeight = 520
+            },
+            IsClosable = false
+        };
+        AutomationProperties.SetAutomationId(item, automationId);
+        tabs.TabItems.Add(item);
     }
 
     private async Task HandlePermissionRequestAsync(string origin, int permissionType)
