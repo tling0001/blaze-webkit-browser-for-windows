@@ -1,5 +1,3 @@
-#define WIN32_LEAN_AND_MEAN
-#define NOMINMAX
 #include <Windows.h>
 #include <d3d11_1.h>
 #include <dxgi1_2.h>
@@ -424,8 +422,6 @@ void probeAngleRuntime()
 
     auto getPlatformDisplay = reinterpret_cast<EglGetPlatformDisplay>(
         getProcAddress("eglGetPlatformDisplayEXT"));
-    if (!getPlatformDisplay)
-        getPlatformDisplay = reinterpret_cast<EglGetPlatformDisplay>(GetProcAddress(module, "eglGetPlatformDisplay"));
 
     EGLDisplay display = nullptr;
     if (getPlatformDisplay) {
