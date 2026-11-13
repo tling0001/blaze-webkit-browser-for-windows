@@ -51,6 +51,7 @@ public sealed partial class MainPage : Page
     private bool _isPageUnloading;
     private bool _engineAvailable;
     private bool _isAddressEditing;
+    private bool _addressSubmissionQueued;
     private GCHandle _nativeCallbackHandle;
 
     private sealed record TabHeaderVisuals(TextBlock Title, Image Favicon, FontIcon Fallback);
@@ -454,8 +455,6 @@ public sealed partial class MainPage : Page
         CrashLogger.Log("Toolbar action: Home.");
         NavigateTo(ViewModel.Settings.HomePage);
     }
-
-    private bool _addressSubmissionQueued;
 
     private void OnAddressQuerySubmitted(AutoSuggestBox sender, AutoSuggestBoxQuerySubmittedEventArgs args)
     {
