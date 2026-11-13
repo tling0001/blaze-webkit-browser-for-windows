@@ -22,6 +22,7 @@ WB_API BOOL WB_SetBounds(WB_VIEW_HANDLE view, int x, int y, int width, int heigh
 WB_API HWND WB_GetWindow(WB_VIEW_HANDLE view);
 WB_API HWND WB_GetHostWindow(WB_VIEW_HANDLE view);
 WB_API void WB_Navigate(WB_VIEW_HANDLE view, const wchar_t* url);
+WB_API void WB_SetUserAgent(WB_VIEW_HANDLE view, const wchar_t* userAgent);
 WB_API void WB_GoBack(WB_VIEW_HANDLE view);
 WB_API void WB_GoForward(WB_VIEW_HANDLE view);
 WB_API void WB_Reload(WB_VIEW_HANDLE view);
