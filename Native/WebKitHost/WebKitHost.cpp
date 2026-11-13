@@ -25,6 +25,7 @@
 #include <WebKit/WKWebsiteDataStoreRef.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cwchar>
 #include <filesystem>
 #include <new>
@@ -502,6 +503,12 @@ WB_VIEW_HANDLE createNativeView(HWND parent, int x, int y, int width, int height
         return nullptr;
     }
 
+    // Match the upstream WinCairo MiniBrowser host: explicitly set WebKit's
+    // backing scale to the rounded native-window DPI scale.
+    const UINT dpi = GetDpiForWindow(parent);
+    if (dpi)
+        WKPageSetCustomBackingScaleFactor(page, std::round(static_cast<double>(dpi) / 96.0));
+
     result->navigationClient.base.version = 3;
     result->navigationClient.base.clientInfo = result;
     result->navigationClient.navigationActionDidBecomeDownload = navigationActionDidBecomeDownload;
@@ -522,7 +529,9 @@ WB_VIEW_HANDLE createNativeView(HWND parent, int x, int y, int width, int height
     result->uiClient.runBeforeUnloadConfirmPanel = runBeforeUnloadConfirmPanel;
     WKPageSetPageUIClient(page, &result->uiClient.base);
 
-    SetWindowPos(nativeWindow, nullptr, x, y, width, height, SWP_NOZORDER | SWP_NOACTIVATE);
+    // WebKit's HWND is a native child over the WinUI-composed page surface.
+    // Keep it above sibling native windows while its bounds keep it below the chrome.
+    SetWindowPos(nativeWindow, HWND_TOP, x, y, width, height, SWP_NOACTIVATE | SWP_SHOWWINDOW);
     ShowWindow(nativeWindow, showImmediately ? SW_SHOW : SW_HIDE);
     return result;
 }
@@ -577,7 +586,16 @@ void WB_SetBounds(WB_VIEW_HANDLE view, int x, int y, int width, int height)
         ShowWindow(view->window, SW_HIDE);
         return;
     }
-    SetWindowPos(view->window, nullptr, x, y, width, height, SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    // Refresh the backing scale when the browser window moves between monitors.
+    const UINT dpi = GetDpiForWindow(view->parentWindow);
+    if (dpi && view->view)
+        WKPageSetCustomBackingScaleFactor(WKViewGetPage(view->view), std::round(static_cast<double>(dpi) / 96.0));
+    SetWindowPos(view->window, HWND_TOP, x, y, width, height, SWP_NOACTIVATE | SWP_SHOWWINDOW);
+}
+
+HWND WB_GetWindow(WB_VIEW_HANDLE view)
+{
+    return view ? view->window : nullptr;
 }
 
 void WB_Navigate(WB_VIEW_HANDLE view, const wchar_t* url)

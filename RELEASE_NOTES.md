@@ -1,5 +1,23 @@
 # Blaze release notes
 
+## [1.1.22] - 2026-11-12
+
+### Website favicons
+- Display each tab's site favicon at the trailing edge of its tab header, with a Segoe Fluent globe fallback when the site does not provide a supported icon.
+- Load site-declared icon links for the native start-page quick links instead of showing generic glyphs when a favicon is available.
+- Cache favicon files under the app's temporary LocalAppData cache, deduplicate concurrent requests, expire entries after 30 days and cap the cache at 256 files.
+- Discover icons from the site's HTML link metadata and fall back to the origin's /favicon.ico; ignore non-HTTP(S), oversized and unsupported image payloads.
+
+### WinCairo content rendering
+- Match the upstream WinCairo MiniBrowser's rounded native-window DPI backing-scale configuration.
+- Keep the WebKit child HWND above sibling native windows and translate page bounds relative to the top-level Window root, including the custom title-bar and Frame offsets.
+
+### Release smoke test
+- Replace the brittle multi-screen UI Automation suite with a focused Release launch check: confirm the app process, wait for its main WinUI window, capture a startup screenshot and preserve diagnostics.
+- Keep the separate installed-EXE integration test, including actual installer launch and uninstall checks.
+
+
+
 ## [1.1.21] - 2026-11-13
 
 ### Unpackaged WinUI installer resource and launch validation

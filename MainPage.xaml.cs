@@ -5,6 +5,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media.Animation;
+using Microsoft.UI.Xaml.Media.Imaging;
 using Microsoft.UI.Xaml.Input;
 using Windows.Foundation;
 using Windows.UI.ViewManagement;
@@ -38,6 +39,9 @@ public sealed partial class MainPage : Page
     private static readonly WebKitNative.ClosePageCallback ClosePageCallbackHandler = OnNativePageClose;
 
     private readonly Dictionary<TabViewItem, BrowserTab> _tabItems = [];
+    private readonly Dictionary<string, TabHeaderVisuals> _tabHeaders = [];
+    private readonly Dictionary<string, string> _requestedTabFaviconUrls = [];
+    private readonly FaviconCache _faviconCache = new();
     private readonly HashSet<IntPtr> _pendingPopups = [];
     private readonly SemaphoreSlim _dialogGate = new(1, 1);
     private DispatcherQueueTimer? _stateTimer;
@@ -45,6 +49,8 @@ public sealed partial class MainPage : Page
     private bool _isPageUnloading;
     private bool _engineAvailable;
     private GCHandle _nativeCallbackHandle;
+
+    private sealed record TabHeaderVisuals(TextBlock Title, Image Favicon, FontIcon Fallback);
 
     public MainPage()
     {
@@ -67,13 +73,24 @@ public sealed partial class MainPage : Page
     {
         foreach (var shortcut in StartPageShortcuts)
         {
-            var icon = new FontIcon
+            var fallback = new FontIcon
             {
                 Glyph = shortcut.Glyph,
                 FontSize = 24,
                 FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Segoe Fluent Icons"),
                 Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["AccentTextFillColorPrimaryBrush"]
             };
+            var favicon = new Image
+            {
+                Width = 30,
+                Height = 30,
+                Stretch = Microsoft.UI.Xaml.Media.Stretch.Uniform,
+                Visibility = Visibility.Collapsed
+            };
+            ConfigureFaviconImage(favicon, fallback);
+            var iconHost = new Grid { Width = 32, Height = 32 };
+            iconHost.Children.Add(fallback);
+            iconHost.Children.Add(favicon);
 
             var title = new TextBlock
             {
@@ -87,7 +104,7 @@ public sealed partial class MainPage : Page
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center
             };
-            content.Children.Add(icon);
+            content.Children.Add(iconHost);
             content.Children.Add(title);
 
             var button = new Button
@@ -102,7 +119,82 @@ public sealed partial class MainPage : Page
             AutomationProperties.SetName(button, shortcut.Title);
             AutomationProperties.SetAutomationId(button, shortcut.AutomationId);
             StartPageShortcutsGrid.Items.Add(button);
+            _ = LoadFaviconIntoAsync(shortcut.Url, favicon, fallback);
         }
+    }
+
+    private static Microsoft.UI.Xaml.Media.ImageSource CreateFaviconImageSource(string path)
+    {
+        var uri = new Uri(path, UriKind.Absolute);
+        return Path.GetExtension(path).Equals(".svg", StringComparison.OrdinalIgnoreCase)
+            ? new SvgImageSource { UriSource = uri }
+            : new BitmapImage(uri);
+    }
+
+    private static void ConfigureFaviconImage(Image image, FontIcon fallback)
+    {
+        image.ImageFailed += (_, _) =>
+        {
+            image.Visibility = Visibility.Collapsed;
+            fallback.Visibility = Visibility.Visible;
+        };
+    }
+
+    private async Task LoadFaviconIntoAsync(string pageUrl, Image image, FontIcon fallback)
+    {
+        try
+        {
+            var path = await _faviconCache.GetFaviconPathAsync(pageUrl);
+            if (string.IsNullOrWhiteSpace(path) || _isPageUnloading)
+                return;
+            image.Source = CreateFaviconImageSource(path);
+            image.Visibility = Visibility.Visible;
+            fallback.Visibility = Visibility.Collapsed;
+        }
+        catch (Exception exception)
+        {
+            CrashLogger.LogException("A website favicon could not be displayed; keeping the native fallback icon.", exception);
+        }
+    }
+
+    private async Task RefreshTabFaviconAsync(BrowserTab tab, string pageUrl)
+    {
+        var path = await _faviconCache.GetFaviconPathAsync(pageUrl);
+        if (_isPageUnloading || !string.Equals(tab.Url, pageUrl, StringComparison.OrdinalIgnoreCase)
+            || !_tabHeaders.TryGetValue(tab.Id, out var header))
+            return;
+        if (string.IsNullOrWhiteSpace(path))
+            return;
+
+        try
+        {
+            header.Favicon.Source = CreateFaviconImageSource(path);
+            header.Favicon.Visibility = Visibility.Visible;
+            header.Fallback.Visibility = Visibility.Collapsed;
+        }
+        catch (Exception exception)
+        {
+            CrashLogger.LogException("A tab favicon could not be decoded; keeping the native fallback icon.", exception);
+        }
+    }
+
+    private void RequestTabFaviconIfNeeded(BrowserTab tab)
+    {
+        if (!Uri.TryCreate(tab.Url, UriKind.Absolute, out var uri)
+            || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+            return;
+        if (_requestedTabFaviconUrls.TryGetValue(tab.Id, out var requested)
+            && string.Equals(requested, tab.Url, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        _requestedTabFaviconUrls[tab.Id] = tab.Url;
+        if (_tabHeaders.TryGetValue(tab.Id, out var header))
+        {
+            header.Favicon.Source = null;
+            header.Favicon.Visibility = Visibility.Collapsed;
+            header.Fallback.Visibility = Visibility.Visible;
+        }
+        _ = RefreshTabFaviconAsync(tab, tab.Url);
     }
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
@@ -186,6 +278,8 @@ public sealed partial class MainPage : Page
         if (item is not null)
         {
             _tabItems.Remove(item);
+            _tabHeaders.Remove(tab.Id);
+            _requestedTabFaviconUrls.Remove(tab.Id);
             TabStrip.TabItems.Remove(item);
         }
         ViewModel.CloseTab(tab);
@@ -794,6 +888,27 @@ public sealed partial class MainPage : Page
 
     private void OnStateTimerTick(DispatcherQueueTimer sender, object args)
     {
+        foreach (var openTab in ViewModel.Tabs)
+        {
+            if (openTab.NativeHandle == IntPtr.Zero || openTab.IsNativeStartPage)
+                continue;
+
+            openTab.RefreshNativeState();
+            RequestTabFaviconIfNeeded(openTab);
+            if (!string.Equals(openTab.LastRecordedUrl, openTab.Url, StringComparison.Ordinal))
+            {
+                ViewModel.RecordNavigation(openTab);
+                _ = ViewModel.SaveAsync();
+            }
+
+            if (_tabHeaders.TryGetValue(openTab.Id, out var header))
+            {
+                header.Title.Text = openTab.Title.Length > 28 ? openTab.Title[..28] + "…" : openTab.Title;
+                if (FindTabItem(openTab) is { } item)
+                    AutomationProperties.SetName(item, openTab.Title);
+            }
+        }
+
         var tab = ViewModel.SelectedTab;
         if (tab is null)
             return;
@@ -804,24 +919,10 @@ public sealed partial class MainPage : Page
             UpdateNavigationButtons();
             return;
         }
-        if (tab.NativeHandle == IntPtr.Zero)
-            return;
 
-        tab.RefreshNativeState();
         UpdateLoadingButton();
         if (AddressBox.FocusState == FocusState.Unfocused)
             AddressBox.Text = tab.Url;
-        if (!string.Equals(tab.LastRecordedUrl, tab.Url, StringComparison.Ordinal))
-        {
-            ViewModel.RecordNavigation(tab);
-            _ = ViewModel.SaveAsync();
-        }
-
-        if (FindTabItem(tab) is { } item)
-        {
-            item.Header = tab.Title.Length > 28 ? tab.Title[..28] + "…" : tab.Title;
-            AutomationProperties.SetName(item, tab.Title);
-        }
         UpdateBookmarkButton();
         UpdateNavigationButtons();
     }
@@ -841,17 +942,52 @@ public sealed partial class MainPage : Page
 
     private TabViewItem AddTabItem(BrowserTab tab)
     {
+        var title = new TextBlock
+        {
+            Text = string.IsNullOrWhiteSpace(tab.Title) ? "New tab" : tab.Title,
+            VerticalAlignment = VerticalAlignment.Center,
+            TextTrimming = TextTrimming.CharacterEllipsis
+        };
+        var fallback = new FontIcon
+        {
+            Glyph = "\uE774",
+            FontSize = 14,
+            FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Segoe Fluent Icons"),
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        var favicon = new Image
+        {
+            Width = 16,
+            Height = 16,
+            Stretch = Microsoft.UI.Xaml.Media.Stretch.Uniform,
+            Visibility = Visibility.Collapsed
+        };
+        ConfigureFaviconImage(favicon, fallback);
+        var iconHost = new Grid { Width = 16, Height = 16 };
+        iconHost.Children.Add(fallback);
+        iconHost.Children.Add(favicon);
+
+        var header = new Grid { Width = 152, ColumnSpacing = 8, VerticalAlignment = VerticalAlignment.Center };
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        Grid.SetColumn(title, 0);
+        Grid.SetColumn(iconHost, 1);
+        header.Children.Add(title);
+        header.Children.Add(iconHost);
+
         var item = new TabViewItem
         {
-            Header = string.IsNullOrWhiteSpace(tab.Title) ? "New tab" : tab.Title,
+            Header = header,
             IsClosable = true,
             Content = new Grid { Width = 0, Height = 0 }
         };
+        _tabHeaders[tab.Id] = new TabHeaderVisuals(title, favicon, fallback);
         AutomationProperties.SetAutomationId(item, "BrowserTab_" + tab.Id);
-        AutomationProperties.SetName(item, item.Header?.ToString() ?? "New tab");
+        AutomationProperties.SetName(item, title.Text);
         _tabItems[item] = tab;
         TabStrip.TabItems.Add(item);
         UpdateClosableTabs();
+        RequestTabFaviconIfNeeded(tab);
         return item;
     }
 
@@ -890,6 +1026,7 @@ public sealed partial class MainPage : Page
             if (tab.NativeHandle == IntPtr.Zero)
                 throw new InvalidOperationException("WKViewCreate did not return a native view.");
             ConfigureNativeView(tab);
+            CrashLogger.Log($"Created native WebKit child view. HWND={WebKitNative.GetWindow(tab.NativeHandle):X}; parent={App.WindowHandle:X}; bounds={x},{y},{width},{height}.");
             WebKitNative.SetJavaScriptEnabled(tab.NativeHandle, ViewModel.Settings.JavaScriptEnabled);
             WebKitNative.SetLoadsImagesAutomatically(tab.NativeHandle, ViewModel.Settings.LoadImagesAutomatically);
             WebKitNative.Navigate(tab.NativeHandle, tab.Url);
@@ -961,7 +1098,11 @@ public sealed partial class MainPage : Page
 
     private (int X, int Y, int Width, int Height) GetBrowserSurfaceBounds()
     {
-        var point = BrowserSurface.TransformToVisual(null).TransformPoint(new Point(0, 0));
+        // The WebKit HWND is parented to the top-level WinUI HWND. Translate
+        // relative to the Window root so the Frame/title-bar offsets are included.
+        var root = App.Window.Content as UIElement;
+        var transform = BrowserSurface.TransformToVisual(root);
+        var point = transform.TransformPoint(new Point(0, 0));
         var scale = BrowserSurface.XamlRoot?.RasterizationScale ?? 1.0;
         var x = (int)Math.Round(point.X * scale);
         var y = (int)Math.Round(point.Y * scale);

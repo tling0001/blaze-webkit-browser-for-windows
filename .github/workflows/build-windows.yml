@@ -173,6 +173,18 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'ItemsWrapGrid responsive layout verification failed.' }
           winapp find-api check-property FontIcon Glyph FontFamily FontSize --json --project-dir .
           if ($LASTEXITCODE -ne 0) { throw 'FontIcon Segoe Fluent glyph verification failed.' }
+          winapp find-api check-property Image Source Width Height Stretch --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'Image favicon presentation API verification failed.' }
+          winapp find-api SvgImageSource --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'SvgImageSource API lookup failed.' }
+          winapp find-api check-property SvgImageSource UriSource --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'SvgImageSource local favicon URI verification failed.' }
+          winapp find-api check-property BitmapImage UriSource --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'BitmapImage local favicon source API verification failed.' }
+          winapp find-api check-property Grid ColumnDefinitions ColumnSpacing --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'Grid tab-header layout API verification failed.' }
+          winapp find-api check-property TextBlock TextTrimming --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'TextBlock tab-title trimming API verification failed.' }
           winapp find-api check-property Button Tag Padding Width Height --json --project-dir .
           if ($LASTEXITCODE -ne 0) { throw 'Native quick-link Button properties verification failed.' }
           winapp find-api members AutoSuggestBox --filter QuerySubmitted --json --project-dir .
@@ -321,7 +333,7 @@ jobs:
           if (-not $installer) { throw 'The standalone Blaze installer was not found for the installed-app integration test.' }
           .\Scripts\installer-smoke-test.ps1 -InstallerPath $installer.FullName -ArtifactDirectory '.\installer-test-artifacts'
 
-      - name: Run WinApp UI smoke test against live WebKit
+      - name: Run lightweight Release launch smoke test
         shell: pwsh
         run: .\Scripts\ui-smoke-test.ps1
 
