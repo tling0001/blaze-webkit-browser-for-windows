@@ -476,19 +476,52 @@ public sealed partial class MainPage : Page
             try
             {
                 if (_isPageUnloading)
+                {
+                    _addressSubmissionQueued = false;
                     return;
+                }
 
                 NavigateTo(query);
-                BackButton.Focus(FocusState.Programmatic);
+                // Give AutoSuggestBox one more dispatcher turn to finish its
+                // internal Enter/suggestion-popup focus work. Focusing in the
+                // QuerySubmitted turn can be immediately undone by that control.
+                if (!App.DispatcherQueue.TryEnqueue(() =>
+                {
+                    try
+                    {
+                        if (_isPageUnloading)
+                            return;
+
+                        _isAddressEditing = false;
+                        var focused = BackButton.Focus(FocusState.Programmatic);
+                        if (!focused)
+                            focused = TabStrip.Focus(FocusState.Programmatic);
+                        if (AddressBox.FocusState != FocusState.Unfocused)
+                            focused = TabStrip.Focus(FocusState.Programmatic) || focused;
+
+                        CrashLogger.Log($"Address submission focus result: moved={focused}; addressFocus={AddressBox.FocusState}.");
+                        if (AddressBox.FocusState != FocusState.Unfocused)
+                            ViewModel.StatusMessage = "The page loaded, but keyboard focus remained in the address bar.";
+                    }
+                    catch (Exception exception)
+                    {
+                        CrashLogger.LogException("Address-bar focus restoration failed.", exception);
+                    }
+                    finally
+                    {
+                        _addressSubmissionQueued = false;
+                    }
+                }))
+                {
+                    _addressSubmissionQueued = false;
+                    CrashLogger.Log("Address-bar focus restoration could not be queued.");
+                }
             }
             catch (Exception exception)
             {
+                _addressSubmissionQueued = false;
                 CrashLogger.LogException("Address-bar navigation failed.", exception);
                 ViewModel.StatusMessage = "The address could not be opened. Check the crash log for details.";
-            }
-            finally
-            {
-                _addressSubmissionQueued = false;
             }
         }))
         {
