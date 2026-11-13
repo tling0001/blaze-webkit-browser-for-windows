@@ -48,6 +48,7 @@ public sealed partial class MainPage : Page
     private bool _initialized;
     private bool _isPageUnloading;
     private bool _engineAvailable;
+    private bool _isAddressEditing;
     private GCHandle _nativeCallbackHandle;
 
     private sealed record TabHeaderVisuals(TextBlock Title, Image Favicon, FontIcon Fallback);
@@ -133,6 +134,10 @@ public sealed partial class MainPage : Page
 
     private static void ConfigureFaviconImage(Image image, FontIcon fallback)
     {
+        // The enclosing tab item / shortcut button already has an accessible
+        // name; keep these decorative site marks out of the screen-reader tree.
+        AutomationProperties.SetAccessibilityView(image, AccessibilityView.Raw);
+        AutomationProperties.SetAccessibilityView(fallback, AccessibilityView.Raw);
         image.ImageFailed += (_, _) =>
         {
             image.Visibility = Visibility.Collapsed;
@@ -314,8 +319,8 @@ public sealed partial class MainPage : Page
         var tab = ViewModel.AddTab("about:blank");
         tab.NativeHandle = nativeHandle;
         var item = AddTabItem(tab);
-        TabStrip.SelectedItem = item;
         ConfigureNativeView(tab);
+        TabStrip.SelectedItem = item;
         UpdateClosableTabs();
         LayoutNativeViews();
         _ = ViewModel.SaveAsync();
@@ -382,7 +387,8 @@ public sealed partial class MainPage : Page
             return;
 
         ViewModel.SelectedTab = tab;
-        AddressBox.Text = tab.IsNativeStartPage ? string.Empty : tab.Url;
+        _isAddressEditing = false;
+        SynchronizeAddressBoxFromSelectedTab();
         UpdateBookmarkButton();
         EnsureNativeView(tab);
         LayoutNativeViews();
@@ -394,9 +400,7 @@ public sealed partial class MainPage : Page
 
     private void OnFocusAddressAccelerator(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
     {
-        AddressBox.Text = ViewModel.SelectedTab?.IsNativeStartPage == true
-            ? string.Empty
-            : ViewModel.SelectedTab?.Url ?? string.Empty;
+        SynchronizeAddressBoxFromSelectedTab();
         AddressBox.Focus(FocusState.Programmatic);
         args.Handled = true;
     }
@@ -434,8 +438,38 @@ public sealed partial class MainPage : Page
         NavigateTo(ViewModel.Settings.HomePage);
     }
 
-    private void OnAddressQuerySubmitted(AutoSuggestBox sender, AutoSuggestBoxQuerySubmittedEventArgs args) =>
+    private void OnAddressQuerySubmitted(AutoSuggestBox sender, AutoSuggestBoxQuerySubmittedEventArgs args)
+    {
+        _isAddressEditing = false;
         NavigateTo(args.QueryText);
+    }
+
+    private void OnAddressGotFocus(object sender, RoutedEventArgs e) => _isAddressEditing = true;
+
+    private void OnAddressLostFocus(object sender, RoutedEventArgs e)
+    {
+        // Let AutoSuggestBox finish moving focus through its internal text box / suggestion surface.
+        App.DispatcherQueue.TryEnqueue(() =>
+        {
+            if (AddressBox.FocusState == FocusState.Unfocused)
+            {
+                _isAddressEditing = false;
+                SynchronizeAddressBoxFromSelectedTab();
+            }
+        });
+    }
+
+    private void OnAddressTextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
+    {
+        if (args.Reason == AutoSuggestionBoxTextChangeReason.UserInput)
+            _isAddressEditing = true;
+    }
+
+    private void SynchronizeAddressBoxFromSelectedTab()
+    {
+        var tab = ViewModel.SelectedTab;
+        AddressBox.Text = tab is null || tab.IsNativeStartPage ? string.Empty : tab.Url;
+    }
 
     private void OnStartPageSearchQuerySubmitted(AutoSuggestBox sender, AutoSuggestBoxQuerySubmittedEventArgs args) =>
         NavigateTo(args.QueryText);
@@ -914,14 +948,15 @@ public sealed partial class MainPage : Page
             return;
         if (tab.IsNativeStartPage)
         {
-            AddressBox.Text = string.Empty;
+            if (!_isAddressEditing && AddressBox.FocusState == FocusState.Unfocused)
+                AddressBox.Text = string.Empty;
             UpdateBookmarkButton();
             UpdateNavigationButtons();
             return;
         }
 
         UpdateLoadingButton();
-        if (AddressBox.FocusState == FocusState.Unfocused)
+        if (!_isAddressEditing && AddressBox.FocusState == FocusState.Unfocused)
             AddressBox.Text = tab.Url;
         UpdateBookmarkButton();
         UpdateNavigationButtons();
@@ -929,6 +964,7 @@ public sealed partial class MainPage : Page
 
     private void NavigateTo(string url)
     {
+        _isAddressEditing = false;
         ViewModel.NavigateAddressCommand.Execute(url);
         var tab = ViewModel.SelectedTab;
         AddressBox.Text = tab?.IsNativeStartPage == true ? string.Empty : ViewModel.AddressText;
@@ -967,11 +1003,11 @@ public sealed partial class MainPage : Page
         iconHost.Children.Add(fallback);
         iconHost.Children.Add(favicon);
 
-        var header = new Grid { Width = 152, ColumnSpacing = 8, VerticalAlignment = VerticalAlignment.Center };
-        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        var header = new Grid { Width = 112, ColumnSpacing = 6, VerticalAlignment = VerticalAlignment.Center };
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        Grid.SetColumn(title, 0);
-        Grid.SetColumn(iconHost, 1);
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        Grid.SetColumn(iconHost, 0);
+        Grid.SetColumn(title, 1);
         header.Children.Add(title);
         header.Children.Add(iconHost);
 
@@ -1026,18 +1062,24 @@ public sealed partial class MainPage : Page
             if (tab.NativeHandle == IntPtr.Zero)
                 throw new InvalidOperationException("WKViewCreate did not return a native view.");
             ConfigureNativeView(tab);
-            CrashLogger.Log($"Created native WebKit child view. HWND={WebKitNative.GetWindow(tab.NativeHandle):X}; parent={App.WindowHandle:X}; bounds={x},{y},{width},{height}.");
+            CrashLogger.Log($"Created native WebKit view in owned popup host. Host HWND={WebKitNative.GetHostWindow(tab.NativeHandle):X}; child HWND={WebKitNative.GetWindow(tab.NativeHandle):X}; owner={App.WindowHandle:X}; bounds={x},{y},{width},{height}.");
             WebKitNative.SetJavaScriptEnabled(tab.NativeHandle, ViewModel.Settings.JavaScriptEnabled);
             WebKitNative.SetLoadsImagesAutomatically(tab.NativeHandle, ViewModel.Settings.LoadImagesAutomatically);
             WebKitNative.Navigate(tab.NativeHandle, tab.Url);
             _engineAvailable = true;
             EngineError.IsOpen = false;
         }
-        catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException or BadImageFormatException or InvalidOperationException)
+        catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException or BadImageFormatException or InvalidOperationException or COMException)
         {
+            if (tab.NativeHandle != IntPtr.Zero)
+            {
+                WebKitNative.Destroy(tab.NativeHandle);
+                tab.NativeHandle = IntPtr.Zero;
+            }
             _engineAvailable = false;
             EngineError.Message = $"The pinned WinCairo runtime failed to initialize: {ex.Message}";
             EngineError.IsOpen = true;
+            CrashLogger.LogException("Native WebKit view initialization failed.", ex);
         }
     }
 
@@ -1069,7 +1111,7 @@ public sealed partial class MainPage : Page
         var showStartPage = selected?.IsNativeStartPage == true;
         StartPageSurface.Visibility = showStartPage ? Visibility.Visible : Visibility.Collapsed;
 
-        if (showStartPage)
+        if (showStartPage || EngineError.IsOpen || selected is null)
         {
             foreach (var tab in ViewModel.Tabs)
             {
@@ -1079,27 +1121,45 @@ public sealed partial class MainPage : Page
             return;
         }
 
-        if (selected is not null && selected.NativeHandle == IntPtr.Zero)
+        if (selected.NativeHandle == IntPtr.Zero)
             EnsureNativeView(selected);
         if (!_engineAvailable)
+        {
+            foreach (var tab in ViewModel.Tabs)
+            {
+                if (tab.NativeHandle != IntPtr.Zero)
+                    WebKitNative.SetBounds(tab.NativeHandle, 0, 0, 0, 0);
+            }
             return;
+        }
 
         var (x, y, width, height) = GetBrowserSurfaceBounds();
         foreach (var tab in ViewModel.Tabs)
         {
-            if (tab.NativeHandle == IntPtr.Zero)
-                continue;
-            if (ReferenceEquals(tab, ViewModel.SelectedTab))
-                WebKitNative.SetBounds(tab.NativeHandle, x, y, width, height);
-            else
+            if (tab.NativeHandle != IntPtr.Zero && !ReferenceEquals(tab, selected))
                 WebKitNative.SetBounds(tab.NativeHandle, 0, 0, 0, 0);
+        }
+
+        if (selected.NativeHandle != IntPtr.Zero
+            && !WebKitNative.SetBounds(selected.NativeHandle, x, y, width, height))
+        {
+            _engineAvailable = false;
+            EngineError.Message = "The native WebKit host window could not be positioned over the browser content area.";
+            EngineError.IsOpen = true;
+            CrashLogger.Log("Native WebKit host positioning failed; the browser content surface was hidden.");
+            foreach (var tab in ViewModel.Tabs)
+            {
+                if (tab.NativeHandle != IntPtr.Zero)
+                    WebKitNative.SetBounds(tab.NativeHandle, 0, 0, 0, 0);
+            }
         }
     }
 
     private (int X, int Y, int Width, int Height) GetBrowserSurfaceBounds()
     {
-        // The WebKit HWND is parented to the top-level WinUI HWND. Translate
-        // relative to the Window root so the Frame/title-bar offsets are included.
+        // Return physical-pixel coordinates relative to the main HWND's client
+        // area. The native host converts them to screen coordinates for its
+        // owned popup window, including the custom title-bar / Frame offsets.
         var root = App.Window.Content as UIElement;
         var transform = BrowserSurface.TransformToVisual(root);
         var point = transform.TransformPoint(new Point(0, 0));
