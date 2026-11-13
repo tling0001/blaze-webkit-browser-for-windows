@@ -586,8 +586,8 @@ bool probeAngleRuntime()
 {
     HMODULE module = LoadLibraryW(L"libEGL.dll");
     if (!module) {
-        std::wcout << L"ANGLE EGL probe: SKIP (libEGL.dll is not present beside the staged WinCairo runtime).\n";
-        return true;
+        std::wcout << L"ANGLE EGL probe: FAIL (libEGL.dll is missing from the staged WinCairo runtime).\n";
+        return false;
     }
 
     auto getProcAddress = reinterpret_cast<EglGetProcAddress>(GetProcAddress(module, "eglGetProcAddress"));
