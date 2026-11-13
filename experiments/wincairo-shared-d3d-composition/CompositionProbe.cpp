@@ -574,7 +574,6 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
         EGL_RENDERABLE_TYPE_VALUE, EGL_OPENGL_ES2_BIT_VALUE,
         EGL_RED_SIZE_VALUE, 8,
         EGL_GREEN_SIZE_VALUE, 8,
-        EGL_BIND_TO_TEXTURE_RGBA_VALUE, 1,
         EGL_BLUE_SIZE_VALUE, 8,
         EGL_ALPHA_SIZE_VALUE, 8,
         EGL_NONE_VALUE
@@ -593,7 +592,11 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
     // to be the numeric DXGI_FORMAT value on ANGLE's D3D11 backend. Probe each
     // otherwise-compatible ES2 pbuffer config by attempting the actual shared
     // handle import; this is the authoritative compatibility test.
-    // A shared-handle pbuffer must explicitly describe its texture binding.
+    // The EGL_TEXTURE_* attributes belong to the client-buffer surface, not to
+    // eglChooseConfig. EGL_BIND_TO_TEXTURE_RGBA is for eglBindTexImage on an
+    // ordinary pbuffer and over-constrains ANGLE's D3D11 config set here.
+    // The shared-handle extension surface still receives the explicit
+    // EGL_TEXTURE_TARGET / EGL_TEXTURE_FORMAT pair below.
     const EGLint surfaceAttributes[] = {
         EGL_WIDTH_VALUE, static_cast<EGLint>(kWidth),
         EGL_HEIGHT_VALUE, static_cast<EGLint>(kHeight),
@@ -662,7 +665,12 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
     bool rendered = false;
     bool glPixelMatches = false;
     constexpr unsigned char expectedRgba[4] = { 32, 64, 191, 255 };
-    EGLSurface baselineSurface = createPlainPbuffer(display, config, surfaceAttributes);
+    const EGLint baselineAttributes[] = {
+        EGL_WIDTH_VALUE, static_cast<EGLint>(kWidth),
+        EGL_HEIGHT_VALUE, static_cast<EGLint>(kHeight),
+        EGL_NONE_VALUE
+    };
+    EGLSurface baselineSurface = createPlainPbuffer(display, config, baselineAttributes);
     if (!baselineSurface) {
         std::wcerr << L"FAIL: eglCreatePbufferSurface baseline failed; EGL error=0x"
                    << std::hex << getError() << std::dec << L"\\n";
