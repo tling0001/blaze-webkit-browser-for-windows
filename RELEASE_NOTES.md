@@ -5,6 +5,7 @@
 ### Native WebKit presentation in WinUI 3
 - Host each native WinCairo view in a borderless owned popup HWND above the WinUI window, avoiding the final WinUI DirectComposition layer that can obscure ordinary child HWND output.
 - Keep the WebKit HWND as a normal native child of the popup host so WebKit's standard compositor and native mouse, keyboard, and wheel input paths remain intact.
+- Position the owned host relative to the existing desktop z-order, keeping it above Blaze's WinUI owner without raising it over unrelated foreground or topmost windows.
 - Maintain one owned popup host per browser tab, position it from the XAML content bounds, track owner-window moves and DPI changes, hide inactive tabs, and destroy each host with its WebKit view.
 - Hide the native host while the start page or engine-error overlay is visible, leaving WinUI chrome and dialogs unobstructed.
 
