@@ -1,5 +1,32 @@
 # Blaze release notes
 
+## [1.1.35] - 2026-11-13
+
+### Address-bar suggestions
+- Add Chrome-style inline suggestions from local browsing history, bookmarks, and previously used search queries.
+- Rank repeated and recent visits above less relevant matches, show the source/URL beneath each result, and include a direct search action using the selected search engine.
+- Keep suggestions local to the device; do not send every typed character to a remote suggestion provider.
+
+### Native tab-close stability
+- Hide retired WebKit views and detach their callbacks immediately, but retain the WKView and its native resources until the browser page shuts down.
+- Remove the 750 ms delayed WKRelease path, which still allowed the GPU process and WebKit compositor to have outstanding work when the UI process destroyed the view.
+- Add native retirement markers and keep shutdown-only finalization explicit. This is a bounded-lifetime diagnostic mitigation, not yet proof that every WebKit close race is resolved.
+
+### ANGLE probe corrections
+- Fix the cross-process shared-handle byte-count check to use the actual legacy handle token string.
+- Remove keyed-mutex operations from a texture created with D3D11_RESOURCE_MISC_SHARED; keyed mutex APIs are only valid for textures created with the keyed-mutex flag.
+- Flush the producer D3D11 context before staging readback.
+- Correct the probe success wording to identify the legacy DXGI handle path.
+
+### Release smoke test
+- Use the UI automation target selector to focus AddressBox instead of the standalone focus command, which intermittently failed after selecting a newly created TabView tab.
+- Extend the post-close process-survival window to two seconds for the loading-tab stress loop.
+
+### Validation
+- Run 200 compiled the WinUI app, published the self-contained browser, built the installer, and passed all seven installed-app integration checks.
+- The ANGLE probe did not execute because the probe source failed to compile (stale `remoteHandleText` and removed keyed-mutex references). The Release smoke test passed eight checks but failed the standalone AddressBox focus action before reaching the tab-close loops.
+- The actual WebKit `WCScene` implementation was inspected at the pinned SDK revision. It currently either renders directly to its native HWND or uses `glReadPixels` into a ShareableBitmap for offscreen rendering; neither mode exposes a GPU texture to WinUI. The D3D composition connection therefore still requires a WebKit SDK source change and an end-to-end GPU-process/UI-process texture bridge. No CPU-readback fallback is being misrepresented as GPU composition.
+
 ## [1.1.34] - 2026-11-12
 
 ### ANGLE shared-texture interop

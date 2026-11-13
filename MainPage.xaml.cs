@@ -47,7 +47,7 @@ public sealed partial class MainPage : Page
     private readonly Dictionary<string, string> _requestedTabFaviconUrls = [];
     private readonly FaviconCache _faviconCache = new();
     private readonly HashSet<IntPtr> _pendingPopups = [];
-    private readonly HashSet<IntPtr> _pendingNativeDisposals = [];
+    private readonly HashSet<IntPtr> _retainedNativeViews = [];
     private readonly SemaphoreSlim _dialogGate = new(1, 1);
     private DispatcherQueueTimer? _stateTimer;
     private bool _initialized;
@@ -246,7 +246,7 @@ public sealed partial class MainPage : Page
         foreach (var popup in _pendingPopups.ToArray())
             DestroyNativeViewHandleImmediately(popup);
         _pendingPopups.Clear();
-        foreach (var pendingHandle in _pendingNativeDisposals.ToArray())
+        foreach (var pendingHandle in _retainedNativeViews.ToArray())
             FinalizeNativeViewDisposal(pendingHandle);
         foreach (var tab in ViewModel.Tabs)
             DestroyNativeView(tab);
@@ -303,7 +303,7 @@ public sealed partial class MainPage : Page
                 CrashLogger.Log($"Tab close: retiring WebKit handle 0x{nativeHandle:X}.");
                 _nativeTabIds.TryRemove(nativeHandle, out _);
                 RetireNativeView(nativeHandle);
-                CrashLogger.Log($"Tab close: native handle 0x{nativeHandle:X} detached and hidden.");
+                CrashLogger.Log($"Tab close: native handle 0x{nativeHandle:X} detached and hidden; native WKView remains retained.");
             }
 
             if (item is not null)
@@ -491,11 +491,12 @@ public sealed partial class MainPage : Page
     private void OnAddressQuerySubmitted(AutoSuggestBox sender, AutoSuggestBoxQuerySubmittedEventArgs args)
     {
         var query = args.QueryText?.Trim();
-        CrashLogger.Log($"Address action: Submit navigation (query length: {query?.Length ?? 0}).");
+        var destination = args.ChosenSuggestion is AddressSuggestion chosen ? chosen.TargetUrl : query;
+        CrashLogger.Log($"Address action: Submit navigation (suggestion: {args.ChosenSuggestion is AddressSuggestion}; query length: {query?.Length ?? 0}).");
         sender.IsSuggestionListOpen = false;
         _isAddressEditing = false;
 
-        if (string.IsNullOrWhiteSpace(query) || _addressSubmissionQueued)
+        if (string.IsNullOrWhiteSpace(destination) || _addressSubmissionQueued)
             return;
 
         // AutoSuggestBox raises QuerySubmitted while it is still processing Enter.
@@ -513,7 +514,7 @@ public sealed partial class MainPage : Page
                     return;
                 }
 
-                NavigateTo(query);
+                NavigateTo(destination!);
                 // Give AutoSuggestBox one more dispatcher turn to finish its
                 // internal Enter/suggestion-popup focus work. Focusing in the
                 // QuerySubmitted turn can be immediately undone by that control.
@@ -579,8 +580,19 @@ public sealed partial class MainPage : Page
 
     private void OnAddressTextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
     {
-        if (args.Reason == AutoSuggestionBoxTextChangeReason.UserInput)
-            _isAddressEditing = true;
+        if (args.Reason != AutoSuggestionBoxTextChangeReason.UserInput)
+            return;
+
+        _isAddressEditing = true;
+        var suggestions = ViewModel.GetAddressSuggestions(sender.Text);
+        sender.ItemsSource = suggestions;
+        sender.IsSuggestionListOpen = suggestions.Count > 0;
+    }
+
+    private void OnAddressSuggestionChosen(AutoSuggestBox sender, AutoSuggestBoxSuggestionChosenEventArgs args)
+    {
+        if (args.SelectedItem is AddressSuggestion suggestion)
+            sender.Text = suggestion.Title;
     }
 
     private void SynchronizeAddressBoxFromSelectedTab()
@@ -1404,36 +1416,39 @@ public sealed partial class MainPage : Page
 
     private void RetireNativeView(IntPtr nativeHandle)
     {
-        if (nativeHandle == IntPtr.Zero || !_pendingNativeDisposals.Add(nativeHandle))
+        if (nativeHandle == IntPtr.Zero)
             return;
+        if (_isPageUnloading)
+        {
+            DestroyNativeViewHandleImmediately(nativeHandle);
+            return;
+        }
+        if (!_retainedNativeViews.Add(nativeHandle))
+            return;
+
         try
         {
+            // Detach and hide immediately, but do not release WKView while the
+            // WebKit GPU process may still have outstanding scene/compositing
+            // work. Retain the native object until the browser page shuts down.
             WebKitNative.PrepareDestroy(nativeHandle);
-            CrashLogger.Log($"Prepared native WebKit view 0x{nativeHandle:X} for deferred destruction.");
+            CrashLogger.Log($"Retired WebKit view 0x{nativeHandle:X}: hidden and callbacks detached; WKRelease deferred until application shutdown.");
         }
         catch (Exception exception)
         {
-            CrashLogger.LogException("Native WebKit view preparation failed; attempting final release.", exception);
+            CrashLogger.LogException("Native WebKit view retirement failed; retaining the handle for shutdown.", exception);
         }
-        // A dispatcher turn is not enough for WebKit's asynchronous stop-load
-        // and native-window callbacks to unwind. Keep the retired view alive
-        // for a short quiescence window before the final WKRelease/DestroyWindow.
-        _ = Task.Delay(TimeSpan.FromMilliseconds(750)).ContinueWith(_ =>
-        {
-            if (!App.DispatcherQueue.TryEnqueue(() => FinalizeNativeViewDisposal(nativeHandle)))
-                CrashLogger.Log($"Could not enqueue final disposal for retired WebKit view 0x{nativeHandle:X}; retaining it until unload.");
-        }, TaskScheduler.Default);
     }
 
     private void FinalizeNativeViewDisposal(IntPtr nativeHandle)
     {
-        if (!_pendingNativeDisposals.Remove(nativeHandle))
+        if (!_retainedNativeViews.Remove(nativeHandle))
             return;
         try
         {
-            CrashLogger.Log($"Beginning final native WebKit release for retired view 0x{nativeHandle:X}.");
+            CrashLogger.Log($"Beginning shutdown-only native WebKit release for retired view 0x{nativeHandle:X}.");
             WebKitNative.Destroy(nativeHandle);
-            CrashLogger.Log($"Finalized native WebKit view 0x{nativeHandle:X} after quiescence delay.");
+            CrashLogger.Log($"Finalized retained native WebKit view 0x{nativeHandle:X} during page shutdown.");
         }
         catch (Exception exception)
         {

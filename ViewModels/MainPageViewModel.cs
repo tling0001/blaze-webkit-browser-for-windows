@@ -160,6 +160,113 @@ public partial class MainPageViewModel : ObservableObject
         SelectedTab?.Stop();
     }
 
+    public IReadOnlyList<AddressSuggestion> GetAddressSuggestions(string? input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+            return [];
+
+        var query = input.Trim();
+        var results = new List<(AddressSuggestion Suggestion, int Score)>();
+        var seenTargets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var group in History
+            .Where(entry => !string.IsNullOrWhiteSpace(entry.Url)
+                && (entry.Title.Contains(query, StringComparison.OrdinalIgnoreCase)
+                    || entry.Url.Contains(query, StringComparison.OrdinalIgnoreCase)))
+            .GroupBy(entry => entry.Url, StringComparer.OrdinalIgnoreCase))
+        {
+            var latest = group.OrderByDescending(entry => entry.VisitedAt).First();
+            var title = string.IsNullOrWhiteSpace(latest.Title) ? latest.Url : latest.Title;
+            var matchScore = title.StartsWith(query, StringComparison.OrdinalIgnoreCase) ? 1000
+                : latest.Url.StartsWith(query, StringComparison.OrdinalIgnoreCase) ? 850 : 600;
+            var recencyScore = Math.Max(0, 100 - (int)Math.Min(100, (DateTimeOffset.Now - latest.VisitedAt).TotalDays));
+            var score = matchScore + group.Count() * 30 + recencyScore;
+            if (seenTargets.Add(latest.Url))
+                results.Add((new AddressSuggestion(title, latest.Url, latest.Url, "\uE81C"), score));
+        }
+
+        foreach (var bookmark in Bookmarks.Where(entry =>
+            entry.Title.Contains(query, StringComparison.OrdinalIgnoreCase)
+            || entry.Url.Contains(query, StringComparison.OrdinalIgnoreCase)))
+        {
+            if (!seenTargets.Add(bookmark.Url))
+                continue;
+            var title = string.IsNullOrWhiteSpace(bookmark.Title) ? bookmark.Url : bookmark.Title;
+            var score = (title.StartsWith(query, StringComparison.OrdinalIgnoreCase) ? 900 : 550) + 150;
+            results.Add((new AddressSuggestion(title, "Bookmark · " + bookmark.Url, bookmark.Url, "\uE8A4"), score));
+        }
+
+        var savedSearches = History
+            .Select(entry => (Term: ExtractSearchTerm(entry.Url), entry.VisitedAt))
+            .Where(item => !string.IsNullOrWhiteSpace(item.Term)
+                && item.Term.StartsWith(query, StringComparison.OrdinalIgnoreCase))
+            .GroupBy(item => item.Term, StringComparer.OrdinalIgnoreCase)
+            .Select(group => new { Term = group.Key, Count = group.Count(), Latest = group.Max(item => item.VisitedAt) })
+            .OrderByDescending(item => item.Count)
+            .ThenByDescending(item => item.Latest)
+            .Take(4);
+
+        foreach (var search in savedSearches)
+        {
+            var target = BuildSearchUrl(search.Term, Settings.SearchEngine);
+            if (seenTargets.Add(target))
+                results.Add((new AddressSuggestion(search.Term, $"Search you used · {search.Count} visit(s)", target, "\uE721"), 1200 + search.Count * 50));
+        }
+
+        var looksLikeAddress = query.Contains('.') && !query.Contains(' ')
+            || query.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+            || query.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+            || query.StartsWith("file://", StringComparison.OrdinalIgnoreCase);
+        if (!looksLikeAddress)
+        {
+            var searchTarget = BuildSearchUrl(query, Settings.SearchEngine);
+            results.Add((new AddressSuggestion($"Search for “{query}”", $"{Settings.SearchEngine} · Search the web", searchTarget, "\uE721"), 100));
+        }
+
+        return results
+            .OrderByDescending(item => item.Score)
+            .Take(8)
+            .Select(item => item.Suggestion)
+            .ToArray();
+    }
+
+    private static string? ExtractSearchTerm(string url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            return null;
+        var host = uri.Host;
+        if (!(host.Contains("google.", StringComparison.OrdinalIgnoreCase)
+            || host.Contains("bing.com", StringComparison.OrdinalIgnoreCase)
+            || host.Contains("duckduckgo.com", StringComparison.OrdinalIgnoreCase)
+            || host.Contains("search.brave.com", StringComparison.OrdinalIgnoreCase)))
+            return null;
+
+        foreach (var pair in uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var parts = pair.Split('=', 2);
+            if (parts.Length != 2)
+                continue;
+            var key = Uri.UnescapeDataString(parts[0].Replace('+', ' '));
+            if (key is not ("q" or "query" or "p"))
+                continue;
+            var value = Uri.UnescapeDataString(parts[1].Replace('+', ' ')).Trim();
+            return string.IsNullOrWhiteSpace(value) ? null : value;
+        }
+        return null;
+    }
+
+    private static string BuildSearchUrl(string query, BrowserSearchEngine engine)
+    {
+        var prefix = engine switch
+        {
+            BrowserSearchEngine.Bing => "https://www.bing.com/search?q=",
+            BrowserSearchEngine.DuckDuckGo => "https://duckduckgo.com/?q=",
+            BrowserSearchEngine.Brave => "https://search.brave.com/search?q=",
+            _ => "https://www.google.com/search?q="
+        };
+        return prefix + Uri.EscapeDataString(query);
+    }
+
     public void RecordNavigation(BrowserTab tab)
     {
         if (string.IsNullOrWhiteSpace(tab.Url) || tab.Url == "about:blank" ||
@@ -335,14 +442,7 @@ public partial class MainPageViewModel : ObservableObject
         if (input.Contains(' ') || !input.Contains('.'))
         {
             var query = Uri.EscapeDataString(input);
-            var searchUrl = settings.SearchEngine switch
-            {
-                BrowserSearchEngine.Bing => "https://www.bing.com/search?q=",
-                BrowserSearchEngine.DuckDuckGo => "https://duckduckgo.com/?q=",
-                BrowserSearchEngine.Brave => "https://search.brave.com/search?q=",
-                _ => "https://www.google.com/search?q="
-            };
-            return searchUrl + query;
+            return BuildSearchUrl(input, settings.SearchEngine);
         }
 
         return "https://" + input;

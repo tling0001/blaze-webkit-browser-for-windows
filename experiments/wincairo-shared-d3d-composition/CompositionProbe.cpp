@@ -267,7 +267,7 @@ bool runCrossProcessSharedTextureProbe()
     const BOOL sent = WriteFile(pipeWrite, sharedHandleText.data(),
                                 static_cast<DWORD>(sharedHandleText.size()), &bytesWritten, nullptr);
     CloseHandle(pipeWrite);
-    if (!sent || bytesWritten != remoteHandleText.size()) {
+    if (!sent || bytesWritten != sharedHandleText.size()) {
         std::wcerr << L"FAIL: sending legacy DXGI shared-handle token to child failed. Error=" << GetLastError() << L"\n";
         TerminateProcess(process.hProcess, 21);
         CloseHandle(process.hThread);
@@ -548,17 +548,17 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
         if (candidateSurface) {
             config = candidate;
             surface = candidateSurface;
-            std::wcout << L"ANGLE shared-handle import selected EGL config " << configId
+            std::wcout << L"ANGLE legacy shared-handle import selected EGL config " << configId
                        << L" (native visual id " << nativeVisualId << L").\n";
             break;
         }
         const auto error = getError();
-        std::wcout << L"ANGLE shared-handle import rejected EGL config " << configId
+        std::wcout << L"ANGLE legacy shared-handle import rejected EGL config " << configId
                    << L" (native visual id " << nativeVisualId << L", EGL error=0x"
                    << std::hex << error << std::dec << L").\n";
     }
     if (!config || !surface) {
-        std::wcerr << L"FAIL: no ES2 pbuffer config accepted the BGRA8 NT shared D3D11 handle.\n";
+        std::wcerr << L"FAIL: no ES2 pbuffer config accepted the BGRA8 legacy DXGI shared D3D11 handle.\n";
                 return false;
     }
 
@@ -666,12 +666,6 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
                 return false;
     }
 
-    hr = keyedMutex->AcquireSync(1, 10000);
-    if (FAILED(hr)) {
-        printHr(L"Acquire ANGLE-rendered texture for D3D verification", hr);
-                return false;
-    }
-
     D3D11_TEXTURE2D_DESC stagingDescription = description;
     stagingDescription.Usage = D3D11_USAGE_STAGING;
     stagingDescription.BindFlags = 0;
@@ -681,17 +675,16 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
     ComPtr<ID3D11Texture2D> staging;
     hr = producerDevice->CreateTexture2D(&stagingDescription, nullptr, &staging);
     if (FAILED(hr)) {
-        keyedMutex->ReleaseSync(2);
-                printHr(L"Create ANGLE render verification staging texture", hr);
+        printHr(L"Create ANGLE render verification staging texture", hr);
         return false;
     }
 
     producerContext->CopyResource(staging.Get(), texture.Get());
+    producerContext->Flush();
     D3D11_MAPPED_SUBRESOURCE mapped{};
     hr = producerContext->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &mapped);
     if (FAILED(hr)) {
-        keyedMutex->ReleaseSync(2);
-                printHr(L"Map ANGLE-rendered shared D3D texture", hr);
+        printHr(L"Map ANGLE-rendered shared D3D texture", hr);
         return false;
     }
 
@@ -704,11 +697,6 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
                << static_cast<unsigned>(pixel[(kHeight / 2) * mapped.RowPitch + (kWidth / 2) * 4 + 2]) << L", "
                << static_cast<unsigned>(pixel[(kHeight / 2) * mapped.RowPitch + (kWidth / 2) * 4 + 3]) << L"\n";
     producerContext->Unmap(staging.Get(), 0);
-    const HRESULT releaseResult = keyedMutex->ReleaseSync(2);
-        if (FAILED(releaseResult)) {
-        printHr(L"Release ANGLE shared-texture verification key", releaseResult);
-        return false;
-    }
     if (!glPixelMatches) {
         std::wcerr << L"FAIL: GLES readback did not contain the requested clear color.\n";
         return false;
@@ -718,7 +706,7 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
         return false;
     }
 
-    std::wcout << L"PASS: ANGLE imported an NT shared D3D11 texture from a second device on the same adapter, rendered through EGL, and the producer device verified the resulting BGRA pixels.\n";
+    std::wcout << L"PASS: ANGLE imported a legacy DXGI shared D3D11 texture from a second device on the same adapter, rendered through EGL, and the producer device verified the resulting BGRA pixels.\n";
     return true;
 }
 

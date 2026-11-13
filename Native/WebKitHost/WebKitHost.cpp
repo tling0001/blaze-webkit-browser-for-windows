@@ -710,12 +710,14 @@ void WB_PrepareDestroy(WB_VIEW_HANDLE view)
     if (!view || view->destroyPrepared)
         return;
     view->destroyPrepared = true;
+    OutputDebugStringW(L"[Blaze][WebKitLifetime] WB_PrepareDestroy: begin native retirement.\\n");
     if (view->ownerSubclassInstalled && view->parentWindow && IsWindow(view->parentWindow)) {
         RemoveWindowSubclass(view->parentWindow, ownerWindowSubclass, ownerSubclassId(view));
         view->ownerSubclassInstalled = false;
     }
     if (view->hostWindow && IsWindow(view->hostWindow))
         ShowWindow(view->hostWindow, SW_HIDE);
+    OutputDebugStringW(L"[Blaze][WebKitLifetime] WB_PrepareDestroy: host hidden and owner subclass detached.\\n");
     if (view->view) {
         auto page = WKViewGetPage(view->view);
         if (page) {
@@ -723,7 +725,8 @@ void WB_PrepareDestroy(WB_VIEW_HANDLE view)
             WKPageSetPageNavigationClient(page, nullptr);
             // Avoid stopping navigation synchronously from the WinUI tab-close
             // event. WKRelease performs final page shutdown after the view has
-            // remained alive through the native quiescence delay.
+            // remains retained until browser shutdown. The caller deliberately
+            // avoids releasing this WKView during ordinary tab-close operations.
         }
     }
 }

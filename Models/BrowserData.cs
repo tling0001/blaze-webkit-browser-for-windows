@@ -78,3 +78,5 @@ public sealed class SitePermissionEntry
 }
 
 public sealed record StartPageShortcut(string Title, string Url, string Glyph, string AutomationId);
+
+public sealed record AddressSuggestion(string Title, string Detail, string TargetUrl, string Glyph);

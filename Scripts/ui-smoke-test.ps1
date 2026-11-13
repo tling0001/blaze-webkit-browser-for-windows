@@ -184,21 +184,22 @@ namespace BlazeSmoke {
 
     # Close pages while navigation is active to exercise teardown with outstanding work.
     for ($iteration = 1; $iteration -le 3; $iteration++) {
-        Invoke-WinAppChecked @('ui', 'send-keys', 'ctrl+t', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
+        Invoke-WinAppChecked @('ui', 'send-keys', 'ctrl+t', '--via', 'send-input', '-a', [string]$appProcessId) | Out-Null
         $loadingPage = Join-Path $env:TEMP ("blaze-close-loading-" + [guid]::NewGuid().ToString('N') + '.html')
         "<!doctype html><html><head><title>Blaze Loading Close $iteration</title></head><body>Closing during navigation.</body></html>" |
             Set-Content -LiteralPath $loadingPage -Encoding utf8
         $loadingUri = ([Uri]$loadingPage).AbsoluteUri
-        Invoke-WinAppChecked @('ui', 'focus', 'AddressBox', '-w', [string]$mainWindow.hwnd) | Out-Null
-        Invoke-WinAppChecked @('ui', 'send-keys', $loadingUri, '--target', 'AddressBox', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
-        Invoke-WinAppChecked @('ui', 'wait-for', 'AddressBox', '--value', $loadingUri, '-t', '3000', '-w', [string]$mainWindow.hwnd) | Out-Null
-        Invoke-WinAppChecked @('ui', 'send-keys', 'enter', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
-        Invoke-WinAppChecked @('ui', 'send-keys', 'ctrl+w', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
-        Start-Sleep -Milliseconds 1200
+        # --target focuses AutoSuggestBox through WinApp UIA; the standalone
+        # focus verb intermittently fails after TabView selection changes.
+        Invoke-WinAppChecked @('ui', 'send-keys', $loadingUri, '--target', 'AddressBox', '--via', 'send-input', '-a', [string]$appProcessId) | Out-Null
+        Invoke-WinAppChecked @('ui', 'wait-for', 'AddressBox', '--value', $loadingUri, '-t', '3000', '-a', [string]$appProcessId) | Out-Null
+        Invoke-WinAppChecked @('ui', 'send-keys', 'enter', '--via', 'send-input', '-a', [string]$appProcessId) | Out-Null
+        Invoke-WinAppChecked @('ui', 'send-keys', 'ctrl+w', '--via', 'send-input', '-a', [string]$appProcessId) | Out-Null
+        Start-Sleep -Milliseconds 2000
         if (-not (Get-Process -Id $appProcessId -ErrorAction SilentlyContinue)) {
             throw "Blaze exited while closing a loading native tab $iteration."
         }
-        $remainingTree = (Invoke-WinAppChecked @('ui', 'inspect', '--interactive', '--json', '-w', [string]$mainWindow.hwnd)) -join [Environment]::NewLine
+        $remainingTree = (Invoke-WinAppChecked @('ui', 'inspect', '--interactive', '--json', '-a', [string]$appProcessId)) -join [Environment]::NewLine
         if (-not $remainingTree.Contains('Blaze WebKit Smoke')) {
             throw "The original native page was not retained after closing loading tab $iteration."
         }

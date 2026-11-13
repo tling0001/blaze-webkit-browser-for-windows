@@ -1,6 +1,6 @@
 # WinCairo GPU-to-WinUI composition prototype
 
-Status: P1 ANGLE NT shared-handle import succeeds on the hosted Windows runner, but the current pixel-verification probe reports that the producer D3D11 device does not yet observe the expected ANGLE-rendered pixels. WebKit WCScene output integration and WinUI presentation remain unimplemented.
+Status: P1 ANGLE legacy DXGI shared-handle import succeeds on the hosted Windows runner, but the current pixel-verification probe reports that the producer D3D11 device does not yet observe the expected ANGLE-rendered pixels. WebKit WCScene output integration and WinUI presentation remain unimplemented.
 
 ## Current pinned rendering path
 
@@ -18,8 +18,8 @@ This means the correct seam is **WCSceneContext's presentation target**, not the
 
 Use a D3D11 shared texture as the process boundary and a WinUI composition swap chain as the presentation boundary.
 
-- The browser/UI process owns a D3D11 device compatible with the WinUI composition device and creates a small ring (2–3) of BGRA8 shared textures with NT handles and keyed-mutex synchronization.
-- A broker duplicates the NT handles into the WebKit GPU process. Handle lifetime is explicit; never serialize raw process-local HANDLE values as if they were globally valid.
+- The browser/UI process owns a D3D11 device compatible with the WinUI composition device and creates a small ring (2–3) of BGRA8 shared textures with legacy DXGI handles and keyed-mutex synchronization.
+- A broker duplicates the legacy DXGI handles into the WebKit GPU process. Handle lifetime is explicit; never serialize raw process-local HANDLE values as if they were globally valid.
 - The GPU process opens the shared resources on the same adapter. ANGLE's EGL D3D texture-client-buffer/share-handle interop is the first candidate for exposing the texture to WebKit's GL context. Verify the exact ANGLE extensions and adapter/device compatibility at runtime; do not assume an EGL extension is present just because ANGLE is bundled.
 - `WCScene` renders the root layer into the imported texture/FBO, then signals frame readiness. No `glReadPixels`, CPU staging texture, or bitmap IPC is allowed on this path.
 - The UI process copies or binds the completed shared texture into a `IDXGISwapChain1` created with `DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT` and `DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL`, using `CreateSwapChainForComposition`. Attach it through the supported WinUI `SwapChainPanel` interop or a supported composition visual bridge.
@@ -38,14 +38,14 @@ Use a D3D11 shared texture as the process boundary and a WinUI composition swap 
 `CompositionProbe.cpp` is a standalone Windows x64 diagnostic built by the experimental browser workflow. P0 validates D3D11 resource transport. P1 now exercises the pinned ANGLE runtime itself:
 
 - Reports ANGLE EGL vendor/version, display/device extensions and the ANGLE D3D11 adapter LUID when `libEGL.dll` can initialize a D3D11 display.
-- Creates a BGRA8 D3D11 texture using an NT shared handle and keyed mutex.
+- Creates a BGRA8 D3D11 texture using an legacy DXGI shared handle and keyed mutex.
 - Duplicates the shared handle into a child process, transferring the child-local handle value through an inherited anonymous pipe (not by assuming HANDLE values are global).
 - Opens the texture on a second D3D11 device on the same adapter, synchronizes with the keyed mutex, and verifies a known pixel pattern.
 - Queries the D3D11 device actually owned by the initialized ANGLE EGL display.
 - Creates a BGRA8 NT-shared D3D11 texture on a second device on the same adapter, so ANGLE must open a real cross-device shared resource rather than receive a same-device texture pointer.
-- Creates an NT shared handle from the producer texture and imports it with `eglCreatePbufferFromClientBuffer(EGL_D3D_TEXTURE_2D_SHARE_HANDLE_ANGLE)`, exercising ANGLE's `OpenSharedResource` / `OpenSharedResource1` path.
+- Creates an legacy DXGI shared handle from the producer texture and imports it with `eglCreatePbufferFromClientBuffer(EGL_D3D_TEXTURE_2D_SHARE_HANDLE_ANGLE)`, exercising ANGLE's `OpenSharedResource` / `OpenSharedResource1` path.
 - Requires `EGL_BIND_TO_TEXTURE_RGBA` and explicitly sets `EGL_TEXTURE_TARGET=EGL_TEXTURE_2D` plus `EGL_TEXTURE_FORMAT=EGL_TEXTURE_RGBA`, matching ANGLE's documented DirectX interop setup.
-- First renders a known clear color to a normal EGL pbuffer as a control, then renders to the imported NT shared-handle pbuffer.
+- First renders a known clear color to a normal EGL pbuffer as a control, then renders to the imported legacy DXGI shared-handle pbuffer.
 - Checks framebuffer completeness, GL errors and GLES pixel readback for each surface, calls `eglSwapBuffers`, and unbinds the EGL surface.
 - Reads the texture back through a D3D11 staging resource and logs the resulting BGRA pixel values. This readback is diagnostic-only and is not used by the proposed renderer.
 
@@ -100,3 +100,13 @@ The experiment is not ready for default use until it has:
 - Measured latency/CPU/GPU results showing a meaningful improvement over the HWND baseline.
 
 Until then, Blaze continues to use the tested WinCairo HWND renderer. This document is a plan for a measurable prototype, not a claim that a shared-surface renderer is implemented.
+
+
+## Pinned WebKit WCScene integration findings
+
+The pinned WebKit source `d641dd75af65b0469eff30bb76a97e01e02633fc` was inspected directly:
+- `WCScene::update` calls `TextureMapper::beginPainting`, paints the layer tree, and either calls `WCSceneContext::swapBuffers()` to present to the native HWND or, when `m_usesOffscreenRendering` is true, performs `glReadPixels(GL_BGRA, GL_UNSIGNED_BYTE)` into a `ShareableBitmap`.
+- `WCSceneContext` currently creates its `GLContext` from the native HWND, then delegates to `GLContext::swapBuffers()`.
+- The existing offscreen mode is a CPU readback path and is not suitable as the requested zero-copy WinUI renderer.
+
+The next engine change must replace the HWND-bound scene surface with a renderable D3D11 shared-texture pbuffer, add explicit GPU-process/UI-process texture ownership and synchronization, and present the shared texture through a DirectComposition/WinUI surface. It must preserve the current HWND renderer as fallback and validate resize, DPI, device loss, and multiple tabs before activation.
