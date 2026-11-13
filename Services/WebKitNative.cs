@@ -30,6 +30,9 @@ internal static class WebKitNative
     [DllImport(Library, EntryPoint = "WB_Navigate", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Unicode)]
     internal static extern void Navigate(IntPtr view, string url);
 
+    [DllImport(Library, EntryPoint = "WB_SetUserAgent", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Unicode)]
+    internal static extern void SetUserAgent(IntPtr view, string userAgent);
+
     [DllImport(Library, EntryPoint = "WB_GoBack", CallingConvention = CallingConvention.Cdecl)]
     internal static extern void GoBack(IntPtr view);
 
