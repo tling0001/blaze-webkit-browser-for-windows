@@ -99,8 +99,7 @@ try {
 <body><h1>Blaze WebKit Smoke</h1><p>Native WinCairo popup host is active.</p></body></html>
 '@ | Set-Content -LiteralPath $smokePage -Encoding utf8
     $smokeUri = ([Uri]$smokePage).AbsoluteUri
-    Invoke-WinAppChecked @('ui', 'click', '--target', 'AddressBox', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
-    Invoke-WinAppChecked @('ui', 'send-keys', $smokeUri, '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
+    Invoke-WinAppChecked @('ui', 'send-keys', $smokeUri, '--target', 'AddressBox', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
     Invoke-WinAppChecked @('ui', 'send-keys', 'enter', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
 
     $nativeHostCreated = $false
