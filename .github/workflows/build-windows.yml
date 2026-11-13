@@ -240,7 +240,12 @@ jobs:
               throw "Published Blaze runtime is incomplete: missing $required."
             }
           }
-          Write-Host "Published $((Get-ChildItem -LiteralPath $publishDir -File -Recurse).Count) files for the standalone EXE installer."
+          $resourceIndexes = @(Get-ChildItem -LiteralPath $publishDir -Filter '*.pri' -File)
+          if ($resourceIndexes.Count -eq 0) { throw 'Published WinUI payload is missing its .pri resource index.' }
+          foreach ($resourceIndex in $resourceIndexes) {
+            if ($resourceIndex.Length -le 0) { throw "Published WinUI resource index is empty: $($resourceIndex.FullName)" }
+          }
+          Write-Host "Published $((Get-ChildItem -LiteralPath $publishDir -File -Recurse).Count) files, including $($resourceIndexes.Count) WinUI PRI resource index file(s), for the standalone EXE installer."
 
       - name: Build Blaze EXE installer
         shell: pwsh
@@ -308,6 +313,14 @@ jobs:
           if (-not (Test-Path -LiteralPath $installer -PathType Leaf)) { throw 'Blaze EXE installer was not produced.' }
           Write-Host "Created $installer"
 
+      - name: Install and launch the actual Blaze installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installer = Get-ChildItem -LiteralPath 'release-assets' -Filter 'Blaze-Setup-*-x64.exe' -File | Select-Object -First 1
+          if (-not $installer) { throw 'The standalone Blaze installer was not found for the installed-app integration test.' }
+          .\Scripts\installer-smoke-test.ps1 -InstallerPath $installer.FullName -ArtifactDirectory '.\installer-test-artifacts'
+
       - name: Run WinApp UI smoke test against live WebKit
         shell: pwsh
         run: .\Scripts\ui-smoke-test.ps1
@@ -320,6 +333,7 @@ jobs:
           path: |
             ui-test-results.json
             ui-test-artifacts/**
+            installer-test-artifacts/**
           if-no-files-found: warn
           retention-days: 14
 

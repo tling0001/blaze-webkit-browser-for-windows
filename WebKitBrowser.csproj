@@ -16,13 +16,13 @@
     <AppxPackageSigningEnabled>false</AppxPackageSigningEnabled>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <Version>1.1.20</Version>
-    <AssemblyVersion>1.1.20.0</AssemblyVersion>
-    <FileVersion>1.1.20.0</FileVersion>
-    <InformationalVersion>1.1.20</InformationalVersion>
+    <Version>1.1.21</Version>
+    <AssemblyVersion>1.1.21.0</AssemblyVersion>
+    <FileVersion>1.1.21.0</FileVersion>
+    <InformationalVersion>1.1.21</InformationalVersion>
     <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
     <WindowsPackageType>None</WindowsPackageType>
-    <AppxPackageVersion>1.1.20.0</AppxPackageVersion>
+    <AppxPackageVersion>1.1.21.0</AppxPackageVersion>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <SelfContained>true</SelfContained>
   </PropertyGroup>
@@ -81,4 +81,18 @@
     <PublishTrimmed Condition="'$(Configuration)' == 'Debug'">False</PublishTrimmed>
     <PublishTrimmed Condition="'$(Configuration)' != 'Debug'">False</PublishTrimmed>
   </PropertyGroup>
+
+  <!-- Unpackaged WinUI resolves framework and theme XAML resources through the generated
+       PRI resource index. Keep it beside Blaze.exe in the publish directory, matching
+       the build output, and fail publishing rather than shipping a broken installer. -->
+  <Target Name="CopyWinUIResourceIndexToPublish" AfterTargets="Publish">
+    <ItemGroup>
+      <_WinUIResourceIndex Include="$(TargetDir)*.pri" />
+    </ItemGroup>
+    <Error Condition="'@(_WinUIResourceIndex)' == ''"
+           Text="The WinUI resource index (.pri) was not generated in the build output." />
+    <Copy SourceFiles="@(_WinUIResourceIndex)"
+          DestinationFolder="$(PublishDir)"
+          SkipUnchangedFiles="true" />
+  </Target>
 </Project>

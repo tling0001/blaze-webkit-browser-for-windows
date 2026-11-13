@@ -1,5 +1,15 @@
 # Blaze release notes
 
+## [1.1.21] - 2026-11-13
+
+### Unpackaged WinUI installer resource and launch validation
+- Copy the generated WinUI PRI resource index from the build output into the self-contained publish directory; fail publishing if the index is missing.
+- Validate the PRI resource index alongside the native WebKit host and runtime before building the installer.
+- Add an Inno Setup integration test that silently installs to the configured per-user path, launches the installed executable, verifies the WinUI address control, captures startup diagnostics and a screenshot, and verifies silent uninstall.
+- Keep the separate dotnet-run smoke test for the build-output launch path; the installed-app test independently exercises the published installer payload.
+
+
+
 ## [1.1.20] - 2026-11-12
 
 ### Release smoke-test argument and process discovery fix
