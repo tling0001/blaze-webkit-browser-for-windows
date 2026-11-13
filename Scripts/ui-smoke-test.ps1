@@ -173,7 +173,7 @@ namespace BlazeSmoke {
     $results.Add([ordered]@{ name = 'Local WebKit page title reached the tab'; status = 'PASS' })
 
     $contentScreenshot = Join-Path $ArtifactDirectory 'blaze-webkit-content.png'
-    Invoke-WinAppChecked @('ui', 'screenshot', '--capture-screen', '--output', $contentScreenshot, '-a', [string]$appProcessId) | Out-Null
+    Invoke-WinAppChecked @('ui', 'screenshot', '--capture-screen', '--output', $contentScreenshot, '-w', [string]$hostHandle) | Out-Null
     if (-not (Test-Path -LiteralPath $contentScreenshot -PathType Leaf) -or (Get-Item -LiteralPath $contentScreenshot).Length -eq 0) {
         throw 'The native WebKit content screenshot was not delivered.'
     }
@@ -184,7 +184,7 @@ namespace BlazeSmoke {
     Invoke-WinAppChecked @('ui', 'invoke', 'SettingsButton', '-a', [string]$appProcessId) | Out-Null
     Invoke-WinAppChecked @('ui', 'wait-for', 'SettingsGeneralTab', '-t', '5000', '-a', [string]$appProcessId) | Out-Null
     $settingsScreenshot = Join-Path $ArtifactDirectory 'blaze-settings-over-webkit.png'
-    Invoke-WinAppChecked @('ui', 'screenshot', '--capture-screen', '--output', $settingsScreenshot, '-a', [string]$appProcessId) | Out-Null
+    Invoke-WinAppChecked @('ui', 'screenshot', '--capture-screen', '--output', $settingsScreenshot, '-w', [string]$mainWindow.hwnd) | Out-Null
     if (-not (Test-Path -LiteralPath $settingsScreenshot -PathType Leaf) -or (Get-Item -LiteralPath $settingsScreenshot).Length -eq 0) {
         throw 'The settings-over-WebKit screenshot was not delivered.'
     }
