@@ -996,7 +996,7 @@ public sealed partial class MainPage : Page
         };
         var cancel = new Button { Content = "Cancel" };
         cancel.Click += (_, _) => CloseInternalPage();
-        var save = new Button { Content = "Save", IsDefault = true };
+        var save = new Button { Content = "Save" };
         AutomationProperties.SetAutomationId(save, "SettingsSaveButton");
         save.Click += async (_, _) =>
         {
@@ -1029,11 +1029,7 @@ public sealed partial class MainPage : Page
                 WebKitNative.SetLoadsImagesAutomatically(tab.NativeHandle, images.IsOn);
             }
             ApplyTabBarPlacement();
-            LayoutNativeViews();
-            await ViewModel.SaveAsync();
-        }
-    
-    
+            ApplyTabBarPlacement();
             CloseInternalPage();
             await ViewModel.SaveAsync();
         };
@@ -1053,7 +1049,6 @@ public sealed partial class MainPage : Page
                 Content = content,
                 VerticalScrollMode = ScrollMode.Auto,
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                MaxHeight = double.PositiveInfinity
             },
             IsClosable = false
         };
@@ -1082,7 +1077,7 @@ public sealed partial class MainPage : Page
         try
         {
             if (await ShowDialogAsync(dialog) == ContentDialogResult.Primary && permissionType != 2)
-                await ShowSettingsDialogAsync();
+                ShowSettingsPage();
         }
         catch (Exception ex)
         {
