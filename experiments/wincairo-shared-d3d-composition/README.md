@@ -1,6 +1,6 @@
 # WinCairo GPU-to-WinUI composition prototype
 
-Status: P0 capability probe implemented; not enabled in Blaze and not yet a working renderer.
+Status: P1 ANGLE texture-import/render probe implemented; WebKit WCScene output integration and WinUI presentation remain unimplemented.
 
 ## Current pinned rendering path
 
@@ -33,17 +33,21 @@ Use a D3D11 shared texture as the process boundary and a WinUI composition swap 
 - A direct composition swap chain is preferable to copying into a second texture if WinUI can consume the same device/resource. If the UI and GPU process devices cannot share a swap chain, use a shared texture ring and one GPU-side copy, never CPU readback.
 - Do not call `eglSwapBuffers` on a dummy HWND and assume it updates the WinUI visual. The scene must render into the exported resource itself.
 
-## Implemented P0 diagnostic
+## Implemented P0/P1 diagnostics
 
-`CompositionProbe.cpp` is a standalone Windows x64 diagnostic built by the experimental browser workflow. It:
+`CompositionProbe.cpp` is a standalone Windows x64 diagnostic built by the experimental browser workflow. P0 validates D3D11 resource transport. P1 now exercises the pinned ANGLE runtime itself:
 
 - Reports ANGLE EGL vendor/version, display/device extensions and the ANGLE D3D11 adapter LUID when `libEGL.dll` can initialize a D3D11 display.
 - Creates a BGRA8 D3D11 texture using an NT shared handle and keyed mutex.
 - Duplicates the shared handle into a child process, transferring the child-local handle value through an inherited anonymous pipe (not by assuming HANDLE values are global).
 - Opens the texture on a second D3D11 device on the same adapter, synchronizes with the keyed mutex, and verifies a known pixel pattern.
-- Uses a small staging readback only in this diagnostic test to prove that the child can consume the shared resource. This is not the proposed renderer path.
+- Queries the D3D11 device actually owned by the initialized ANGLE EGL display.
+- Creates a BGRA8 D3D11 texture on that exact device, satisfying `EGL_ANGLE_d3d_texture_client_buffer`'s same-device requirement.
+- Imports the `ID3D11Texture2D` directly with `eglCreatePbufferFromClientBuffer(EGL_D3D_TEXTURE_ANGLE)`.
+- Creates an OpenGL ES 2 context, clears the imported pbuffer to a known RGBA color, calls `glFinish`, and unbinds the EGL surface.
+- Reads the texture back through a D3D11 staging resource and verifies the resulting BGRA pixel values. This readback is diagnostic-only and is not used by the proposed renderer.
 
-The probe deliberately does **not** claim ANGLE can import the external texture, does not patch `WCSceneContext`, and does not present WebKit content through WinUI. If ANGLE is absent or cannot initialize on the runner, its extension inventory is reported as skipped; the D3D11 sharing test remains mandatory.
+The test fails the workflow if the staged ANGLE runtime is missing, cannot initialize, does not expose its D3D11 device, cannot import the texture, or produces incorrect pixels. It still does **not** modify WebKit `WCSceneContext` or present actual WebKit page frames through WinUI.
 ## Prototype milestones
 
 ### P0 — capability probe (no visible product change)
@@ -53,7 +57,12 @@ The probe deliberately does **not** claim ANGLE can import the external texture,
 - Render a known GPU test pattern into it and verify the UI process can consume it.
 - Fail closed to the current HWND renderer if any capability is missing.
 
-### P1 — WebKit scene output adapter
+### P1 — ANGLE external texture import (implemented diagnostic)
+- Import a D3D11 texture created on ANGLE's own device into an EGL pbuffer.
+- Render a known GLES pattern and verify the D3D11 resource after GPU completion.
+- Keep the staging readback confined to the test harness.
+
+### P2 — WebKit scene output adapter
 - Add an opt-in WebKit port setting for a composition output handle.
 - Replace the HWND-specific `WCSceneContext` construction with a surface-provider interface.
 - Keep the current HWND EGL surface as the default/fallback.
