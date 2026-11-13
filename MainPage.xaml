@@ -58,6 +58,8 @@
             Maximum="100"
             Value="0"
             IsIndeterminate="False"
+            Visibility="Collapsed"
+            IsTabStop="False"
             IsHitTestVisible="False"
             AutomationProperties.Name="Page loading progress"
             AutomationProperties.AutomationId="PageLoadingProgress" />
