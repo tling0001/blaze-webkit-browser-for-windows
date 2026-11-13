@@ -118,32 +118,11 @@ int consumeSharedTexture(HANDLE sharedHandle, D3D_DRIVER_TYPE driverType, LUID r
         return 11;
     }
 
-    ComPtr<ID3D11Device1> device1;
-    HRESULT hr = device.As(&device1);
-    if (FAILED(hr)) {
-        printHr(L"Query ID3D11Device1", hr);
-        return 12;
-    }
-
     ComPtr<ID3D11Texture2D> sharedTexture;
-    hr = device1->OpenSharedResource1(sharedHandle, IID_PPV_ARGS(&sharedTexture));
-    CloseHandle(sharedHandle);
+    HRESULT hr = device->OpenSharedResource(sharedHandle, IID_PPV_ARGS(&sharedTexture));
     if (FAILED(hr)) {
-        printHr(L"ID3D11Device1::OpenSharedResource1", hr);
+        printHr(L"ID3D11Device::OpenSharedResource (legacy DXGI handle)", hr);
         return 13;
-    }
-
-    ComPtr<IDXGIKeyedMutex> mutex;
-    hr = sharedTexture.As(&mutex);
-    if (FAILED(hr)) {
-        printHr(L"Query IDXGIKeyedMutex", hr);
-        return 14;
-    }
-
-    hr = mutex->AcquireSync(1, 10000);
-    if (FAILED(hr)) {
-        printHr(L"Child keyed-mutex acquire", hr);
-        return 15;
     }
 
     D3D11_TEXTURE2D_DESC stagingDescription{};
@@ -156,16 +135,15 @@ int consumeSharedTexture(HANDLE sharedHandle, D3D_DRIVER_TYPE driverType, LUID r
     ComPtr<ID3D11Texture2D> staging;
     hr = device->CreateTexture2D(&stagingDescription, nullptr, &staging);
     if (FAILED(hr)) {
-        mutex->ReleaseSync(2);
         printHr(L"Create staging texture", hr);
         return 16;
     }
 
     context->CopyResource(staging.Get(), sharedTexture.Get());
+    context->Flush();
     D3D11_MAPPED_SUBRESOURCE mapped{};
     hr = context->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &mapped);
     if (FAILED(hr)) {
-        mutex->ReleaseSync(2);
         printHr(L"Map staging texture", hr);
         return 17;
     }
@@ -173,18 +151,13 @@ int consumeSharedTexture(HANDLE sharedHandle, D3D_DRIVER_TYPE driverType, LUID r
     const auto* pixel = static_cast<const unsigned char*>(mapped.pData);
     const bool matches = std::equal(std::begin(kExpectedPixel), std::end(kExpectedPixel), pixel);
     context->Unmap(staging.Get(), 0);
-    const HRESULT releaseResult = mutex->ReleaseSync(2);
-    if (FAILED(releaseResult)) {
-        printHr(L"Child keyed-mutex release", releaseResult);
-        return 18;
-    }
 
     if (!matches) {
         std::wcerr << L"FAIL: shared texture pixel did not match the known BGRA test pattern.\n";
         return 19;
     }
 
-    std::wcout << L"PASS: child process opened the NT shared texture, synchronized with the keyed mutex, and verified the GPU resource contents.\n";
+    std::wcout << L"PASS: child process opened the legacy DXGI shared texture and verified the GPU resource contents.\n";
     return 0;
 }
 
@@ -213,7 +186,7 @@ bool runCrossProcessSharedTextureProbe()
     description.SampleDesc.Count = 1;
     description.Usage = D3D11_USAGE_DEFAULT;
     description.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
-    description.MiscFlags = D3D11_RESOURCE_MISC_SHARED_NTHANDLE | D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX;
+    description.MiscFlags = D3D11_RESOURCE_MISC_SHARED;
 
     ComPtr<ID3D11Texture2D> texture;
     HRESULT hr = device->CreateTexture2D(&description, nullptr, &texture);
@@ -222,33 +195,21 @@ bool runCrossProcessSharedTextureProbe()
         return false;
     }
 
-    ComPtr<IDXGIResource1> resource;
+    // The pinned ANGLE EGL share-handle extension opens this with
+    // ID3D11Device::OpenSharedResource, so use a legacy DXGI shared handle.
+    // NT handles from CreateSharedHandle require OpenSharedResource1 and import
+    // as an empty surface through this ANGLE path.
+    ComPtr<IDXGIResource> resource;
     hr = texture.As(&resource);
     if (FAILED(hr)) {
-        printHr(L"Query IDXGIResource1", hr);
+        printHr(L"Query IDXGIResource", hr);
         return false;
     }
 
     HANDLE sharedHandle = nullptr;
-    hr = resource->CreateSharedHandle(
-        nullptr, DXGI_SHARED_RESOURCE_READ | DXGI_SHARED_RESOURCE_WRITE, nullptr, &sharedHandle);
+    hr = resource->GetSharedHandle(&sharedHandle);
     if (FAILED(hr) || !sharedHandle) {
-        printHr(L"IDXGIResource1::CreateSharedHandle", hr);
-        return false;
-    }
-
-    ComPtr<IDXGIKeyedMutex> mutex;
-    hr = texture.As(&mutex);
-    if (FAILED(hr)) {
-        CloseHandle(sharedHandle);
-        printHr(L"Query parent IDXGIKeyedMutex", hr);
-        return false;
-    }
-
-    hr = mutex->AcquireSync(0, 5000);
-    if (FAILED(hr)) {
-        CloseHandle(sharedHandle);
-        printHr(L"Parent keyed-mutex acquire", hr);
+        printHr(L"IDXGIResource::GetSharedHandle", hr);
         return false;
     }
 
@@ -256,25 +217,19 @@ bool runCrossProcessSharedTextureProbe()
     for (size_t offset = 0; offset < pixels.size(); offset += 4)
         std::copy(std::begin(kExpectedPixel), std::end(kExpectedPixel), pixels.begin() + offset);
     context->UpdateSubresource(texture.Get(), 0, nullptr, pixels.data(), kWidth * 4, 0);
-    hr = mutex->ReleaseSync(1);
-    if (FAILED(hr)) {
-        CloseHandle(sharedHandle);
-        printHr(L"Parent keyed-mutex release", hr);
-        return false;
-    }
+    context->Flush();
 
     std::wstring executable(MAX_PATH, L'\0');
     const DWORD executableLength = GetModuleFileNameW(nullptr, executable.data(), static_cast<DWORD>(executable.size()));
     if (!executableLength || executableLength >= executable.size()) {
-        CloseHandle(sharedHandle);
-        std::wcerr << L"FAIL: unable to resolve the probe executable path.\n";
+                std::wcerr << L"FAIL: unable to resolve the probe executable path.\n";
         return false;
     }
     executable.resize(executableLength);
 
-    // An anonymous pipe transfers the target-process handle value after DuplicateHandle.
-    // The pipe read handle is inherited; the D3D shared handle itself is duplicated
-    // directly into the child and is never treated as a globally valid HANDLE value.
+    // The pipe transfers the legacy DXGI share-handle token as a numeric value.
+    // It is not an NT handle: do not DuplicateHandle or CloseHandle it. The
+    // producer texture remains alive until the child has opened and read it.
     SECURITY_ATTRIBUTES security{ sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE };
     HANDLE pipeRead = nullptr;
     HANDLE pipeWrite = nullptr;
@@ -282,8 +237,7 @@ bool runCrossProcessSharedTextureProbe()
         || !SetHandleInformation(pipeWrite, HANDLE_FLAG_INHERIT, 0)) {
         if (pipeRead) CloseHandle(pipeRead);
         if (pipeWrite) CloseHandle(pipeWrite);
-        CloseHandle(sharedHandle);
-        std::wcerr << L"FAIL: CreatePipe error=" << GetLastError() << L"\n";
+                std::wcerr << L"FAIL: CreatePipe error=" << GetLastError() << L"\n";
         return false;
     }
 
@@ -303,36 +257,22 @@ bool runCrossProcessSharedTextureProbe()
                         CREATE_SUSPENDED, nullptr, nullptr, &startup, &process)) {
         CloseHandle(pipeRead);
         CloseHandle(pipeWrite);
-        CloseHandle(sharedHandle);
-        std::wcerr << L"FAIL: CreateProcessW error=" << GetLastError() << L"\n";
+                std::wcerr << L"FAIL: CreateProcessW error=" << GetLastError() << L"\n";
         return false;
     }
     CloseHandle(pipeRead);
 
-    HANDLE remoteHandle = nullptr;
-    if (!DuplicateHandle(GetCurrentProcess(), sharedHandle, process.hProcess, &remoteHandle,
-                         0, FALSE, DUPLICATE_SAME_ACCESS)) {
-        std::wcerr << L"FAIL: DuplicateHandle error=" << GetLastError() << L"\n";
-        TerminateProcess(process.hProcess, 20);
-        CloseHandle(process.hThread);
-        CloseHandle(process.hProcess);
-        CloseHandle(pipeWrite);
-        CloseHandle(sharedHandle);
-        return false;
-    }
-
-    const std::string remoteHandleText = std::to_string(reinterpret_cast<uintptr_t>(remoteHandle));
+    const std::string sharedHandleText = std::to_string(reinterpret_cast<uintptr_t>(sharedHandle));
     DWORD bytesWritten = 0;
-    const BOOL sent = WriteFile(pipeWrite, remoteHandleText.data(),
-                                static_cast<DWORD>(remoteHandleText.size()), &bytesWritten, nullptr);
+    const BOOL sent = WriteFile(pipeWrite, sharedHandleText.data(),
+                                static_cast<DWORD>(sharedHandleText.size()), &bytesWritten, nullptr);
     CloseHandle(pipeWrite);
     if (!sent || bytesWritten != remoteHandleText.size()) {
-        std::wcerr << L"FAIL: sending duplicated handle to child failed. Error=" << GetLastError() << L"\n";
+        std::wcerr << L"FAIL: sending legacy DXGI shared-handle token to child failed. Error=" << GetLastError() << L"\n";
         TerminateProcess(process.hProcess, 21);
         CloseHandle(process.hThread);
         CloseHandle(process.hProcess);
-        CloseHandle(sharedHandle);
-        return false;
+                return false;
     }
 
     ResumeThread(process.hThread);
@@ -347,13 +287,12 @@ bool runCrossProcessSharedTextureProbe()
     }
 
     CloseHandle(process.hProcess);
-    CloseHandle(sharedHandle);
-    if (waitResult != WAIT_OBJECT_0 || childExitCode != 0) {
+        if (waitResult != WAIT_OBJECT_0 || childExitCode != 0) {
         std::wcerr << L"FAIL: child shared-texture probe exit code=" << childExitCode << L"\n";
         return false;
     }
 
-    std::wcout << L"PASS: cross-process D3D11 NT-handle sharing and keyed-mutex synchronization.\n";
+    std::wcout << L"PASS: cross-process D3D11 legacy DXGI shared-handle transport.\n";
     return true;
 }
 
@@ -525,7 +464,7 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
     description.SampleDesc.Count = 1;
     description.Usage = D3D11_USAGE_DEFAULT;
     description.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
-    description.MiscFlags = D3D11_RESOURCE_MISC_SHARED_NTHANDLE | D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX;
+    description.MiscFlags = D3D11_RESOURCE_MISC_SHARED;
 
     ComPtr<ID3D11Texture2D> texture;
     HRESULT hr = producerDevice->CreateTexture2D(&description, nullptr, &texture);
@@ -534,38 +473,19 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
         return false;
     }
 
-    ComPtr<IDXGIResource1> dxgiResource;
+    ComPtr<IDXGIResource> dxgiResource;
     hr = texture.As(&dxgiResource);
     if (FAILED(hr)) {
-        printHr(L"Query IDXGIResource1 for ANGLE shared texture", hr);
+        printHr(L"Query IDXGIResource for ANGLE shared texture", hr);
         return false;
     }
 
+    // EGL_ANGLE_d3d_share_handle_client_buffer maps to OpenSharedResource
+    // in this pinned ANGLE build. Use its legacy DXGI share-handle contract.
     HANDLE sharedHandle = nullptr;
-    hr = dxgiResource->CreateSharedHandle(
-        nullptr, DXGI_SHARED_RESOURCE_READ | DXGI_SHARED_RESOURCE_WRITE, nullptr, &sharedHandle);
+    hr = dxgiResource->GetSharedHandle(&sharedHandle);
     if (FAILED(hr) || !sharedHandle) {
-        printHr(L"Create ANGLE-importable NT shared handle", hr);
-        return false;
-    }
-
-    ComPtr<IDXGIKeyedMutex> keyedMutex;
-    hr = texture.As(&keyedMutex);
-    if (FAILED(hr)) {
-        CloseHandle(sharedHandle);
-        printHr(L"Query keyed mutex for ANGLE shared texture", hr);
-        return false;
-    }
-    hr = keyedMutex->AcquireSync(0, 5000);
-    if (FAILED(hr)) {
-        CloseHandle(sharedHandle);
-        printHr(L"Acquire initial ANGLE shared-texture key", hr);
-        return false;
-    }
-    hr = keyedMutex->ReleaseSync(1);
-    if (FAILED(hr)) {
-        CloseHandle(sharedHandle);
-        printHr(L"Release initial ANGLE shared-texture key", hr);
+        printHr(L"Get legacy ANGLE-importable DXGI shared handle", hr);
         return false;
     }
 
@@ -584,8 +504,7 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
                       static_cast<EGLint>(configs.size()), &configCount) || configCount < 1) {
         std::wcerr << L"FAIL: eglChooseConfig for an ES2 pbuffer failed; EGL error=0x"
                    << std::hex << getError() << std::dec << L"\n";
-        CloseHandle(sharedHandle);
-        return false;
+                return false;
     }
 
     // EGL_NATIVE_VISUAL_ID is an EGL-native visual identifier, not guaranteed
@@ -640,16 +559,14 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
     }
     if (!config || !surface) {
         std::wcerr << L"FAIL: no ES2 pbuffer config accepted the BGRA8 NT shared D3D11 handle.\n";
-        CloseHandle(sharedHandle);
-        return false;
+                return false;
     }
 
     if (!bindApi(EGL_OPENGL_ES_API_VALUE)) {
         std::wcerr << L"FAIL: eglBindAPI(OpenGL ES) failed; EGL error=0x"
                    << std::hex << getError() << std::dec << L"\n";
         destroySurface(display, surface);
-        CloseHandle(sharedHandle);
-        return false;
+                return false;
     }
 
     const EGLint contextAttributes[] = { EGL_CONTEXT_CLIENT_VERSION_VALUE, 2, EGL_NONE_VALUE };
@@ -658,8 +575,7 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
         std::wcerr << L"FAIL: eglCreateContext failed; EGL error=0x"
                    << std::hex << getError() << std::dec << L"\n";
         destroySurface(display, surface);
-        CloseHandle(sharedHandle);
-        return false;
+                return false;
     }
 
     bool rendered = false;
@@ -747,15 +663,13 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
     destroyContext(display, context);
 
     if (!rendered) {
-        CloseHandle(sharedHandle);
-        return false;
+                return false;
     }
 
     hr = keyedMutex->AcquireSync(1, 10000);
     if (FAILED(hr)) {
         printHr(L"Acquire ANGLE-rendered texture for D3D verification", hr);
-        CloseHandle(sharedHandle);
-        return false;
+                return false;
     }
 
     D3D11_TEXTURE2D_DESC stagingDescription = description;
@@ -768,8 +682,7 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
     hr = producerDevice->CreateTexture2D(&stagingDescription, nullptr, &staging);
     if (FAILED(hr)) {
         keyedMutex->ReleaseSync(2);
-        CloseHandle(sharedHandle);
-        printHr(L"Create ANGLE render verification staging texture", hr);
+                printHr(L"Create ANGLE render verification staging texture", hr);
         return false;
     }
 
@@ -778,8 +691,7 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
     hr = producerContext->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &mapped);
     if (FAILED(hr)) {
         keyedMutex->ReleaseSync(2);
-        CloseHandle(sharedHandle);
-        printHr(L"Map ANGLE-rendered shared D3D texture", hr);
+                printHr(L"Map ANGLE-rendered shared D3D texture", hr);
         return false;
     }
 
@@ -793,8 +705,7 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
                << static_cast<unsigned>(pixel[(kHeight / 2) * mapped.RowPitch + (kWidth / 2) * 4 + 3]) << L"\n";
     producerContext->Unmap(staging.Get(), 0);
     const HRESULT releaseResult = keyedMutex->ReleaseSync(2);
-    CloseHandle(sharedHandle);
-    if (FAILED(releaseResult)) {
+        if (FAILED(releaseResult)) {
         printHr(L"Release ANGLE shared-texture verification key", releaseResult);
         return false;
     }
@@ -928,7 +839,7 @@ int wmain(int argc, wchar_t** argv)
         char handleText[64]{};
         DWORD bytesRead = 0;
         if (!ReadFile(pipeHandle, handleText, sizeof(handleText) - 1, &bytesRead, nullptr) || !bytesRead) {
-            std::wcerr << L"FAIL: child could not receive its duplicated shared handle. Error=" << GetLastError() << L"\n";
+            std::wcerr << L"FAIL: child could not receive its legacy DXGI shared-handle token. Error=" << GetLastError() << L"\n";
             CloseHandle(pipeHandle);
             return 9;
         }

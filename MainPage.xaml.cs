@@ -300,8 +300,10 @@ public sealed partial class MainPage : Page
             tab.NativeHandle = IntPtr.Zero;
             if (nativeHandle != IntPtr.Zero)
             {
+                CrashLogger.Log($"Tab close: retiring WebKit handle 0x{nativeHandle:X}.");
                 _nativeTabIds.TryRemove(nativeHandle, out _);
                 RetireNativeView(nativeHandle);
+                CrashLogger.Log($"Tab close: native handle 0x{nativeHandle:X} detached and hidden.");
             }
 
             if (item is not null)
@@ -311,7 +313,9 @@ public sealed partial class MainPage : Page
                 _requestedTabFaviconUrls.Remove(tab.Id);
                 TabStrip.TabItems.Remove(item);
             }
+            CrashLogger.Log("Tab close: removing tab from the WinUI TabView and view model.");
             ViewModel.CloseTab(tab);
+            CrashLogger.Log("Tab close: view-model removal completed.");
 
             if (ViewModel.Tabs.Count == 0)
             {
@@ -324,7 +328,9 @@ public sealed partial class MainPage : Page
                 TabStrip.SelectedItem = FindTabItem(ViewModel.SelectedTab);
 
             UpdateClosableTabs();
+            CrashLogger.Log("Tab close: laying out remaining native WebKit views.");
             LayoutNativeViews();
+            CrashLogger.Log("Tab close: remaining view layout completed.");
             _ = ViewModel.SaveAsync();
         }
         finally
@@ -627,7 +633,7 @@ public sealed partial class MainPage : Page
 
     private void ShowHistoryPage()
     {
-        var root = new Grid { Padding = new Thickness(28, 24, 28, 20), RowSpacing = 16 };
+        var root = new Grid { Padding = new Thickness(28, 24, 28, 20), RowSpacing = 16, Transitions = CreateEntranceTransitions() };
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
@@ -666,6 +672,7 @@ public sealed partial class MainPage : Page
                 var content = new StackPanel { Spacing = 3 };
                 content.Children.Add(new TextBlock { Text = title, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis });
                 content.Children.Add(new TextBlock { Text = entry.Url, Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"], TextTrimming = TextTrimming.CharacterEllipsis });
+                content.Children.Add(new TextBlock { Text = entry.VisitedAt.ToLocalTime().ToString("g"), Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorTertiaryBrush"], FontSize = 12 });
                 var open = new Button { HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch, Padding = new Thickness(12, 9, 12, 9), Content = content };
                 AutomationProperties.SetName(open, "Open " + title);
                 open.Click += (_, _) => { CloseInternalPage(); NavigateTo(entry.Url); };
@@ -685,7 +692,7 @@ public sealed partial class MainPage : Page
             var confirmation = new ContentDialog { Title = "Clear browsing history?", Content = "This removes the browsing history saved by Blaze. Cookies and website data are not affected.", PrimaryButtonText = "Clear history", CloseButtonText = "Cancel", DefaultButton = ContentDialogButton.Close, XamlRoot = XamlRoot };
             if (await ShowDialogAsync(confirmation) == ContentDialogResult.Primary) { await ViewModel.ClearHistoryAsync(); RefreshEntries(); }
         };
-        var done = new Button { Content = "Done", IsDefault = true };
+        var done = new Button { Content = "Done" };
         done.Click += (_, _) => CloseInternalPage();
         footer.Children.Add(clear); footer.Children.Add(done);
         Grid.SetRow(footer, 3); root.Children.Add(footer);
@@ -1028,7 +1035,6 @@ public sealed partial class MainPage : Page
                 WebKitNative.SetJavaScriptEnabled(tab.NativeHandle, javaScript.IsOn);
                 WebKitNative.SetLoadsImagesAutomatically(tab.NativeHandle, images.IsOn);
             }
-            ApplyTabBarPlacement();
             ApplyTabBarPlacement();
             CloseInternalPage();
             await ViewModel.SaveAsync();

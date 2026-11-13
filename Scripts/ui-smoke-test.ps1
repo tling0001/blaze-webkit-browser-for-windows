@@ -194,7 +194,7 @@ namespace BlazeSmoke {
         Invoke-WinAppChecked @('ui', 'wait-for', 'AddressBox', '--value', $loadingUri, '-t', '3000', '-w', [string]$mainWindow.hwnd) | Out-Null
         Invoke-WinAppChecked @('ui', 'send-keys', 'enter', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
         Invoke-WinAppChecked @('ui', 'send-keys', 'ctrl+w', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
-        Start-Sleep -Milliseconds 300
+        Start-Sleep -Milliseconds 1200
         if (-not (Get-Process -Id $appProcessId -ErrorAction SilentlyContinue)) {
             throw "Blaze exited while closing a loading native tab $iteration."
         }
@@ -223,7 +223,7 @@ namespace BlazeSmoke {
         }
         if (-not $tabLoaded) { throw "Native tab $iteration did not load before close." }
         Invoke-WinAppChecked @('ui', 'send-keys', 'ctrl+w', '--via', 'send-input', '-a', [string]$appProcessId) | Out-Null
-        Start-Sleep -Milliseconds 250
+        Start-Sleep -Milliseconds 1200
         if (-not (Get-Process -Id $appProcessId -ErrorAction SilentlyContinue)) {
             throw "Blaze exited while closing native tab $iteration."
         }

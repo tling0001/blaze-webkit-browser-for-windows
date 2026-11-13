@@ -1,6 +1,23 @@
 # Blaze release notes
 
-## [1.1.33] - 2026-11-12
+## [1.1.34] - 2026-11-12
+
+### ANGLE shared-texture interop
+- Use legacy DXGI shared handles from IDXGIResource::GetSharedHandle for EGL_ANGLE_d3d_share_handle_client_buffer. The pinned ANGLE implementation opens these through ID3D11Device::OpenSharedResource; NT handles from CreateSharedHandle require OpenSharedResource1 and left the imported EGL surface transparent.
+- Remove the keyed mutex from the first transport test so it isolates handle import and GPU visibility; flush the producer and ANGLE contexts before readback.
+- Pass the legacy DXGI share-handle token through the child-process pipe without DuplicateHandle or CloseHandle, which are invalid for this non-NT handle type.
+
+### Tab-close diagnostics
+- Avoid calling WKPageStopLoading synchronously in the tab-close event; keep the native view retained during the quiescence window and let WKRelease perform final page shutdown.
+- Add managed lifecycle markers around native retirement, view-model removal and remaining-view layout.
+- Extend close stress-test waits beyond the deferred release window so delayed crashes cannot pass the smoke test.
+
+### WinUI content pages
+- Remove an unsupported Button.IsDefault initializer caught by the 1.1.33 build.
+- Add timestamps to history entries and entrance transitions that use the app's Reduce Motion-aware transition factory.
+
+### Validation
+- Run 199 proved that the imported EGL surface could be created but still rendered transparent black. The legacy-handle correction is a targeted hypothesis based on the pinned ANGLE OpenSharedResource implementation; it must pass the GPU pixel probe before the experimental renderer is considered usable.
 
 ### Browser content pages
 - Move History and Settings into the browser's WinUI content viewport, alongside the native start page, instead of showing History as a flyout and Settings as a modal page.

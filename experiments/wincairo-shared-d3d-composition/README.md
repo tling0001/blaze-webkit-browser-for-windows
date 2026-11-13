@@ -27,9 +27,9 @@ Use a D3D11 shared texture as the process boundary and a WinUI composition swap 
 
 ### Important design checks
 
-- The pinned ANGLE runtime exposes both D3D texture-client-buffer and D3D shared-handle client-buffer extensions; the P1 probe validates the latter using an NT shared handle from a second device on the same adapter.
+- The pinned ANGLE runtime exposes both D3D texture-client-buffer and D3D shared-handle client-buffer extensions; the P1 probe validates the latter using an legacy DXGI shared handle from a second device on the same adapter.
 - Cross-process D3D resource sharing requires compatible adapter/device configuration and correct handle duplication/security.
-- Avoid relying on a legacy shared-handle API if the pinned ANGLE import path only supports it; compare NT-handle support and keyed mutex/fence requirements.
+- Avoid relying on a legacy shared-handle API if the pinned ANGLE import path only supports it; compare legacy-handle support and keyed mutex/fence requirements.
 - A direct composition swap chain is preferable to copying into a second texture if WinUI can consume the same device/resource. If the UI and GPU process devices cannot share a swap chain, use a shared texture ring and one GPU-side copy, never CPU readback.
 - Do not call `eglSwapBuffers` on a dummy HWND and assume it updates the WinUI visual. The scene must render into the exported resource itself.
 

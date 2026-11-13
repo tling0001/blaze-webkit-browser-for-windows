@@ -721,7 +721,9 @@ void WB_PrepareDestroy(WB_VIEW_HANDLE view)
         if (page) {
             WKPageSetPageUIClient(page, nullptr);
             WKPageSetPageNavigationClient(page, nullptr);
-            WKPageStopLoading(page);
+            // Avoid stopping navigation synchronously from the WinUI tab-close
+            // event. WKRelease performs final page shutdown after the view has
+            // remained alive through the native quiescence delay.
         }
     }
 }
