@@ -235,8 +235,16 @@ namespace BlazeSmoke {
     }
     $results.Add([ordered]@{ name = 'Three native WebKit tabs navigated and closed without terminating the browser'; status = 'PASS' })
 
-    # Open Settings while WebKit content is loaded. The modal must be present
-    # in the WinUI automation tree; the app hides its owned WebKit HWND first.
+    # History is an in-content WinUI page, not a toolbar flyout.
+    Invoke-WinAppChecked @('ui', 'invoke', 'HistoryButton', '-w', [string]$mainWindow.hwnd) | Out-Null
+    Invoke-WinAppChecked @('ui', 'wait-for', 'HistorySearchBox', '-t', '3000', '-w', [string]$mainWindow.hwnd) | Out-Null
+    Invoke-WinAppChecked @('ui', 'wait-for', 'HistoryEntries', '-t', '3000', '-w', [string]$mainWindow.hwnd) | Out-Null
+    Invoke-WinAppChecked @('ui', 'invoke', 'HistoryBackButton', '-w', [string]$mainWindow.hwnd) | Out-Null
+    Invoke-WinAppChecked @('ui', 'wait-for', 'HistorySearchBox', '--gone', '-t', '3000', '-w', [string]$mainWindow.hwnd) | Out-Null
+    $results.Add([ordered]@{ name = 'History opens as an in-content page and closes back to the selected tab'; status = 'PASS' })
+
+    # Open Settings while WebKit content is loaded. The in-content page must replace
+    # the native WebKit surface in the same browser viewport.
     Invoke-WinAppChecked @('ui', 'invoke', 'SettingsButton', '-a', [string]$appProcessId) | Out-Null
     Invoke-WinAppChecked @('ui', 'wait-for', 'SettingsGeneralTab', '-t', '5000', '-a', [string]$appProcessId) | Out-Null
     Invoke-WinAppChecked @('ui', 'wait-for', 'StartupNewTab', '-t', '3000', '-a', [string]$appProcessId) | Out-Null
