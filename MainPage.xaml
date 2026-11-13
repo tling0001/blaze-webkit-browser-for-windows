@@ -16,6 +16,7 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="2" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
@@ -49,9 +50,21 @@
             <Button x:Name="SettingsButton" Grid.Column="9" Width="36" Height="36" Padding="0" Click="OnSettingsClick" AutomationProperties.Name="Open browser settings" AutomationProperties.AutomationId="SettingsButton" ToolTipService.ToolTip="Settings"><FontIcon Glyph="&#xE713;" FontSize="16" FontFamily="{ThemeResource SymbolThemeFontFamily}" /></Button>
         </Grid>
 
+        <ProgressBar
+            x:Name="PageLoadingProgress"
+            Grid.Row="2"
+            Height="2"
+            Minimum="0"
+            Maximum="100"
+            Value="0"
+            IsIndeterminate="False"
+            IsHitTestVisible="False"
+            AutomationProperties.Name="Page loading progress"
+            AutomationProperties.AutomationId="PageLoadingProgress" />
+
         <Grid
             x:Name="BrowserSurface"
-            Grid.Row="2"
+            Grid.Row="3"
             Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
             SizeChanged="OnBrowserSurfaceSizeChanged">
             <InfoBar
