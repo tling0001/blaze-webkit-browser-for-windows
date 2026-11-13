@@ -37,6 +37,8 @@ public sealed partial class MainPage : Page
     private static readonly WebKitNative.JavaScriptDialogCallback JavaScriptDialogCallbackHandler = OnNativeJavaScriptDialog;
     private static readonly WebKitNative.NewPageCallback NewPageCallbackHandler = OnNativeNewPage;
     private static readonly WebKitNative.ClosePageCallback ClosePageCallbackHandler = OnNativePageClose;
+    private const string SafariMacOS27UserAgent =
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.2 Safari/605.1.15";
 
     private readonly Dictionary<TabViewItem, BrowserTab> _tabItems = [];
     private readonly Dictionary<string, TabHeaderVisuals> _tabHeaders = [];
@@ -424,10 +426,20 @@ public sealed partial class MainPage : Page
         args.Handled = true;
     }
 
-    private void OnBackClick(object sender, RoutedEventArgs e) => ViewModel.GoBackCommand.Execute(null);
-    private void OnForwardClick(object sender, RoutedEventArgs e) => ViewModel.GoForwardCommand.Execute(null);
+    private void OnBackClick(object sender, RoutedEventArgs e)
+    {
+        CrashLogger.Log("Toolbar action: Back.");
+        ViewModel.GoBackCommand.Execute(null);
+    }
+
+    private void OnForwardClick(object sender, RoutedEventArgs e)
+    {
+        CrashLogger.Log("Toolbar action: Forward.");
+        ViewModel.GoForwardCommand.Execute(null);
+    }
     private void OnReloadStopClick(object sender, RoutedEventArgs e)
     {
+        CrashLogger.Log("Toolbar action: Reload/Stop.");
         if (ViewModel.SelectedTab?.IsLoading == true) ViewModel.StopCommand.Execute(null);
         else ViewModel.ReloadCommand.Execute(null);
         UpdateLoadingButton();
@@ -435,6 +447,7 @@ public sealed partial class MainPage : Page
 
     private void OnHomeClick(object sender, RoutedEventArgs e)
     {
+        CrashLogger.Log("Toolbar action: Home.");
         NavigateTo(ViewModel.Settings.HomePage);
     }
 
@@ -442,6 +455,10 @@ public sealed partial class MainPage : Page
     {
         _isAddressEditing = false;
         NavigateTo(args.QueryText);
+        sender.IsSuggestionListOpen = false;
+        // Move focus out of the address control after Enter, as in a desktop browser.
+        App.DispatcherQueue.TryEnqueue(() =>
+            FocusManager.TryMoveFocus(FocusNavigationDirection.Next));
     }
 
     private void OnAddressGotFocus(object sender, RoutedEventArgs e) => _isAddressEditing = true;
@@ -562,7 +579,11 @@ public sealed partial class MainPage : Page
         AreOpenCloseAnimationsEnabled = AreAnimationsEnabled
     };
 
-    private async void OnSettingsClick(object sender, RoutedEventArgs e) => await ShowSettingsDialogAsync();
+    private async void OnSettingsClick(object sender, RoutedEventArgs e)
+    {
+        CrashLogger.Log("Toolbar action: Settings.");
+        await ShowSettingsDialogAsync();
+    }
 
     private TransitionCollection CreateEntranceTransitions()
     {
@@ -1003,13 +1024,17 @@ public sealed partial class MainPage : Page
         iconHost.Children.Add(fallback);
         iconHost.Children.Add(favicon);
 
-        var header = new Grid { Width = 112, ColumnSpacing = 6, VerticalAlignment = VerticalAlignment.Center };
-        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        Grid.SetColumn(iconHost, 0);
-        Grid.SetColumn(title, 1);
-        header.Children.Add(title);
+        title.MaxWidth = 220;
+        var header = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        // Let TabView size each tab from its content, with only a generous
+        // title cap. This restores its normal adaptive tab-width behaviour.
         header.Children.Add(iconHost);
+        header.Children.Add(title);
 
         var item = new TabViewItem
         {
@@ -1092,6 +1117,7 @@ public sealed partial class MainPage : Page
         WebKitNative.SetPermissionCallback(tab.NativeHandle, PermissionCallbackHandler, callbackHandle);
         WebKitNative.SetJavaScriptDialogCallback(tab.NativeHandle, JavaScriptDialogCallbackHandler, callbackHandle);
         WebKitNative.SetPopupCallbacks(tab.NativeHandle, NewPageCallbackHandler, ClosePageCallbackHandler, callbackHandle);
+        WebKitNative.SetUserAgent(tab.NativeHandle, SafariMacOS27UserAgent);
     }
 
     private void DestroyNativeView(BrowserTab tab)
