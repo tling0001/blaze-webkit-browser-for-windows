@@ -106,7 +106,7 @@ jobs:
           foreach ($required in @('WebKit2.dll','WebKitHost.dll')) { if (-not (Test-Path (Join-Path $runtime $required))) { throw "Staged runtime is missing $required." } }
           Write-Host "Validated SDK $sdkTag ($actualHash); staged $((Get-ChildItem $runtime -File -Recurse).Count) runtime files."
 
-      - name: Build and run WinCairo shared-D3D capability probe
+      - name: Build and run WinCairo ANGLE shared-texture import/render probe
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -118,7 +118,7 @@ jobs:
           if (-not $probe) { throw 'The shared-D3D capability probe executable was not produced.' }
           $env:PATH = (Join-Path $PWD 'webkit-runtime') + ';' + $env:PATH
           & $probe.FullName
-          if ($LASTEXITCODE -ne 0) { throw 'The cross-process D3D11 shared-texture capability probe failed.' }
+          if ($LASTEXITCODE -ne 0) { throw 'The ANGLE EGL D3D11 texture import/render or cross-process shared-texture probe failed.' }
 
       - name: Set up .NET 10
         uses: actions/setup-dotnet@v5
