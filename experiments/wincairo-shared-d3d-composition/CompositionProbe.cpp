@@ -294,7 +294,8 @@ bool runCrossProcessSharedTextureProbe()
         + std::to_wstring(reinterpret_cast<uintptr_t>(pipeRead)) + L" "
         + std::to_wstring(adapterLuid.HighPart) + L" "
         + std::to_wstring(adapterLuid.LowPart) + L" "
-        + std::to_wstring(static_cast<int>(driverType));
+        + std::to_wstring(static_cast<int>(
+            driverType == D3D_DRIVER_TYPE_HARDWARE ? D3D_DRIVER_TYPE_UNKNOWN : driverType));
     std::vector<wchar_t> mutableCommandLine(commandLine.begin(), commandLine.end());
     mutableCommandLine.push_back(L'\0');
 
@@ -454,6 +455,8 @@ void probeAngleRuntime()
     const char* candidates[] = {
         "EGL_ANGLE_d3d_texture_client_buffer",
         "EGL_ANGLE_d3d_share_handle_client_buffer",
+        "EGL_ANGLE_surface_d3d_texture_2d_share_handle",
+        "EGL_ANGLE_device_d3d",
         "EGL_ANGLE_keyed_mutex",
         "EGL_EXT_device_query"
     };
