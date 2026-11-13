@@ -27,7 +27,7 @@ Use a D3D11 shared texture as the process boundary and a WinUI composition swap 
 
 ### Important design checks
 
-- ANGLE EGL D3D texture import is a hypothesis to verify against the pinned ANGLE revision, not a confirmed supported WebKit path yet.
+- The pinned ANGLE runtime exposes both D3D texture-client-buffer and D3D shared-handle client-buffer extensions; the P1 probe validates the latter using an NT shared handle from a second device on the same adapter.
 - Cross-process D3D resource sharing requires compatible adapter/device configuration and correct handle duplication/security.
 - Avoid relying on a legacy shared-handle API if the pinned ANGLE import path only supports it; compare NT-handle support and keyed mutex/fence requirements.
 - A direct composition swap chain is preferable to copying into a second texture if WinUI can consume the same device/resource. If the UI and GPU process devices cannot share a swap chain, use a shared texture ring and one GPU-side copy, never CPU readback.
@@ -42,8 +42,8 @@ Use a D3D11 shared texture as the process boundary and a WinUI composition swap 
 - Duplicates the shared handle into a child process, transferring the child-local handle value through an inherited anonymous pipe (not by assuming HANDLE values are global).
 - Opens the texture on a second D3D11 device on the same adapter, synchronizes with the keyed mutex, and verifies a known pixel pattern.
 - Queries the D3D11 device actually owned by the initialized ANGLE EGL display.
-- Creates a BGRA8 D3D11 texture on that exact device, satisfying `EGL_ANGLE_d3d_texture_client_buffer`'s same-device requirement.
-- Imports the `ID3D11Texture2D` directly with `eglCreatePbufferFromClientBuffer(EGL_D3D_TEXTURE_ANGLE)`.
+- Creates a BGRA8 NT-shared D3D11 texture on a second device on the same adapter, so ANGLE must open a real cross-device shared resource rather than receive a same-device texture pointer.
+- Creates an NT shared handle from the producer texture and imports it with `eglCreatePbufferFromClientBuffer(EGL_D3D_TEXTURE_2D_SHARE_HANDLE_ANGLE)`, exercising ANGLE's `OpenSharedResource` / `OpenSharedResource1` path.
 - Creates an OpenGL ES 2 context, clears the imported pbuffer to a known RGBA color, calls `glFinish`, and unbinds the EGL surface.
 - Reads the texture back through a D3D11 staging resource and verifies the resulting BGRA pixel values. This readback is diagnostic-only and is not used by the proposed renderer.
 
