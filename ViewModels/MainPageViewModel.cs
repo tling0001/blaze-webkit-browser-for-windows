@@ -82,7 +82,9 @@ public partial class MainPageViewModel : ObservableObject
             _permissionIndex[permission.Origin] = permission;
         }
 
-        var session = await ReadAsync<SessionState>("session.json");
+        var session = Settings.StartupBehavior == StartupBehavior.ContinueSession
+            ? await ReadAsync<SessionState>("session.json")
+            : null;
         if (session?.TabUrls is { Count: > 0 })
         {
             var migrateLegacySingleGoogleTab = !Settings.HomePageCustomized

@@ -42,6 +42,8 @@ public sealed partial class MainPage : Page
 
     private readonly Dictionary<TabViewItem, BrowserTab> _tabItems = [];
     private readonly Dictionary<string, TabHeaderVisuals> _tabHeaders = [];
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<IntPtr, string> _nativeTabIds = new();
+    private readonly HashSet<string> _closingTabIds = [];
     private readonly Dictionary<string, string> _requestedTabFaviconUrls = [];
     private readonly FaviconCache _faviconCache = new();
     private readonly HashSet<IntPtr> _pendingPopups = [];
@@ -264,16 +266,17 @@ public sealed partial class MainPage : Page
             CloseBrowserTab(tab);
     }
 
-    private void CloseNativeTab(IntPtr nativeHandle)
+    private void CloseNativeTab(IntPtr nativeHandle, string tabId)
     {
-        if (nativeHandle == IntPtr.Zero)
+        if (nativeHandle == IntPtr.Zero || string.IsNullOrEmpty(tabId))
             return;
         if (_pendingPopups.Remove(nativeHandle))
         {
             WebKitNative.Destroy(nativeHandle);
             return;
         }
-        var tab = ViewModel.Tabs.FirstOrDefault(candidate => candidate.NativeHandle == nativeHandle);
+        var tab = ViewModel.Tabs.FirstOrDefault(candidate =>
+            candidate.Id == tabId && candidate.NativeHandle == nativeHandle);
         if (tab is not null)
             CloseBrowserTab(tab);
     }
@@ -281,11 +284,17 @@ public sealed partial class MainPage : Page
     private void CloseBrowserTab(BrowserTab tab)
     {
         CrashLogger.Log("Tab action: Close tab.");
-        if (!ViewModel.Tabs.Contains(tab))
+        if (!ViewModel.Tabs.Contains(tab) || !_closingTabIds.Add(tab.Id))
             return;
 
         var item = FindTabItem(tab);
-        DestroyNativeView(tab);
+        var nativeHandle = tab.NativeHandle;
+        tab.NativeHandle = IntPtr.Zero;
+        if (nativeHandle != IntPtr.Zero)
+        {
+            _nativeTabIds.TryRemove(nativeHandle, out _);
+            WebKitNative.Destroy(nativeHandle);
+        }
         if (item is not null)
         {
             _tabItems.Remove(item);
@@ -307,6 +316,7 @@ public sealed partial class MainPage : Page
 
         UpdateClosableTabs();
         LayoutNativeViews();
+        _closingTabIds.Remove(tab.Id);
         _ = ViewModel.SaveAsync();
     }
 
@@ -324,6 +334,7 @@ public sealed partial class MainPage : Page
         // native start-page URL used by ordinary new tabs.
         var tab = ViewModel.AddTab("about:blank");
         tab.NativeHandle = nativeHandle;
+        _nativeTabIds[nativeHandle] = tab.Id;
         var item = AddTabItem(tab);
         ConfigureNativeView(tab);
         TabStrip.SelectedItem = item;
@@ -770,7 +781,21 @@ public sealed partial class MainPage : Page
         AutomationProperties.SetAutomationId(popupHandling, "PopupHandlingMode");
         AutomationProperties.SetName(popupHandling, "Pop-up windows");
 
+        var startupBehavior = new RadioButtons { Header = "When Blaze starts" };
+        var startupNewTab = new RadioButton { Content = "Open a new tab" };
+        var startupContinue = new RadioButton { Content = "Continue where you left off" };
+        AutomationProperties.SetAutomationId(startupNewTab, "StartupNewTab");
+        AutomationProperties.SetAutomationId(startupContinue, "StartupContinueSession");
+        AutomationProperties.SetName(startupNewTab, "Open a new tab on launch");
+        AutomationProperties.SetName(startupContinue, "Continue where you left off on launch");
+        startupBehavior.Items.Add(startupNewTab);
+        startupBehavior.Items.Add(startupContinue);
+        startupBehavior.SelectedIndex = ViewModel.Settings.StartupBehavior == StartupBehavior.NewTab ? 0 : 1;
+        AutomationProperties.SetAutomationId(startupBehavior, "StartupBehavior");
+        AutomationProperties.SetName(startupBehavior, "Startup behavior");
+
         var generalPanel = new StackPanel { Spacing = 14, MinWidth = 420, Padding = new Thickness(12) };
+        generalPanel.Children.Add(startupBehavior);
         generalPanel.Children.Add(position);
         generalPanel.Children.Add(homePage);
         generalPanel.Children.Add(searchEngine);
@@ -895,6 +920,9 @@ public sealed partial class MainPage : Page
         if (result != ContentDialogResult.Primary)
             return;
 
+        ViewModel.Settings.StartupBehavior = startupBehavior.SelectedIndex == 0
+            ? StartupBehavior.NewTab
+            : StartupBehavior.ContinueSession;
         ViewModel.Settings.TabBarAboveToolbar = position.SelectedIndex == 0;
         ViewModel.Settings.HomePageCustomized = !string.IsNullOrWhiteSpace(homePage.Text);
         ViewModel.Settings.HomePage = ViewModel.Settings.HomePageCustomized
@@ -1065,8 +1093,9 @@ public sealed partial class MainPage : Page
     {
         try
         {
-            if (GCHandle.FromIntPtr(userData).Target is MainPage page)
-                App.DispatcherQueue.TryEnqueue(() => page.CloseNativeTab(nativeHandle));
+            if (GCHandle.FromIntPtr(userData).Target is MainPage page
+                && page._nativeTabIds.TryGetValue(nativeHandle, out var tabId))
+                App.DispatcherQueue.TryEnqueue(() => page.CloseNativeTab(nativeHandle, tabId));
         }
         catch
         {
@@ -1235,6 +1264,7 @@ public sealed partial class MainPage : Page
             tab.NativeHandle = WebKitNative.Create(App.WindowHandle, x, y, Math.Max(1, width), Math.Max(1, height), tab.Url);
             if (tab.NativeHandle == IntPtr.Zero)
                 throw new InvalidOperationException("WKViewCreate did not return a native view.");
+            _nativeTabIds[tab.NativeHandle] = tab.Id;
             ConfigureNativeView(tab);
             CrashLogger.Log($"Created native WebKit view in owned popup host. Host HWND={WebKitNative.GetHostWindow(tab.NativeHandle):X}; child HWND={WebKitNative.GetWindow(tab.NativeHandle):X}; owner={App.WindowHandle:X}; bounds={x},{y},{width},{height}.");
             WebKitNative.SetJavaScriptEnabled(tab.NativeHandle, ViewModel.Settings.JavaScriptEnabled);
@@ -1247,8 +1277,10 @@ public sealed partial class MainPage : Page
         {
             if (tab.NativeHandle != IntPtr.Zero)
             {
-                WebKitNative.Destroy(tab.NativeHandle);
+                var failedHandle = tab.NativeHandle;
                 tab.NativeHandle = IntPtr.Zero;
+                _nativeTabIds.TryRemove(failedHandle, out _);
+                WebKitNative.Destroy(failedHandle);
             }
             _engineAvailable = false;
             EngineError.Message = $"The pinned WinCairo runtime failed to initialize: {ex.Message}";
@@ -1273,8 +1305,10 @@ public sealed partial class MainPage : Page
     {
         if (tab.NativeHandle == IntPtr.Zero)
             return;
-        WebKitNative.Destroy(tab.NativeHandle);
+        var nativeHandle = tab.NativeHandle;
         tab.NativeHandle = IntPtr.Zero;
+        _nativeTabIds.TryRemove(nativeHandle, out _);
+        WebKitNative.Destroy(nativeHandle);
     }
 
     private void LayoutNativeViews()

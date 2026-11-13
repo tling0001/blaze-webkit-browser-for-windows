@@ -15,6 +15,12 @@ public enum PopupHandlingMode
     AlwaysDeny
 }
 
+public enum StartupBehavior
+{
+    NewTab,
+    ContinueSession
+}
+
 public sealed class BrowserSettings
 {
     public const string NativeStartPageUrl = "blaze://home";
@@ -23,6 +29,7 @@ public sealed class BrowserSettings
     public bool LoadImagesAutomatically { get; set; } = true;
     public bool ReduceMotion { get; set; } = false;
     public PopupHandlingMode PopupHandlingMode { get; set; } = PopupHandlingMode.Ask;
+    public StartupBehavior StartupBehavior { get; set; } = StartupBehavior.ContinueSession;
     public string HomePage { get; set; } = NativeStartPageUrl;
     public bool HomePageCustomized { get; set; }
     public BrowserSearchEngine SearchEngine { get; set; } = BrowserSearchEngine.Google;

@@ -1,5 +1,20 @@
 # Blaze release notes
 
+## [1.1.29] - 2026-11-13
+
+### Tab stability
+- Make tab close idempotent and clear the managed native handle before destroying its WebKit view.
+- Track native-handle-to-tab identity so delayed WebKit close callbacks cannot accidentally target a different tab after a handle is reused.
+- Detach WebKit page clients before releasing the view and serialize shared WebKit engine reference-count changes.
+
+### Startup behavior
+- Add a General setting to open a new tab at launch or restore the previous tab session.
+- Preserve the existing continue-session behavior as the default for upgraded installations.
+
+### ANGLE shared-texture probe
+- Select EGL pbuffer configs by testing the actual NT shared-handle import rather than comparing EGL_NATIVE_VISUAL_ID to a DXGI_FORMAT enum.
+- Report each candidate config and EGL error when the pinned ANGLE runtime rejects an import.
+
 ## [1.1.28] - 2026-11-13
 
 ### WebKit GPU composition experiment

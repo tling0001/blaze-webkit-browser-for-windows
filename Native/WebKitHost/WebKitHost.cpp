@@ -28,6 +28,7 @@
 #include <cmath>
 #include <commctrl.h>
 #include <mutex>
+#include <atomic>
 #include <cwchar>
 #include <filesystem>
 #include <new>
@@ -115,9 +116,11 @@ WKWebsiteDataStoreRef sharedDataStore = nullptr;
 WKContextRef sharedContext = nullptr;
 WKPreferencesRef sharedPreferences = nullptr;
 unsigned activeViewCount = 0;
+std::mutex sharedEngineMutex;
 
 void releaseSharedEngine()
 {
+    std::lock_guard<std::mutex> lock(sharedEngineMutex);
     if (activeViewCount > 0)
         --activeViewCount;
     if (activeViewCount != 0)
@@ -184,6 +187,7 @@ bool configurePersistentWebsiteDataStore(WKWebsiteDataStoreConfigurationRef conf
 
 bool acquireSharedEngine()
 {
+    std::lock_guard<std::mutex> lock(sharedEngineMutex);
     if (!sharedDataStore || !sharedContext || !sharedPreferences) {
         auto storeConfiguration = WKWebsiteDataStoreConfigurationCreate();
         auto contextConfiguration = WKContextConfigurationCreate();
@@ -701,6 +705,15 @@ void WB_Destroy(WB_VIEW_HANDLE view)
     if (view->hostWindow && IsWindow(view->hostWindow))
         ShowWindow(view->hostWindow, SW_HIDE);
     if (view->view) {
+        // Detach WebKit client callbacks before releasing the page. This keeps
+        // close/navigation callbacks from re-entering the managed tab teardown
+        // path while the owning WB_VIEW is being destroyed.
+        auto page = WKViewGetPage(view->view);
+        if (page) {
+            WKPageSetPageUIClient(page, nullptr);
+            WKPageSetPageNavigationClient(page, nullptr);
+            WKPageStopLoading(page);
+        }
         WKViewSetIsInWindow(view->view, false);
         WKRelease(view->view);
         view->view = nullptr;

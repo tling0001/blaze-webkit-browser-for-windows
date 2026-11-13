@@ -417,6 +417,7 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
     constexpr EGLint EGL_BLUE_SIZE_VALUE = 0x3022;
     constexpr EGLint EGL_ALPHA_SIZE_VALUE = 0x3021;
     constexpr EGLint EGL_NATIVE_VISUAL_ID_VALUE = 0x302E;
+    constexpr EGLint EGL_CONFIG_ID_VALUE = 0x3028;
     constexpr EGLint EGL_WIDTH_VALUE = 0x3057;
     constexpr EGLint EGL_HEIGHT_VALUE = 0x3056;
     constexpr EGLint EGL_OPENGL_ES_API_VALUE = 0x30A0;
@@ -567,18 +568,39 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
         return false;
     }
 
+    // EGL_NATIVE_VISUAL_ID is an EGL-native visual identifier, not guaranteed
+    // to be the numeric DXGI_FORMAT value on ANGLE's D3D11 backend. Probe each
+    // otherwise-compatible ES2 pbuffer config by attempting the actual shared
+    // handle import; this is the authoritative compatibility test.
+    const EGLint surfaceAttributes[] = {
+        EGL_WIDTH_VALUE, static_cast<EGLint>(kWidth),
+        EGL_HEIGHT_VALUE, static_cast<EGLint>(kHeight),
+        EGL_NONE_VALUE
+    };
     EGLConfig config = nullptr;
+    EGLSurface surface = nullptr;
     for (EGLint index = 0; index < configCount; ++index) {
+        const auto candidate = configs[static_cast<size_t>(index)];
         EGLint nativeVisualId = 0;
-        if (getConfigAttrib(display, configs[static_cast<size_t>(index)],
-                            EGL_NATIVE_VISUAL_ID_VALUE, &nativeVisualId)
-            && nativeVisualId == static_cast<EGLint>(DXGI_FORMAT_B8G8R8A8_UNORM)) {
-            config = configs[static_cast<size_t>(index)];
+        EGLint configId = 0;
+        getConfigAttrib(display, candidate, EGL_NATIVE_VISUAL_ID_VALUE, &nativeVisualId);
+        getConfigAttrib(display, candidate, EGL_CONFIG_ID_VALUE, &configId);
+        auto candidateSurface = createPbuffer(display, EGL_D3D_TEXTURE_2D_SHARE_HANDLE_ANGLE_VALUE,
+                                              sharedHandle, candidate, surfaceAttributes);
+        if (candidateSurface) {
+            config = candidate;
+            surface = candidateSurface;
+            std::wcout << L"ANGLE shared-handle import selected EGL config " << configId
+                       << L" (native visual id " << nativeVisualId << L").\n";
             break;
         }
+        const auto error = getError();
+        std::wcout << L"ANGLE shared-handle import rejected EGL config " << configId
+                   << L" (native visual id " << nativeVisualId << L", EGL error=0x"
+                   << std::hex << error << std::dec << L").\n";
     }
-    if (!config) {
-        std::wcerr << L"FAIL: ANGLE has no ES2 pbuffer config matching DXGI_FORMAT_B8G8R8A8_UNORM.\n";
+    if (!config || !surface) {
+        std::wcerr << L"FAIL: no ES2 pbuffer config accepted the BGRA8 NT shared D3D11 handle.\n";
         CloseHandle(sharedHandle);
         return false;
     }
@@ -586,6 +608,7 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
     if (!bindApi(EGL_OPENGL_ES_API_VALUE)) {
         std::wcerr << L"FAIL: eglBindAPI(OpenGL ES) failed; EGL error=0x"
                    << std::hex << getError() << std::dec << L"\n";
+        destroySurface(display, surface);
         CloseHandle(sharedHandle);
         return false;
     }
@@ -595,21 +618,7 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
     if (!context) {
         std::wcerr << L"FAIL: eglCreateContext failed; EGL error=0x"
                    << std::hex << getError() << std::dec << L"\n";
-        CloseHandle(sharedHandle);
-        return false;
-    }
-
-    const EGLint surfaceAttributes[] = {
-        EGL_WIDTH_VALUE, static_cast<EGLint>(kWidth),
-        EGL_HEIGHT_VALUE, static_cast<EGLint>(kHeight),
-        EGL_NONE_VALUE
-    };
-    EGLSurface surface = createPbuffer(display, EGL_D3D_TEXTURE_2D_SHARE_HANDLE_ANGLE_VALUE,
-                                       sharedHandle, config, surfaceAttributes);
-    if (!surface) {
-        std::wcerr << L"FAIL: eglCreatePbufferFromClientBuffer(EGL_D3D_TEXTURE_2D_SHARE_HANDLE_ANGLE) failed; EGL error=0x"
-                   << std::hex << getError() << std::dec << L"\n";
-        destroyContext(display, context);
+        destroySurface(display, surface);
         CloseHandle(sharedHandle);
         return false;
     }
