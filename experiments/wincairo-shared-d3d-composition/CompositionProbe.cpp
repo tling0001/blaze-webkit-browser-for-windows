@@ -513,12 +513,12 @@ int wmain(int argc, wchar_t** argv)
         char handleText[64]{};
         DWORD bytesRead = 0;
         if (!ReadFile(pipeHandle, handleText, sizeof(handleText) - 1, &bytesRead, nullptr) || !bytesRead) {
-            std::wcerr << L"FAIL: child could not receive its duplicated shared handle. Error=" << GetLastError() << L"\\n";
+            std::wcerr << L"FAIL: child could not receive its duplicated shared handle. Error=" << GetLastError() << L"\n";
             CloseHandle(pipeHandle);
             return 9;
         }
         CloseHandle(pipeHandle);
-        handleText[bytesRead] = '\\0';
+        handleText[bytesRead] = '\0';
         const auto rawHandle = static_cast<uintptr_t>(_strtoui64(handleText, nullptr, 10));
         LUID luid{};
         luid.HighPart = static_cast<LONG>(_wcstoui64(argv[3], nullptr, 10));
