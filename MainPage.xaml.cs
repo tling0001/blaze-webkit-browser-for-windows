@@ -247,6 +247,7 @@ public sealed partial class MainPage : Page
 
     private void OnAddTabButtonClick(TabView sender, object args)
     {
+        CrashLogger.Log("Tab action: Add tab.");
         var tab = ViewModel.AddTab();
         var item = AddTabItem(tab);
         TabStrip.SelectedItem = item;
@@ -257,6 +258,7 @@ public sealed partial class MainPage : Page
 
     private void OnTabCloseRequested(TabView sender, TabViewTabCloseRequestedEventArgs args)
     {
+        CrashLogger.Log("Tab action: Close requested.");
         if (args.Tab is TabViewItem item && _tabItems.TryGetValue(item, out var tab))
             CloseBrowserTab(tab);
     }
@@ -277,6 +279,7 @@ public sealed partial class MainPage : Page
 
     private void CloseBrowserTab(BrowserTab tab)
     {
+        CrashLogger.Log("Tab action: Close tab.");
         if (!ViewModel.Tabs.Contains(tab))
             return;
 
@@ -385,6 +388,7 @@ public sealed partial class MainPage : Page
 
     private void OnTabSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        CrashLogger.Log("Tab action: Selection changed.");
         if (TabStrip.SelectedItem is not TabViewItem item || !_tabItems.TryGetValue(item, out var tab))
             return;
 
@@ -453,6 +457,7 @@ public sealed partial class MainPage : Page
 
     private void OnAddressQuerySubmitted(AutoSuggestBox sender, AutoSuggestBoxQuerySubmittedEventArgs args)
     {
+        CrashLogger.Log("Address action: Submit navigation.");
         _isAddressEditing = false;
         NavigateTo(args.QueryText);
         sender.IsSuggestionListOpen = false;
@@ -499,6 +504,7 @@ public sealed partial class MainPage : Page
 
     private async void OnBookmarkClick(object sender, RoutedEventArgs e)
     {
+        CrashLogger.Log("Toolbar action: Toggle bookmark.");
         ViewModel.ToggleBookmark(ViewModel.SelectedTab);
         await ViewModel.SaveAsync();
         UpdateBookmarkButton();
@@ -506,6 +512,7 @@ public sealed partial class MainPage : Page
 
     private void OnBookmarksClick(object sender, RoutedEventArgs e)
     {
+        CrashLogger.Log("Toolbar action: Open bookmarks.");
         var flyout = CreateMenuFlyout();
         if (ViewModel.Bookmarks.Count == 0)
             flyout.Items.Add(new MenuFlyoutItem { Text = "No saved bookmarks yet", IsEnabled = false });
@@ -524,6 +531,7 @@ public sealed partial class MainPage : Page
 
     private void OnHistoryClick(object sender, RoutedEventArgs e)
     {
+        CrashLogger.Log("Toolbar action: Open history.");
         var flyout = CreateMenuFlyout();
         if (ViewModel.History.Count == 0)
             flyout.Items.Add(new MenuFlyoutItem { Text = "No browsing history yet", IsEnabled = false });
@@ -546,6 +554,7 @@ public sealed partial class MainPage : Page
 
     private void OnDownloadsClick(object sender, RoutedEventArgs e)
     {
+        CrashLogger.Log("Toolbar action: Open downloads.");
         var flyout = CreateMenuFlyout();
         if (ViewModel.Downloads.Count == 0)
             flyout.Items.Add(new MenuFlyoutItem { Text = "No downloads yet", IsEnabled = false });
