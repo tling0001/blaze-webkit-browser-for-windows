@@ -1,5 +1,16 @@
 # Blaze release notes
 
+## [1.1.30] - 2026-11-13
+
+### Native tab lifetime regression coverage
+- Make managed tab-close guards exception-safe and keep the browser's original native page alive through repeated tab churn.
+- Extend the Windows Release smoke test to create, navigate and close three native WebKit tabs, checking that Blaze remains alive and the original page remains selected.
+- Verify that both startup behavior choices are exposed in the Settings UI automation tree.
+
+### ANGLE EGL diagnostics
+- Read a diagnostic GLES pixel from the imported pbuffer, call eglSwapBuffers, and log the producer device's mapped BGRA pixel.
+- Separate a GLES render mismatch from an EGL presentation/flush or D3D shared-resource visibility mismatch.
+
 ## [1.1.29] - 2026-11-13
 
 ### Tab stability

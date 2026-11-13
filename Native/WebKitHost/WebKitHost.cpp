@@ -28,7 +28,6 @@
 #include <cmath>
 #include <commctrl.h>
 #include <mutex>
-#include <atomic>
 #include <cwchar>
 #include <filesystem>
 #include <new>

@@ -287,37 +287,53 @@ public sealed partial class MainPage : Page
         if (!ViewModel.Tabs.Contains(tab) || !_closingTabIds.Add(tab.Id))
             return;
 
-        var item = FindTabItem(tab);
-        var nativeHandle = tab.NativeHandle;
-        tab.NativeHandle = IntPtr.Zero;
-        if (nativeHandle != IntPtr.Zero)
+        try
         {
-            _nativeTabIds.TryRemove(nativeHandle, out _);
-            WebKitNative.Destroy(nativeHandle);
-        }
-        if (item is not null)
-        {
-            _tabItems.Remove(item);
-            _tabHeaders.Remove(tab.Id);
-            _requestedTabFaviconUrls.Remove(tab.Id);
-            TabStrip.TabItems.Remove(item);
-        }
-        ViewModel.CloseTab(tab);
+            var item = FindTabItem(tab);
+            var nativeHandle = tab.NativeHandle;
+            // Clear identity before WB_Destroy: native teardown can trigger a
+            // delayed WebKit close callback, which must never close a reused handle.
+            tab.NativeHandle = IntPtr.Zero;
+            if (nativeHandle != IntPtr.Zero)
+            {
+                _nativeTabIds.TryRemove(nativeHandle, out _);
+                try
+                {
+                    WebKitNative.Destroy(nativeHandle);
+                }
+                catch (Exception exception)
+                {
+                    CrashLogger.LogException("Native WebKit view destruction failed while closing a tab.", exception);
+                }
+            }
 
-        if (ViewModel.Tabs.Count == 0)
-        {
-            var replacement = ViewModel.AddTab();
-            var replacementItem = AddTabItem(replacement);
-            TabStrip.SelectedItem = replacementItem;
-            EnsureNativeView(replacement);
-        }
-        else if (ViewModel.SelectedTab is not null)
-            TabStrip.SelectedItem = FindTabItem(ViewModel.SelectedTab);
+            if (item is not null)
+            {
+                _tabItems.Remove(item);
+                _tabHeaders.Remove(tab.Id);
+                _requestedTabFaviconUrls.Remove(tab.Id);
+                TabStrip.TabItems.Remove(item);
+            }
+            ViewModel.CloseTab(tab);
 
-        UpdateClosableTabs();
-        LayoutNativeViews();
-        _closingTabIds.Remove(tab.Id);
-        _ = ViewModel.SaveAsync();
+            if (ViewModel.Tabs.Count == 0)
+            {
+                var replacement = ViewModel.AddTab();
+                var replacementItem = AddTabItem(replacement);
+                TabStrip.SelectedItem = replacementItem;
+                EnsureNativeView(replacement);
+            }
+            else if (ViewModel.SelectedTab is not null)
+                TabStrip.SelectedItem = FindTabItem(ViewModel.SelectedTab);
+
+            UpdateClosableTabs();
+            LayoutNativeViews();
+            _ = ViewModel.SaveAsync();
+        }
+        finally
+        {
+            _closingTabIds.Remove(tab.Id);
+        }
     }
 
     private void AttachPopupTab(IntPtr nativeHandle)

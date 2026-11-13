@@ -434,6 +434,7 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
     using EglCreateContext = EGLContext (WINAPI*)(EGLDisplay, EGLConfig, EGLContext, const EGLint*);
     using EglCreatePbufferFromClientBuffer = EGLSurface (WINAPI*)(EGLDisplay, EGLint, void*, EGLConfig, const EGLint*);
     using EglMakeCurrent = EGLBoolean (WINAPI*)(EGLDisplay, EGLSurface, EGLSurface, EGLContext);
+    using EglSwapBuffers = EGLBoolean (WINAPI*)(EGLDisplay, EGLSurface);
     using EglDestroySurface = EGLBoolean (WINAPI*)(EGLDisplay, EGLSurface);
     using EglDestroyContext = EGLBoolean (WINAPI*)(EGLDisplay, EGLContext);
     using EglGetError = EGLint (WINAPI*)();
@@ -441,6 +442,7 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
     using GlClearColor = void (WINAPI*)(float, float, float, float);
     using GlClear = void (WINAPI*)(unsigned int);
     using GlFinish = void (WINAPI*)();
+    using GlReadPixels = void (WINAPI*)(int, int, int, int, unsigned int, unsigned int, void*);
 
     auto egl = [&](const char* name) { return getProcAddress(name); };
     auto chooseConfig = reinterpret_cast<EglChooseConfig>(egl("eglChooseConfig"));
@@ -449,6 +451,7 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
     auto createContext = reinterpret_cast<EglCreateContext>(egl("eglCreateContext"));
     auto createPbuffer = reinterpret_cast<EglCreatePbufferFromClientBuffer>(egl("eglCreatePbufferFromClientBuffer"));
     auto makeCurrent = reinterpret_cast<EglMakeCurrent>(egl("eglMakeCurrent"));
+    auto swapBuffers = reinterpret_cast<EglSwapBuffers>(egl("eglSwapBuffers"));
     auto destroySurface = reinterpret_cast<EglDestroySurface>(egl("eglDestroySurface"));
     auto destroyContext = reinterpret_cast<EglDestroyContext>(egl("eglDestroyContext"));
     auto getError = reinterpret_cast<EglGetError>(egl("eglGetError"));
@@ -456,10 +459,11 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
     auto glClearColor = reinterpret_cast<GlClearColor>(egl("glClearColor"));
     auto glClear = reinterpret_cast<GlClear>(egl("glClear"));
     auto glFinish = reinterpret_cast<GlFinish>(egl("glFinish"));
+    auto glReadPixels = reinterpret_cast<GlReadPixels>(egl("glReadPixels"));
 
     if (!chooseConfig || !getConfigAttrib || !bindApi || !createContext || !createPbuffer || !makeCurrent
-        || !destroySurface || !destroyContext || !getError
-        || !glViewport || !glClearColor || !glClear || !glFinish) {
+        || !swapBuffers || !destroySurface || !destroyContext || !getError
+        || !glViewport || !glClearColor || !glClear || !glFinish || !glReadPixels) {
         std::wcerr << L"FAIL: ANGLE EGL/GL entry points required for D3D shared-handle import are unavailable.\n";
         return false;
     }
@@ -624,13 +628,35 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
     }
 
     bool rendered = false;
+    bool glPixelMatches = false;
     if (makeCurrent(display, surface, surface, context)) {
         glViewport(0, 0, static_cast<int>(kWidth), static_cast<int>(kHeight));
-        // The expected BGRA8 bytes after this RGBA clear are { 191, 64, 32, 255 }.
+        // RGBA clear; D3D11 BGRA8 should expose { 191, 64, 32, 255 }.
         glClearColor(0.125f, 0.25f, 0.75f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT_VALUE);
         glFinish();
-        rendered = true;
+
+        constexpr unsigned char expectedRgba[4] = { 32, 64, 191, 255 };
+        unsigned char glPixel[4]{};
+        glReadPixels(static_cast<int>(kWidth / 2), static_cast<int>(kHeight / 2),
+                     1, 1, 0x1908 /* GL_RGBA */, 0x1401 /* GL_UNSIGNED_BYTE */, glPixel);
+        glFinish();
+        glPixelMatches = std::equal(std::begin(expectedRgba), std::end(expectedRgba), glPixel);
+        std::wcout << L"GLES center pixel RGBA: "
+                   << static_cast<unsigned>(glPixel[0]) << L", "
+                   << static_cast<unsigned>(glPixel[1]) << L", "
+                   << static_cast<unsigned>(glPixel[2]) << L", "
+                   << static_cast<unsigned>(glPixel[3])
+                   << (glPixelMatches ? L" (PASS)" : L" (MISMATCH)") << L"\n";
+
+        // eglSwapBuffers is the EGL presentation/flush boundary for this
+        // client-buffer pbuffer; glFinish alone only completes GL commands.
+        if (swapBuffers(display, surface)) {
+            rendered = true;
+        } else {
+            std::wcerr << L"FAIL: eglSwapBuffers for imported shared-handle pbuffer failed; EGL error=0x"
+                       << std::hex << getError() << std::dec << L"\n";
+        }
     } else {
         std::wcerr << L"FAIL: eglMakeCurrent for the imported D3D shared handle failed; EGL error=0x"
                    << std::hex << getError() << std::dec << L"\n";
@@ -684,6 +710,11 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
     constexpr unsigned char expected[4] = { 191, 64, 32, 255 };
     const auto* pixel = static_cast<const unsigned char*>(mapped.pData);
     const bool matches = std::equal(std::begin(expected), std::end(expected), pixel);
+    std::wcout << L"Producer D3D11 center pixel BGRA: "
+               << static_cast<unsigned>(pixel[(kHeight / 2) * mapped.RowPitch + (kWidth / 2) * 4 + 0]) << L", "
+               << static_cast<unsigned>(pixel[(kHeight / 2) * mapped.RowPitch + (kWidth / 2) * 4 + 1]) << L", "
+               << static_cast<unsigned>(pixel[(kHeight / 2) * mapped.RowPitch + (kWidth / 2) * 4 + 2]) << L", "
+               << static_cast<unsigned>(pixel[(kHeight / 2) * mapped.RowPitch + (kWidth / 2) * 4 + 3]) << L"\n";
     producerContext->Unmap(staging.Get(), 0);
     const HRESULT releaseResult = keyedMutex->ReleaseSync(2);
     CloseHandle(sharedHandle);
@@ -691,8 +722,12 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
         printHr(L"Release ANGLE shared-texture verification key", releaseResult);
         return false;
     }
+    if (!glPixelMatches) {
+        std::wcerr << L"FAIL: GLES readback did not contain the requested clear color.\n";
+        return false;
+    }
     if (!matches) {
-        std::wcerr << L"FAIL: D3D11 producer did not observe the pixel pattern rendered by ANGLE EGL.\n";
+        std::wcerr << L"FAIL: D3D11 producer did not observe the ANGLE-rendered BGRA8 pixel pattern.\n";
         return false;
     }
 

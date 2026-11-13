@@ -182,10 +182,45 @@ namespace BlazeSmoke {
     }
     $results.Add([ordered]@{ name = 'Native WebKit content screenshot captured'; status = 'PASS'; detail = $contentScreenshot })
 
+    # Repeatedly create, navigate and close native WebKit tabs while retaining
+    # the original page. This exercises the exact lifetime path reported as
+    # intermittently crashing by users.
+    for ($iteration = 1; $iteration -le 3; $iteration++) {
+        $tabPage = Join-Path $env:TEMP ("blaze-close-smoke-" + [guid]::NewGuid().ToString('N') + '.html')
+        $tabTitle = "Blaze Close Smoke $iteration"
+        "<!doctype html><html><head><title>$tabTitle</title></head><body><h1>$tabTitle</h1></body></html>" |
+            Set-Content -LiteralPath $tabPage -Encoding utf8
+        Invoke-WinAppChecked @('ui', 'send-keys', 'ctrl+t', '--via', 'send-input', '-a', [string]$appProcessId) | Out-Null
+        $tabUri = ([Uri]$tabPage).AbsoluteUri
+        Invoke-WinAppChecked @('ui', 'send-keys', $tabUri, '--target', 'AddressBox', '--via', 'send-input', '-a', [string]$appProcessId) | Out-Null
+        Invoke-WinAppChecked @('ui', 'send-keys', 'enter', '--via', 'send-input', '-a', [string]$appProcessId) | Out-Null
+        $tabLoaded = $false
+        for ($attempt = 0; $attempt -lt 40; $attempt++) {
+            $tree = (Invoke-WinAppChecked @('ui', 'inspect', '--interactive', '--json', '-a', [string]$appProcessId)) -join [Environment]::NewLine
+            if ($tree.Contains($tabTitle)) { $tabLoaded = $true; break }
+            Start-Sleep -Milliseconds 250
+        }
+        if (-not $tabLoaded) { throw "Native tab $iteration did not load before close." }
+        Invoke-WinAppChecked @('ui', 'send-keys', 'ctrl+w', '--via', 'send-input', '-a', [string]$appProcessId) | Out-Null
+        Start-Sleep -Milliseconds 250
+        if (-not (Get-Process -Id $appProcessId -ErrorAction SilentlyContinue)) {
+            throw "Blaze exited while closing native tab $iteration."
+        }
+        $remainingTree = (Invoke-WinAppChecked @('ui', 'inspect', '--interactive', '--json', '-a', [string]$appProcessId)) -join [Environment]::NewLine
+        if (-not $remainingTree.Contains('Blaze WebKit Smoke')) {
+            throw "The original native page was not retained after closing tab $iteration."
+        }
+        Remove-Item -LiteralPath $tabPage -Force -ErrorAction SilentlyContinue
+    }
+    $results.Add([ordered]@{ name = 'Three native WebKit tabs navigated and closed without terminating the browser'; status = 'PASS' })
+
     # Open Settings while WebKit content is loaded. The modal must be present
     # in the WinUI automation tree; the app hides its owned WebKit HWND first.
     Invoke-WinAppChecked @('ui', 'invoke', 'SettingsButton', '-a', [string]$appProcessId) | Out-Null
     Invoke-WinAppChecked @('ui', 'wait-for', 'SettingsGeneralTab', '-t', '5000', '-a', [string]$appProcessId) | Out-Null
+    Invoke-WinAppChecked @('ui', 'wait-for', 'StartupNewTab', '-t', '3000', '-a', [string]$appProcessId) | Out-Null
+    Invoke-WinAppChecked @('ui', 'wait-for', 'StartupContinueSession', '-t', '3000', '-a', [string]$appProcessId) | Out-Null
+    $results.Add([ordered]@{ name = 'Startup behavior offers new-tab and continue-session options'; status = 'PASS' })
     $settingsScreenshot = Join-Path $ArtifactDirectory 'blaze-settings-over-webkit.png'
     Invoke-WinAppChecked @('ui', 'screenshot', '--capture-screen', '--output', $settingsScreenshot, '-w', [string]$mainWindow.hwnd) | Out-Null
     if (-not (Test-Path -LiteralPath $settingsScreenshot -PathType Leaf) -or (Get-Item -LiteralPath $settingsScreenshot).Length -eq 0) {
@@ -199,6 +234,8 @@ namespace BlazeSmoke {
     if ($smokePage -and (Test-Path -LiteralPath $smokePage)) {
         Remove-Item -LiteralPath $smokePage -Force -ErrorAction SilentlyContinue
     }
+    Get-ChildItem -LiteralPath $env:TEMP -Filter 'blaze-close-smoke-*.html' -File -ErrorAction SilentlyContinue |
+        Remove-Item -Force -ErrorAction SilentlyContinue
     if ($appProcess -and (Get-Process -Id $appProcess.Id -ErrorAction SilentlyContinue)) {
         Stop-Process -Id $appProcess.Id -Force -ErrorAction SilentlyContinue
         Wait-Process -Id $appProcess.Id -Timeout 10 -ErrorAction SilentlyContinue
