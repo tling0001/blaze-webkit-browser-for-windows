@@ -244,6 +244,8 @@ jobs:
           winapp find-api check-property UISettings AnimationsEnabled --json --project-dir .
           if ($LASTEXITCODE -ne 0) { throw 'Windows UISettings animation preference API verification failed.' }
           winapp find-api check-property FlyoutBase AreOpenCloseAnimationsEnabled --json --project-dir .
+          winapp find-api check-property ProgressBar Minimum Maximum Value IsIndeterminate --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'WinUI ProgressBar API verification failed.' }
           if ($LASTEXITCODE -ne 0) { throw 'Native WinUI FlyoutBase animation API verification failed.' }
           winapp find-api members AutomationProperties --filter SetAccessibilityView --json --project-dir .
           if ($LASTEXITCODE -ne 0) { throw 'WinUI AutomationProperties accessibility-view API verification failed.' }
