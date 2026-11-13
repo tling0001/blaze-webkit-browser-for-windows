@@ -412,6 +412,11 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
     constexpr EGLint EGL_PBUFFER_BIT_VALUE = 0x0001;
     constexpr EGLint EGL_RENDERABLE_TYPE_VALUE = 0x3040;
     constexpr EGLint EGL_OPENGL_ES2_BIT_VALUE = 0x0004;
+    constexpr EGLint EGL_BIND_TO_TEXTURE_RGBA_VALUE = 0x303B;
+    constexpr EGLint EGL_TEXTURE_FORMAT_VALUE = 0x3080;
+    constexpr EGLint EGL_TEXTURE_TARGET_VALUE = 0x3081;
+    constexpr EGLint EGL_TEXTURE_RGBA_VALUE = 0x305E;
+    constexpr EGLint EGL_TEXTURE_2D_VALUE = 0x305F;
     constexpr EGLint EGL_RED_SIZE_VALUE = 0x3024;
     constexpr EGLint EGL_GREEN_SIZE_VALUE = 0x3023;
     constexpr EGLint EGL_BLUE_SIZE_VALUE = 0x3022;
@@ -443,6 +448,7 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
     using GlClearColor = void (WINAPI*)(float, float, float, float);
     using GlClear = void (WINAPI*)(unsigned int);
     using GlFinish = void (WINAPI*)();
+    using GlFlush = void (WINAPI*)();
     using GlReadPixels = void (WINAPI*)(int, int, int, int, unsigned int, unsigned int, void*);
     using GlBindFramebuffer = void (WINAPI*)(unsigned int, unsigned int);
     using GlCheckFramebufferStatus = unsigned int (WINAPI*)(unsigned int);
@@ -464,6 +470,7 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
     auto glClearColor = reinterpret_cast<GlClearColor>(egl("glClearColor"));
     auto glClear = reinterpret_cast<GlClear>(egl("glClear"));
     auto glFinish = reinterpret_cast<GlFinish>(egl("glFinish"));
+    auto glFlush = reinterpret_cast<GlFlush>(egl("glFlush"));
     auto glReadPixels = reinterpret_cast<GlReadPixels>(egl("glReadPixels"));
     auto glBindFramebuffer = reinterpret_cast<GlBindFramebuffer>(egl("glBindFramebuffer"));
     auto glCheckFramebufferStatus = reinterpret_cast<GlCheckFramebufferStatus>(egl("glCheckFramebufferStatus"));
@@ -471,7 +478,7 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
 
     if (!chooseConfig || !getConfigAttrib || !bindApi || !createContext || !createPlainPbuffer || !createPbuffer || !makeCurrent
         || !swapBuffers || !destroySurface || !destroyContext || !getError
-        || !glViewport || !glClearColor || !glClear || !glFinish || !glReadPixels
+        || !glViewport || !glClearColor || !glClear || !glFinish || !glFlush || !glReadPixels
         || !glBindFramebuffer || !glCheckFramebufferStatus || !glGetError) {
         std::wcerr << L"FAIL: ANGLE EGL/GL entry points required for D3D shared-handle import are unavailable.\n";
         return false;
@@ -567,6 +574,7 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
         EGL_RENDERABLE_TYPE_VALUE, EGL_OPENGL_ES2_BIT_VALUE,
         EGL_RED_SIZE_VALUE, 8,
         EGL_GREEN_SIZE_VALUE, 8,
+        EGL_BIND_TO_TEXTURE_RGBA_VALUE, 1,
         EGL_BLUE_SIZE_VALUE, 8,
         EGL_ALPHA_SIZE_VALUE, 8,
         EGL_NONE_VALUE
@@ -585,9 +593,12 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
     // to be the numeric DXGI_FORMAT value on ANGLE's D3D11 backend. Probe each
     // otherwise-compatible ES2 pbuffer config by attempting the actual shared
     // handle import; this is the authoritative compatibility test.
+    // A shared-handle pbuffer must explicitly describe its texture binding.
     const EGLint surfaceAttributes[] = {
         EGL_WIDTH_VALUE, static_cast<EGLint>(kWidth),
         EGL_HEIGHT_VALUE, static_cast<EGLint>(kHeight),
+        EGL_TEXTURE_TARGET_VALUE, EGL_TEXTURE_2D_VALUE,
+        EGL_TEXTURE_FORMAT_VALUE, EGL_TEXTURE_RGBA_VALUE,
         EGL_NONE_VALUE
     };
     EGLConfig config = nullptr;
@@ -596,7 +607,7 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
         const auto candidate = configs[static_cast<size_t>(index)];
         EGLint nativeVisualId = 0;
         EGLint configId = 0;
-        EGLint red = 0, green = 0, blue = 0, alpha = 0, surfaceType = 0, renderableType = 0;
+        EGLint red = 0, green = 0, blue = 0, alpha = 0, surfaceType = 0, renderableType = 0, bindToTextureRgba = 0;
         getConfigAttrib(display, candidate, EGL_NATIVE_VISUAL_ID_VALUE, &nativeVisualId);
         getConfigAttrib(display, candidate, EGL_CONFIG_ID_VALUE, &configId);
         getConfigAttrib(display, candidate, EGL_RED_SIZE_VALUE, &red);
@@ -605,9 +616,11 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
         getConfigAttrib(display, candidate, EGL_ALPHA_SIZE_VALUE, &alpha);
         getConfigAttrib(display, candidate, EGL_SURFACE_TYPE_VALUE, &surfaceType);
         getConfigAttrib(display, candidate, EGL_RENDERABLE_TYPE_VALUE, &renderableType);
+        getConfigAttrib(display, candidate, EGL_BIND_TO_TEXTURE_RGBA_VALUE, &bindToTextureRgba);
         std::wcout << L"EGL candidate " << configId << L": RGBA=" << red << L"/" << green
                    << L"/" << blue << L"/" << alpha << L", surfaceType=0x" << std::hex
-                   << surfaceType << L", renderableType=0x" << renderableType << std::dec << L".\n";
+                   << surfaceType << L", renderableType=0x" << renderableType << std::dec
+                   << L", bindToTextureRGBA=" << bindToTextureRgba << L".\n";
         auto candidateSurface = createPbuffer(display, EGL_D3D_TEXTURE_2D_SHARE_HANDLE_ANGLE_VALUE,
                                               sharedHandle, candidate, surfaceAttributes);
         if (candidateSurface) {
@@ -658,6 +671,7 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
         glViewport(0, 0, static_cast<int>(kWidth), static_cast<int>(kHeight));
         glClearColor(0.125f, 0.25f, 0.75f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT_VALUE);
+        glFlush();
         glFinish();
         unsigned char baselinePixel[4]{};
         glReadPixels(static_cast<int>(kWidth / 2), static_cast<int>(kHeight / 2),
@@ -679,6 +693,7 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
             glViewport(0, 0, static_cast<int>(kWidth), static_cast<int>(kHeight));
             glClearColor(0.125f, 0.25f, 0.75f, 1.0f);
             glClear(GL_COLOR_BUFFER_BIT_VALUE);
+            glFlush();
             glFinish();
             unsigned char glPixel[4]{};
             glReadPixels(static_cast<int>(kWidth / 2), static_cast<int>(kHeight / 2),
@@ -693,6 +708,7 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
                        << static_cast<unsigned>(glPixel[2]) << L", "
                        << static_cast<unsigned>(glPixel[3])
                        << (glPixelMatches ? L" (PASS)" : L" (MISMATCH)") << L"\\n";
+            glFlush();
             glFinish();
             if (swapBuffers(display, surface) && glError == 0
                 && framebufferStatus == 0x8CD5 /* GL_FRAMEBUFFER_COMPLETE */) {

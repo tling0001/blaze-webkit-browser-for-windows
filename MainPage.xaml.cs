@@ -47,6 +47,7 @@ public sealed partial class MainPage : Page
     private readonly Dictionary<string, string> _requestedTabFaviconUrls = [];
     private readonly FaviconCache _faviconCache = new();
     private readonly HashSet<IntPtr> _pendingPopups = [];
+    private readonly HashSet<IntPtr> _pendingNativeDisposals = [];
     private readonly SemaphoreSlim _dialogGate = new(1, 1);
     private DispatcherQueueTimer? _stateTimer;
     private bool _initialized;
@@ -242,8 +243,10 @@ public sealed partial class MainPage : Page
         _stateTimer = null;
         _ = ViewModel.SaveAsync();
         foreach (var popup in _pendingPopups.ToArray())
-            WebKitNative.Destroy(popup);
+            DestroyNativeViewHandleImmediately(popup);
         _pendingPopups.Clear();
+        foreach (var pendingHandle in _pendingNativeDisposals.ToArray())
+            FinalizeNativeViewDisposal(pendingHandle);
         foreach (var tab in ViewModel.Tabs)
             DestroyNativeView(tab);
     }
@@ -272,7 +275,7 @@ public sealed partial class MainPage : Page
             return;
         if (_pendingPopups.Remove(nativeHandle))
         {
-            WebKitNative.Destroy(nativeHandle);
+            RetireNativeView(nativeHandle);
             return;
         }
         var tab = ViewModel.Tabs.FirstOrDefault(candidate =>
@@ -297,14 +300,7 @@ public sealed partial class MainPage : Page
             if (nativeHandle != IntPtr.Zero)
             {
                 _nativeTabIds.TryRemove(nativeHandle, out _);
-                try
-                {
-                    WebKitNative.Destroy(nativeHandle);
-                }
-                catch (Exception exception)
-                {
-                    CrashLogger.LogException("Native WebKit view destruction failed while closing a tab.", exception);
-                }
+                RetireNativeView(nativeHandle);
             }
 
             if (item is not null)
@@ -410,7 +406,7 @@ public sealed partial class MainPage : Page
         finally
         {
             if (_pendingPopups.Remove(nativeHandle))
-                WebKitNative.Destroy(nativeHandle);
+                RetireNativeView(nativeHandle);
         }
     }
 
@@ -1324,7 +1320,54 @@ public sealed partial class MainPage : Page
         var nativeHandle = tab.NativeHandle;
         tab.NativeHandle = IntPtr.Zero;
         _nativeTabIds.TryRemove(nativeHandle, out _);
-        WebKitNative.Destroy(nativeHandle);
+        DestroyNativeViewHandleImmediately(nativeHandle);
+    }
+
+    private void RetireNativeView(IntPtr nativeHandle)
+    {
+        if (nativeHandle == IntPtr.Zero || !_pendingNativeDisposals.Add(nativeHandle))
+            return;
+        try
+        {
+            WebKitNative.PrepareDestroy(nativeHandle);
+            CrashLogger.Log($"Prepared native WebKit view 0x{nativeHandle:X} for deferred destruction.");
+        }
+        catch (Exception exception)
+        {
+            CrashLogger.LogException("Native WebKit view preparation failed; attempting final release.", exception);
+        }
+        if (!App.DispatcherQueue.TryEnqueue(() => FinalizeNativeViewDisposal(nativeHandle)))
+            FinalizeNativeViewDisposal(nativeHandle);
+    }
+
+    private void FinalizeNativeViewDisposal(IntPtr nativeHandle)
+    {
+        if (!_pendingNativeDisposals.Remove(nativeHandle))
+            return;
+        try
+        {
+            WebKitNative.Destroy(nativeHandle);
+            CrashLogger.Log($"Finalized native WebKit view 0x{nativeHandle:X} after dispatcher deferral.");
+        }
+        catch (Exception exception)
+        {
+            CrashLogger.LogException("Native WebKit view final release failed.", exception);
+        }
+    }
+
+    private static void DestroyNativeViewHandleImmediately(IntPtr nativeHandle)
+    {
+        if (nativeHandle == IntPtr.Zero)
+            return;
+        try
+        {
+            WebKitNative.PrepareDestroy(nativeHandle);
+            WebKitNative.Destroy(nativeHandle);
+        }
+        catch (Exception exception)
+        {
+            CrashLogger.LogException("Immediate native WebKit view destruction failed.", exception);
+        }
     }
 
     private void LayoutNativeViews()

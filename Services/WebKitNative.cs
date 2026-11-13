@@ -14,6 +14,9 @@ internal static class WebKitNative
     [DllImport(Library, EntryPoint = "WB_Create", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Unicode)]
     internal static extern IntPtr Create(IntPtr parent, int x, int y, int width, int height, string initialUrl);
 
+    [DllImport(Library, EntryPoint = "WB_PrepareDestroy", CallingConvention = CallingConvention.Cdecl)]
+    internal static extern void PrepareDestroy(IntPtr view);
+
     [DllImport(Library, EntryPoint = "WB_Destroy", CallingConvention = CallingConvention.Cdecl)]
     internal static extern void Destroy(IntPtr view);
 

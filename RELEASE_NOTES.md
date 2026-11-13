@@ -1,5 +1,16 @@
 # Blaze release notes
 
+## [1.1.32] - 2026-11-14
+
+### Native tab stability
+- Split WebKit tab teardown into a prepare phase and a deferred final release on the next WinUI dispatcher turn, allowing pending native window work to drain after callbacks are detached and loading is stopped.
+- Forward WebKit-unhandled keyboard events to the owning WinUI window so browser shortcuts work while native page content has focus.
+- Extend the Windows smoke test to close tabs during navigation as well as after loading.
+
+### ANGLE shared-texture diagnostics
+- Require a texture-bindable RGBA EGL config and explicitly set EGL_TEXTURE_2D / EGL_TEXTURE_RGBA on the imported shared-handle pbuffer.
+- Flush GLES commands before verifying the D3D11 producer texture.
+
 ## [1.1.31] - 2026-11-13
 
 ### Build pipeline resilience

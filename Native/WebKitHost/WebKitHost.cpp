@@ -66,6 +66,7 @@ struct WB_VIEW {
     int height{};
     UINT dpi{};
     bool ownerSubclassInstalled{};
+    bool destroyPrepared{};
 };
 
 std::wstring fromWKString(WKStringRef value);
@@ -527,8 +528,16 @@ WKPageRef createNewPage(WKPageRef, WKPageConfigurationRef pageConfiguration,
 void closePage(WKPageRef, const void* clientInfo)
 {
     auto* view = const_cast<WB_VIEW*>(static_cast<const WB_VIEW*>(clientInfo));
-    if (view && view->closePageCallback)
+    if (view && !view->destroyPrepared && view->closePageCallback)
         view->closePageCallback(view, view->popupUserData);
+}
+
+void didNotHandleKeyEvent(WKPageRef, WKNativeEventPtr event, const void* clientInfo)
+{
+    auto* view = const_cast<WB_VIEW*>(static_cast<const WB_VIEW*>(clientInfo));
+    if (!view || view->destroyPrepared || !event || !view->parentWindow || !IsWindow(view->parentWindow))
+        return;
+    PostMessageW(view->parentWindow, event->message, event->wParam, event->lParam);
 }
 
 WB_VIEW_HANDLE createNativeView(HWND parent, int x, int y, int width, int height,
@@ -633,6 +642,7 @@ WB_VIEW_HANDLE createNativeView(HWND parent, int x, int y, int width, int height
     result->uiClient.base.clientInfo = result;
     result->uiClient.createNewPage = createNewPage;
     result->uiClient.close = closePage;
+    result->uiClient.didNotHandleKeyEvent = didNotHandleKeyEvent;
     result->uiClient.decidePolicyForGeolocationPermissionRequest = decideGeolocationPermission;
     result->uiClient.decidePolicyForNotificationPermissionRequest = decideNotificationPermission;
     result->uiClient.decidePolicyForUserMediaPermissionRequest = denyUserMediaPermission;
@@ -695,18 +705,18 @@ WB_VIEW_HANDLE WB_Create(HWND parent, int x, int y, int width, int height, const
     return result;
 }
 
-void WB_Destroy(WB_VIEW_HANDLE view)
+void WB_PrepareDestroy(WB_VIEW_HANDLE view)
 {
-    if (!view)
+    if (!view || view->destroyPrepared)
         return;
-    if (view->ownerSubclassInstalled && view->parentWindow && IsWindow(view->parentWindow))
+    view->destroyPrepared = true;
+    if (view->ownerSubclassInstalled && view->parentWindow && IsWindow(view->parentWindow)) {
         RemoveWindowSubclass(view->parentWindow, ownerWindowSubclass, ownerSubclassId(view));
+        view->ownerSubclassInstalled = false;
+    }
     if (view->hostWindow && IsWindow(view->hostWindow))
         ShowWindow(view->hostWindow, SW_HIDE);
     if (view->view) {
-        // Detach WebKit client callbacks before releasing the page. This keeps
-        // close/navigation callbacks from re-entering the managed tab teardown
-        // path while the owning WB_VIEW is being destroyed.
         auto page = WKViewGetPage(view->view);
         if (page) {
             WKPageSetPageUIClient(page, nullptr);
@@ -714,6 +724,15 @@ void WB_Destroy(WB_VIEW_HANDLE view)
             WKPageStopLoading(page);
         }
         WKViewSetIsInWindow(view->view, false);
+    }
+}
+
+void WB_Destroy(WB_VIEW_HANDLE view)
+{
+    if (!view)
+        return;
+    WB_PrepareDestroy(view);
+    if (view->view) {
         WKRelease(view->view);
         view->view = nullptr;
     }

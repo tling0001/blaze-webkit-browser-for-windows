@@ -182,9 +182,29 @@ namespace BlazeSmoke {
     }
     $results.Add([ordered]@{ name = 'Native WebKit content screenshot captured'; status = 'PASS'; detail = $contentScreenshot })
 
-    # Repeatedly create, navigate and close native WebKit tabs while retaining
-    # the original page. This exercises the exact lifetime path reported as
-    # intermittently crashing by users.
+    # Close pages while navigation is active to exercise teardown with outstanding work.
+    for ($iteration = 1; $iteration -le 3; $iteration++) {
+        Invoke-WinAppChecked @('ui', 'send-keys', 'ctrl+t', '--via', 'send-input', '-a', [string]$appProcessId) | Out-Null
+        $loadingPage = Join-Path $env:TEMP ("blaze-close-loading-" + [guid]::NewGuid().ToString('N') + '.html')
+        "<!doctype html><html><head><title>Blaze Loading Close $iteration</title></head><body>Closing during navigation.</body></html>" |
+            Set-Content -LiteralPath $loadingPage -Encoding utf8
+        $loadingUri = ([Uri]$loadingPage).AbsoluteUri
+        Invoke-WinAppChecked @('ui', 'send-keys', $loadingUri, '--target', 'AddressBox', '--via', 'send-input', '-a', [string]$appProcessId) | Out-Null
+        Invoke-WinAppChecked @('ui', 'wait-for', 'AddressBox', '--value', $loadingUri, '-t', '3000', '-a', [string]$appProcessId) | Out-Null
+        Invoke-WinAppChecked @('ui', 'send-keys', 'enter', '--via', 'send-input', '-a', [string]$appProcessId) | Out-Null
+        Invoke-WinAppChecked @('ui', 'send-keys', 'ctrl+w', '--via', 'send-input', '-a', [string]$appProcessId) | Out-Null
+        Start-Sleep -Milliseconds 300
+        if (-not (Get-Process -Id $appProcessId -ErrorAction SilentlyContinue)) {
+            throw "Blaze exited while closing a loading native tab $iteration."
+        }
+        $remainingTree = (Invoke-WinAppChecked @('ui', 'inspect', '--interactive', '--json', '-a', [string]$appProcessId)) -join [Environment]::NewLine
+        if (-not $remainingTree.Contains('Blaze WebKit Smoke')) {
+            throw "The original native page was not retained after closing loading tab $iteration."
+        }
+        Remove-Item -LiteralPath $loadingPage -Force -ErrorAction SilentlyContinue
+    }
+
+    # Repeatedly create, navigate and close loaded native tabs while retaining the original page.
     for ($iteration = 1; $iteration -le 3; $iteration++) {
         $tabPage = Join-Path $env:TEMP ("blaze-close-smoke-" + [guid]::NewGuid().ToString('N') + '.html')
         $tabTitle = "Blaze Close Smoke $iteration"
@@ -195,7 +215,7 @@ namespace BlazeSmoke {
         Invoke-WinAppChecked @('ui', 'send-keys', $tabUri, '--target', 'AddressBox', '--via', 'send-input', '-a', [string]$appProcessId) | Out-Null
         Invoke-WinAppChecked @('ui', 'send-keys', 'enter', '--via', 'send-input', '-a', [string]$appProcessId) | Out-Null
         $tabLoaded = $false
-        for ($attempt = 0; $attempt -lt 40; $attempt++) {
+        for ($attempt = 0; $attempt -lt 80; $attempt++) {
             $tree = (Invoke-WinAppChecked @('ui', 'inspect', '--interactive', '--json', '-a', [string]$appProcessId)) -join [Environment]::NewLine
             if ($tree.Contains($tabTitle)) { $tabLoaded = $true; break }
             Start-Sleep -Milliseconds 250
@@ -235,6 +255,8 @@ namespace BlazeSmoke {
         Remove-Item -LiteralPath $smokePage -Force -ErrorAction SilentlyContinue
     }
     Get-ChildItem -LiteralPath $env:TEMP -Filter 'blaze-close-smoke-*.html' -File -ErrorAction SilentlyContinue |
+        Remove-Item -Force -ErrorAction SilentlyContinue
+    Get-ChildItem -LiteralPath $env:TEMP -Filter 'blaze-close-loading-*.html' -File -ErrorAction SilentlyContinue |
         Remove-Item -Force -ErrorAction SilentlyContinue
     if ($appProcess -and (Get-Process -Id $appProcess.Id -ErrorAction SilentlyContinue)) {
         Stop-Process -Id $appProcess.Id -Force -ErrorAction SilentlyContinue
