@@ -437,12 +437,15 @@ constexpr wchar_t NativeSurfaceHostClass[] = L"Blaze.WebKit.NativeSurfaceHost";
 
 constexpr UINT_PTR NativeWebKitSubclassId = 0xB1A2E;
 LRESULT CALLBACK nativeWebKitWindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam,
-    UINT_PTR subclassId, DWORD_PTR)
+    UINT_PTR subclassId, DWORD_PTR ownerValue)
 {
     if (message == WM_MOUSEACTIVATE) {
-        // The WKView HWND is the hit-test target. Keep the WinUI owner active
-        // (and preserve Mica/title-bar treatment) while focusing WebKit input.
+        // SetFocus is required for WebKit keyboard input. It activates the
+        // owned popup, so immediately restore the real WinUI owner as foreground.
         SetFocus(window);
+        const auto owner = reinterpret_cast<HWND>(ownerValue);
+        if (owner && IsWindow(owner))
+            SetForegroundWindow(owner);
         return MA_NOACTIVATE;
     }
     if (message == WM_NCDESTROY)
@@ -454,9 +457,11 @@ LRESULT CALLBACK nativeSurfaceHostProc(HWND window, UINT message, WPARAM wParam,
 {
     if (message == WM_MOUSEACTIVATE) {
         const auto child = reinterpret_cast<HWND>(GetWindowLongPtrW(window, GWLP_USERDATA));
-        // Preserve the active WinUI top-level window and its Mica/title-bar
-        // treatment while transferring keyboard focus to the WebKit child.
+        const auto owner = GetWindow(window, GW_OWNER);
+        // Focus the WebKit child, then restore the WinUI owner as the active
+        // top-level window. This keeps page keyboard input and Mica together.
         if (child && IsWindow(child)) SetFocus(child);
+        if (owner && IsWindow(owner)) SetForegroundWindow(owner);
         return MA_NOACTIVATE;
     }
     if (message == WM_NCDESTROY) SetWindowLongPtrW(window, GWLP_USERDATA, 0);

@@ -1,3 +1,5 @@
+using CommunityToolkit.Mvvm.ComponentModel;
+
 namespace WebKitBrowser.Models;
 
 public enum BrowserSearchEngine
@@ -79,4 +81,25 @@ public sealed class SitePermissionEntry
 
 public sealed record StartPageShortcut(string Title, string Url, string Glyph, string AutomationId);
 
-public sealed record AddressSuggestion(string Title, string Detail, string TargetUrl, string Glyph);
+public sealed partial class AddressSuggestion : ObservableObject
+{
+    [ObservableProperty]
+    public partial string Title { get; set; }
+
+    [ObservableProperty]
+    public partial string Detail { get; set; }
+
+    [ObservableProperty]
+    public partial string TargetUrl { get; set; }
+
+    [ObservableProperty]
+    public partial string Glyph { get; set; }
+
+    public AddressSuggestion(string title, string detail, string targetUrl, string glyph)
+    {
+        Title = title;
+        Detail = detail;
+        TargetUrl = targetUrl;
+        Glyph = glyph;
+    }
+}

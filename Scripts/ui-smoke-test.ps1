@@ -153,6 +153,10 @@ namespace BlazeSmoke {
         [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
         [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extraInfo);
         [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetClassName(IntPtr hwnd, System.Text.StringBuilder className, int maxCount);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr hwnd, System.Text.StringBuilder title, int maxCount);
+        [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint processId);
+        [DllImport("user32.dll")] public static extern IntPtr GetWindow(IntPtr hwnd, uint command);
     }
 }
 '@
@@ -180,7 +184,14 @@ namespace BlazeSmoke {
     Start-Sleep -Milliseconds 200
     $foreground = [BlazeSmoke.Native]::GetForegroundWindow()
     if ($foreground -ne $mainHwnd) {
-        throw ("Clicking the WebKit page activated another top-level HWND (foreground=0x{0:X}, WinUI=0x{1:X}); Mica would lose its active state." -f $foreground.ToInt64(), $mainHwnd.ToInt64())
+        $className = [System.Text.StringBuilder]::new(256)
+        $windowTitle = [System.Text.StringBuilder]::new(256)
+        [void][BlazeSmoke.Native]::GetClassName($foreground, $className, $className.Capacity)
+        [void][BlazeSmoke.Native]::GetWindowText($foreground, $windowTitle, $windowTitle.Capacity)
+        [uint32]$foregroundPid = 0
+        [void][BlazeSmoke.Native]::GetWindowThreadProcessId($foreground, [ref]$foregroundPid)
+        $owner = [BlazeSmoke.Native]::GetWindow($foreground, 4) # GW_OWNER
+        throw ("Clicking the WebKit page activated HWND=0x{0:X} class='{1}' title='{2}' pid={3} owner=0x{4:X}; WinUI HWND=0x{5:X}." -f $foreground.ToInt64(), $className.ToString(), $windowTitle.ToString(), $foregroundPid, $owner.ToInt64(), $mainHwnd.ToInt64())
     }
     $results.Add([ordered]@{ name = 'WebKit clicks preserve the active WinUI/Mica window'; status = 'PASS' })
     $results.Add([ordered]@{ name = 'Native WebKit host is above the WinUI page surface'; status = 'PASS' })

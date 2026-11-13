@@ -402,8 +402,20 @@ bool presentWithDirectComposition(ID3D11Device* device, ID3D11DeviceContext* con
     ComPtr<ID3D11Texture2D> backBuffer;
     hr = swapChain->GetBuffer(0, IID_PPV_ARGS(&backBuffer));
     if (FAILED(hr)) return fail(L"Get DirectComposition swap-chain back buffer", hr);
+
+    ComPtr<IDXGIKeyedMutex> sourceMutex;
+    hr = source->QueryInterface(IID_PPV_ARGS(&sourceMutex));
+    if (FAILED(hr) || !sourceMutex)
+        return fail(L"Query keyed mutex for DirectComposition source", FAILED(hr) ? hr : E_NOINTERFACE);
+    hr = sourceMutex->AcquireSync(3, 10000);
+    if (hr != S_OK)
+        return fail(L"DirectComposition AcquireSync key 3", hr);
+
     context->CopyResource(backBuffer.Get(), source);
     context->Flush();
+    hr = sourceMutex->ReleaseSync(4);
+    if (hr != S_OK)
+        return fail(L"DirectComposition ReleaseSync key 4", hr);
     hr = swapChain->Present(1, 0);
     if (FAILED(hr)) return fail(L"Present ANGLE-rendered texture through DirectComposition", hr);
     hr = compositionDevice->Commit();
@@ -412,7 +424,7 @@ bool presentWithDirectComposition(ID3D11Device* device, ID3D11DeviceContext* con
     target->SetRoot(nullptr);
     compositionDevice->Commit();
     DestroyWindow(window);
-    std::wcout << L"PASS: DirectComposition presented the ANGLE-rendered D3D11 texture through a composition swap chain and visual (GPU copy only; no CPU pixel upload).\n";
+    std::wcout << L"PASS: DirectComposition acquired keyed-mutex key 3, copied the ANGLE-rendered D3D11 texture into a composition swap chain on the GPU, and released key 4 before Present (no CPU pixel upload).\n";
     return true;
 }
 

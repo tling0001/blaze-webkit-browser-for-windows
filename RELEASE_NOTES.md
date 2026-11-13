@@ -1,5 +1,21 @@
 # Blaze release notes
 
+## [1.1.40] - 2026-11-13
+
+### Experimental GPU renderer
+- Extend keyed-mutex ownership through the DirectComposition consumer: producer readback releases key 3, DirectComposition acquires key 3 for the GPU-only swap-chain copy, and releases key 4 before Present.
+- Require the DComp consumer to acquire the shared texture before copying; no unsynchronized read of the ANGLE-rendered resource is accepted.
+
+### Native WebKit activation
+- Restore the WinUI owner as foreground immediately after transferring focus to the WebKit HWND, preserving keyboard-focus intent while testing whether Mica remains active.
+- Expand smoke-test failure diagnostics to report the foreground HWND class, title, process, and owner.
+
+### Build quality
+- Make address suggestion items observable and restore explicit OneWay bindings, satisfying the WinUI analyzer without WMC1506 warnings.
+
+### Validation
+- Pending hosted Release build, warning scan, full keyed-mutex EGL/DComp probe, installer, and native-focus smoke test.
+
 ## [1.1.39] - 2026-11-13
 
 ### Experimental GPU renderer
