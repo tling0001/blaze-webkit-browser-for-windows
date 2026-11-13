@@ -144,6 +144,10 @@
                     </GridView.ItemsPanel>
                 </GridView>
             </Grid>
+            <Grid x:Name="InternalPageSurface" Visibility="Collapsed"
+                  Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
+                  AutomationProperties.Name="Browser internal page"
+                  AutomationProperties.AutomationId="InternalPageSurface" />
         </Grid>
     </Grid>
 </Page>
