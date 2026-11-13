@@ -9,6 +9,7 @@
 #include <iostream>
 #include <iterator>
 #include <string>
+#include <stdexcept>
 #include <vector>
 
 using Microsoft::WRL::ComPtr;
@@ -358,6 +359,8 @@ bool runCrossProcessSharedTextureProbe()
 }
 
 using EGLDisplay = void*;
+using EGLSurface = void*;
+using EGLContext = void*;
 using EGLDeviceEXT = void*;
 using EGLBoolean = unsigned int;
 using EGLint = int;
@@ -401,6 +404,183 @@ bool hasExtension(const char* extensions, const char* target)
         position = end;
     }
     return false;
+}
+
+bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcAddress,
+                                 ID3D11Device* angleD3DDevice)
+{
+    constexpr EGLint EGL_SURFACE_TYPE_VALUE = 0x3033;
+    constexpr EGLint EGL_PBUFFER_BIT_VALUE = 0x0001;
+    constexpr EGLint EGL_RENDERABLE_TYPE_VALUE = 0x3040;
+    constexpr EGLint EGL_OPENGL_ES2_BIT_VALUE = 0x0004;
+    constexpr EGLint EGL_RED_SIZE_VALUE = 0x3024;
+    constexpr EGLint EGL_GREEN_SIZE_VALUE = 0x3023;
+    constexpr EGLint EGL_BLUE_SIZE_VALUE = 0x3022;
+    constexpr EGLint EGL_ALPHA_SIZE_VALUE = 0x3021;
+    constexpr EGLint EGL_OPENGL_ES_API_VALUE = 0x30A0;
+    constexpr EGLint EGL_CONTEXT_CLIENT_VERSION_VALUE = 0x3098;
+    constexpr EGLint EGL_D3D_TEXTURE_ANGLE_VALUE = 0x33A3;
+    constexpr EGLint GL_COLOR_BUFFER_BIT_VALUE = 0x00004000;
+
+    using EGLConfig = void*;
+    using EGLSurface = void*;
+    using EGLContext = void*;
+    using EglChooseConfig = EGLBoolean (WINAPI*)(EGLDisplay, const EGLint*, EGLConfig*, EGLint, EGLint*);
+    using EglBindApi = EGLBoolean (WINAPI*)(EGLint);
+    using EglCreateContext = EGLContext (WINAPI*)(EGLDisplay, EGLConfig, EGLContext, const EGLint*);
+    using EglCreatePbufferFromClientBuffer = EGLSurface (WINAPI*)(EGLDisplay, EGLint, void*, EGLConfig, const EGLint*);
+    using EglMakeCurrent = EGLBoolean (WINAPI*)(EGLDisplay, EGLSurface, EGLSurface, EGLContext);
+    using EglDestroySurface = EGLBoolean (WINAPI*)(EGLDisplay, EGLSurface);
+    using EglDestroyContext = EGLBoolean (WINAPI*)(EGLDisplay, EGLContext);
+    using EglGetError = EGLint (WINAPI*)();
+    using GlViewport = void (WINAPI*)(int, int, int, int);
+    using GlClearColor = void (WINAPI*)(float, float, float, float);
+    using GlClear = void (WINAPI*)(unsigned int);
+    using GlFinish = void (WINAPI*)();
+
+    auto egl = [&](const char* name) { return getProcAddress(name); };
+    auto chooseConfig = reinterpret_cast<EglChooseConfig>(egl("eglChooseConfig"));
+    auto bindApi = reinterpret_cast<EglBindApi>(egl("eglBindAPI"));
+    auto createContext = reinterpret_cast<EglCreateContext>(egl("eglCreateContext"));
+    auto createPbuffer = reinterpret_cast<EglCreatePbufferFromClientBuffer>(egl("eglCreatePbufferFromClientBuffer"));
+    auto makeCurrent = reinterpret_cast<EglMakeCurrent>(egl("eglMakeCurrent"));
+    auto destroySurface = reinterpret_cast<EglDestroySurface>(egl("eglDestroySurface"));
+    auto destroyContext = reinterpret_cast<EglDestroyContext>(egl("eglDestroyContext"));
+    auto getError = reinterpret_cast<EglGetError>(egl("eglGetError"));
+    auto glViewport = reinterpret_cast<GlViewport>(egl("glViewport"));
+    auto glClearColor = reinterpret_cast<GlClearColor>(egl("glClearColor"));
+    auto glClear = reinterpret_cast<GlClear>(egl("glClear"));
+    auto glFinish = reinterpret_cast<GlFinish>(egl("glFinish"));
+
+    if (!chooseConfig || !bindApi || !createContext || !createPbuffer || !makeCurrent
+        || !destroySurface || !destroyContext || !getError
+        || !glViewport || !glClearColor || !glClear || !glFinish) {
+        std::wcerr << L"FAIL: ANGLE EGL/GL entry points required for D3D texture import are unavailable.\n";
+        return false;
+    }
+
+    ComPtr<ID3D11Device> device;
+    device = angleD3DDevice; // AddRef the borrowed device returned by EGL_ANGLE_device_d3d11.
+    if (!device) {
+        std::wcerr << L"FAIL: ANGLE did not expose its D3D11 device.\n";
+        return false;
+    }
+
+    D3D11_TEXTURE2D_DESC description{};
+    description.Width = kWidth;
+    description.Height = kHeight;
+    description.MipLevels = 1;
+    description.ArraySize = 1;
+    description.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    description.SampleDesc.Count = 1;
+    description.Usage = D3D11_USAGE_DEFAULT;
+    description.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
+
+    ComPtr<ID3D11Texture2D> texture;
+    HRESULT hr = device->CreateTexture2D(&description, nullptr, &texture);
+    if (FAILED(hr)) {
+        printHr(L"Create ANGLE-device D3D11 texture", hr);
+        return false;
+    }
+
+    const EGLint configAttributes[] = {
+        EGL_SURFACE_TYPE_VALUE, EGL_PBUFFER_BIT_VALUE,
+        EGL_RENDERABLE_TYPE_VALUE, EGL_OPENGL_ES2_BIT_VALUE,
+        EGL_RED_SIZE_VALUE, 8,
+        EGL_GREEN_SIZE_VALUE, 8,
+        EGL_BLUE_SIZE_VALUE, 8,
+        EGL_ALPHA_SIZE_VALUE, 8,
+        EGL_NONE_VALUE
+    };
+    EGLConfig config = nullptr;
+    EGLint configCount = 0;
+    if (!chooseConfig(display, configAttributes, &config, 1, &configCount) || configCount < 1) {
+        std::wcerr << L"FAIL: eglChooseConfig for an ES2 pbuffer failed; EGL error=0x"
+                   << std::hex << getError() << std::dec << L"\n";
+        return false;
+    }
+
+    if (!bindApi(EGL_OPENGL_ES_API_VALUE)) {
+        std::wcerr << L"FAIL: eglBindAPI(OpenGL ES) failed; EGL error=0x"
+                   << std::hex << getError() << std::dec << L"\n";
+        return false;
+    }
+
+    const EGLint contextAttributes[] = { EGL_CONTEXT_CLIENT_VERSION_VALUE, 2, EGL_NONE_VALUE };
+    EGLContext context = createContext(display, config, nullptr, contextAttributes);
+    if (!context) {
+        std::wcerr << L"FAIL: eglCreateContext failed; EGL error=0x"
+                   << std::hex << getError() << std::dec << L"\n";
+        return false;
+    }
+
+    const EGLint surfaceAttributes[] = { EGL_NONE_VALUE };
+    EGLSurface surface = createPbuffer(display, EGL_D3D_TEXTURE_ANGLE_VALUE,
+                                       texture.Get(), config, surfaceAttributes);
+    if (!surface) {
+        std::wcerr << L"FAIL: eglCreatePbufferFromClientBuffer(EGL_D3D_TEXTURE_ANGLE) failed; EGL error=0x"
+                   << std::hex << getError() << std::dec << L"\n";
+        destroyContext(display, context);
+        return false;
+    }
+
+    bool rendered = false;
+    if (makeCurrent(display, surface, surface, context)) {
+        glViewport(0, 0, static_cast<int>(kWidth), static_cast<int>(kHeight));
+        // The expected BGRA8 bytes after this RGBA clear are { 191, 64, 32, 255 }.
+        glClearColor(0.125f, 0.25f, 0.75f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT_VALUE);
+        glFinish();
+        rendered = true;
+    } else {
+        std::wcerr << L"FAIL: eglMakeCurrent for the imported D3D texture failed; EGL error=0x"
+                   << std::hex << getError() << std::dec << L"\n";
+    }
+
+    if (!makeCurrent(display, nullptr, nullptr, nullptr)) {
+        std::wcerr << L"FAIL: eglMakeCurrent(unbind) failed; EGL error=0x"
+                   << std::hex << getError() << std::dec << L"\n";
+        rendered = false;
+    }
+    destroySurface(display, surface);
+    destroyContext(display, context);
+    if (!rendered)
+        return false;
+
+    ComPtr<ID3D11DeviceContext> d3dContext;
+    device->GetImmediateContext(&d3dContext);
+    D3D11_TEXTURE2D_DESC stagingDescription = description;
+    stagingDescription.Usage = D3D11_USAGE_STAGING;
+    stagingDescription.BindFlags = 0;
+    stagingDescription.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+    stagingDescription.MiscFlags = 0;
+
+    ComPtr<ID3D11Texture2D> staging;
+    hr = device->CreateTexture2D(&stagingDescription, nullptr, &staging);
+    if (FAILED(hr)) {
+        printHr(L"Create ANGLE render verification staging texture", hr);
+        return false;
+    }
+
+    d3dContext->CopyResource(staging.Get(), texture.Get());
+    D3D11_MAPPED_SUBRESOURCE mapped{};
+    hr = d3dContext->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &mapped);
+    if (FAILED(hr)) {
+        printHr(L"Map ANGLE-rendered D3D texture", hr);
+        return false;
+    }
+
+    constexpr unsigned char expected[4] = { 191, 64, 32, 255 };
+    const auto* pixel = static_cast<const unsigned char*>(mapped.pData);
+    const bool matches = std::equal(std::begin(expected), std::end(expected), pixel);
+    d3dContext->Unmap(staging.Get(), 0);
+    if (!matches) {
+        std::wcerr << L"FAIL: D3D11 did not observe the pixel pattern rendered by ANGLE EGL.\n";
+        return false;
+    }
+
+    std::wcout << L"PASS: ANGLE imported an ID3D11Texture2D on its own D3D11 device, rendered through an EGL pbuffer, and D3D11 verified the resulting BGRA pixels.\n";
+    return true;
 }
 
 void probeAngleRuntime()
@@ -498,6 +678,8 @@ void probeAngleRuntime()
                     << std::hex << static_cast<unsigned long>(adapterDescription.AdapterLuid.HighPart)
                     << L":" << adapterDescription.AdapterLuid.LowPart << std::dec << L"\n";
             }
+            if (!renderThroughAngleD3DTexture(display, getProcAddress, d3dDevice))
+                throw std::runtime_error("ANGLE EGL D3D texture import/render test failed.");
         }
     } else {
         std::wcout << L"ANGLE EGL device query: unavailable.\n";
