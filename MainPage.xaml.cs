@@ -937,12 +937,12 @@ public sealed partial class MainPage : Page
         });
         advancedPanel.Children.Add(new TextBlock
         {
-            Text = "Win32 owned-window hosting is the active, validated renderer. The separate WinCairo shared-D3D experiment now has a P0 diagnostic that checks cross-process D3D11 texture sharing and reports available ANGLE extensions. It does not yet import an external texture into ANGLE or connect WCScene to a WinUI composition surface. The browser will continue using the validated renderer until real WebKit frames, input, dialogs, resizing and DPI behavior are verified end to end.",
+            Text = "Win32 owned-window hosting is the active renderer. The WinCairo ANGLE shared-texture experiment is still diagnostic-only: the EGL import/render probe must pass, and WebKit WCScene frames must be presented through a WinUI composition surface before this can become a usable renderer.",
             TextWrapping = TextWrapping.Wrap
         });
         advancedPanel.Children.Add(new TextBlock
         {
-            Text = "The experimental Windows App SDK API is intentionally not activated by a cosmetic toggle. The stable renderer remains available and is not changed by this setting page.",
+            Text = "There is currently no experimental-renderer switch. It is intentionally unavailable while the ANGLE probe and end-to-end WebKit composition are incomplete. Blaze always uses the stable Win32 host in this build.",
             TextWrapping = TextWrapping.Wrap
         });
 
