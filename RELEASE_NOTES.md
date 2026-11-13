@@ -1,6 +1,23 @@
 # Blaze release notes
 
-## [1.1.32] - 2026-11-14
+## [1.1.33] - 2026-11-12
+
+### Browser content pages
+- Move History and Settings into the browser's WinUI content viewport, alongside the native start page, instead of showing History as a flyout and Settings as a modal page.
+- Add searchable browsing history, an explicit clear-history confirmation, and in-page Settings navigation with Save, Cancel and Clear browsing data actions.
+- Keep the native WebKit HWND hidden while an internal page occupies the content viewport.
+
+### ANGLE shared-texture diagnostics
+- Remove the unrelated EGL_BIND_TO_TEXTURE_RGBA config-selection constraint; it applies to eglBindTexImage on ordinary pbuffers and can leave ANGLE with zero otherwise-compatible configs.
+- Keep EGL_TEXTURE_TARGET=EGL_TEXTURE_2D and EGL_TEXTURE_FORMAT=EGL_TEXTURE_RGBA on the imported client-buffer surface, while creating the baseline pbuffer with only width and height attributes.
+
+### Native tab teardown diagnostics
+- Delay final WKView release after stopping loading and detaching callbacks, and trace the native release stages to help identify the exact failing teardown operation.
+- Make the Release smoke test explicitly target the main WinUI HWND when creating and closing tabs, avoiding ambiguous foreground-window selection.
+- Add UI automation coverage for the in-content History page.
+
+### Validation
+- The preceding 1.1.32 workflow built and installed the EXE installer, but its Release launch smoke test and ANGLE enforcement failed. This version must pass the full workflow before it is treated as a validated release.
 
 ### Native tab stability
 - Split WebKit tab teardown into a prepare phase and a deferred final release on the next WinUI dispatcher turn, allowing pending native window work to drain after callbacks are detached and loading is stopped.
