@@ -106,6 +106,20 @@ jobs:
           foreach ($required in @('WebKit2.dll','WebKitHost.dll')) { if (-not (Test-Path (Join-Path $runtime $required))) { throw "Staged runtime is missing $required." } }
           Write-Host "Validated SDK $sdkTag ($actualHash); staged $((Get-ChildItem $runtime -File -Recurse).Count) runtime files."
 
+      - name: Build and run WinCairo shared-D3D capability probe
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cmake -S experiments\wincairo-shared-d3d-composition -B CompositionProbeBuild -A x64
+          if ($LASTEXITCODE -ne 0) { throw 'Configuring the shared-D3D capability probe failed.' }
+          cmake --build CompositionProbeBuild --config Release
+          if ($LASTEXITCODE -ne 0) { throw 'Building the shared-D3D capability probe failed.' }
+          $probe = Get-ChildItem -LiteralPath 'CompositionProbeBuild' -Filter 'BlazeCompositionProbe.exe' -Recurse -File | Select-Object -First 1
+          if (-not $probe) { throw 'The shared-D3D capability probe executable was not produced.' }
+          $env:PATH = (Join-Path $PWD 'webkit-runtime') + ';' + $env:PATH
+          & $probe.FullName
+          if ($LASTEXITCODE -ne 0) { throw 'The cross-process D3D11 shared-texture capability probe failed.' }
+
       - name: Set up .NET 10
         uses: actions/setup-dotnet@v5
         with:
