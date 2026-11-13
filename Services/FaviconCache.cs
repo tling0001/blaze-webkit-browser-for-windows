@@ -76,7 +76,7 @@ internal sealed class FaviconCache
             AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate | DecompressionMethods.Brotli
         };
         var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(10) };
-        client.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 BlazeBrowser/1.1");
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.2 Safari/605.1.15");
         client.DefaultRequestHeaders.Accept.ParseAdd("text/html,application/xhtml+xml,image/*,*/*;q=0.8");
         return client;
     }
