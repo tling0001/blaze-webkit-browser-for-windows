@@ -416,6 +416,7 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
     constexpr EGLint EGL_GREEN_SIZE_VALUE = 0x3023;
     constexpr EGLint EGL_BLUE_SIZE_VALUE = 0x3022;
     constexpr EGLint EGL_ALPHA_SIZE_VALUE = 0x3021;
+    constexpr EGLint EGL_NATIVE_VISUAL_ID_VALUE = 0x302E;
     constexpr EGLint EGL_WIDTH_VALUE = 0x3057;
     constexpr EGLint EGL_HEIGHT_VALUE = 0x3056;
     constexpr EGLint EGL_OPENGL_ES_API_VALUE = 0x30A0;
@@ -427,6 +428,7 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
     using EGLSurface = void*;
     using EGLContext = void*;
     using EglChooseConfig = EGLBoolean (WINAPI*)(EGLDisplay, const EGLint*, EGLConfig*, EGLint, EGLint*);
+    using EglGetConfigAttrib = EGLBoolean (WINAPI*)(EGLDisplay, EGLConfig, EGLint, EGLint*);
     using EglBindApi = EGLBoolean (WINAPI*)(EGLint);
     using EglCreateContext = EGLContext (WINAPI*)(EGLDisplay, EGLConfig, EGLContext, const EGLint*);
     using EglCreatePbufferFromClientBuffer = EGLSurface (WINAPI*)(EGLDisplay, EGLint, void*, EGLConfig, const EGLint*);
@@ -441,6 +443,7 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
 
     auto egl = [&](const char* name) { return getProcAddress(name); };
     auto chooseConfig = reinterpret_cast<EglChooseConfig>(egl("eglChooseConfig"));
+    auto getConfigAttrib = reinterpret_cast<EglGetConfigAttrib>(egl("eglGetConfigAttrib"));
     auto bindApi = reinterpret_cast<EglBindApi>(egl("eglBindAPI"));
     auto createContext = reinterpret_cast<EglCreateContext>(egl("eglCreateContext"));
     auto createPbuffer = reinterpret_cast<EglCreatePbufferFromClientBuffer>(egl("eglCreatePbufferFromClientBuffer"));
@@ -453,7 +456,7 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
     auto glClear = reinterpret_cast<GlClear>(egl("glClear"));
     auto glFinish = reinterpret_cast<GlFinish>(egl("glFinish"));
 
-    if (!chooseConfig || !bindApi || !createContext || !createPbuffer || !makeCurrent
+    if (!chooseConfig || !getConfigAttrib || !bindApi || !createContext || !createPbuffer || !makeCurrent
         || !destroySurface || !destroyContext || !getError
         || !glViewport || !glClearColor || !glClear || !glFinish) {
         std::wcerr << L"FAIL: ANGLE EGL/GL entry points required for D3D shared-handle import are unavailable.\n";
@@ -554,11 +557,28 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
         EGL_ALPHA_SIZE_VALUE, 8,
         EGL_NONE_VALUE
     };
-    EGLConfig config = nullptr;
+    std::vector<EGLConfig> configs(64);
     EGLint configCount = 0;
-    if (!chooseConfig(display, configAttributes, &config, 1, &configCount) || configCount < 1) {
+    if (!chooseConfig(display, configAttributes, configs.data(),
+                      static_cast<EGLint>(configs.size()), &configCount) || configCount < 1) {
         std::wcerr << L"FAIL: eglChooseConfig for an ES2 pbuffer failed; EGL error=0x"
                    << std::hex << getError() << std::dec << L"\n";
+        CloseHandle(sharedHandle);
+        return false;
+    }
+
+    EGLConfig config = nullptr;
+    for (EGLint index = 0; index < configCount; ++index) {
+        EGLint nativeVisualId = 0;
+        if (getConfigAttrib(display, configs[static_cast<size_t>(index)],
+                            EGL_NATIVE_VISUAL_ID_VALUE, &nativeVisualId)
+            && nativeVisualId == static_cast<EGLint>(DXGI_FORMAT_B8G8R8A8_UNORM)) {
+            config = configs[static_cast<size_t>(index)];
+            break;
+        }
+    }
+    if (!config) {
+        std::wcerr << L"FAIL: ANGLE has no ES2 pbuffer config matching DXGI_FORMAT_B8G8R8A8_UNORM.\n";
         CloseHandle(sharedHandle);
         return false;
     }
