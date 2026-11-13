@@ -1333,10 +1333,26 @@ public sealed partial class MainPage : Page
         ToolTipService.SetToolTip(ReloadStopButton, isLoading ? "Stop loading" : "Reload");
     }
 
+    private void UpdateLoadingProgress()
+    {
+        var tab = ViewModel.SelectedTab;
+        if (tab is null || tab.IsNativeStartPage || !tab.IsLoading || tab.NativeHandle == IntPtr.Zero)
+        {
+            PageLoadingProgress.Value = 0;
+            PageLoadingProgress.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        var progress = WebKitNative.GetEstimatedProgress(tab.NativeHandle);
+        PageLoadingProgress.Value = Math.Clamp(progress * 100.0, 0.0, 100.0);
+        PageLoadingProgress.Visibility = Visibility.Visible;
+    }
+
     private void UpdateNavigationButtons()
     {
         BackButton.IsEnabled = ViewModel.SelectedTab?.CanGoBack == true;
         ForwardButton.IsEnabled = ViewModel.SelectedTab?.CanGoForward == true;
         UpdateLoadingButton();
+        UpdateLoadingProgress();
     }
 }
