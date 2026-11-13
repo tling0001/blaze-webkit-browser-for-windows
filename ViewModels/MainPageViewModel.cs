@@ -208,7 +208,7 @@ public partial class MainPageViewModel : ObservableObject
 
         foreach (var search in savedSearches)
         {
-            var target = BuildSearchUrl(search.Term, Settings.SearchEngine);
+            var target = BuildSearchUrl(search.Term!, Settings.SearchEngine);
             if (seenTargets.Add(target))
                 results.Add((new AddressSuggestion(search.Term, $"Search you used · {search.Count} visit(s)", target, "\uE721"), 1200 + search.Count * 50));
         }
@@ -220,7 +220,8 @@ public partial class MainPageViewModel : ObservableObject
         if (!looksLikeAddress)
         {
             var searchTarget = BuildSearchUrl(query, Settings.SearchEngine);
-            results.Add((new AddressSuggestion($"Search for “{query}”", $"{Settings.SearchEngine} · Search the web", searchTarget, "\uE721"), 100));
+            if (seenTargets.Add(searchTarget))
+                results.Add((new AddressSuggestion($"Search for “{query}”", $"{Settings.SearchEngine} · Search the web", searchTarget, "\uE721"), 100));
         }
 
         return results

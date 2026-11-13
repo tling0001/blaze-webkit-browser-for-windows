@@ -1,5 +1,28 @@
 # Blaze release notes
 
+## [1.1.36] - 2026-11-13
+
+### Internal browser pages and tab navigation
+- Open History and Settings in their own browser tab whenever the active tab contains a website; reuse the native start tab when it is already selected.
+- Give the pages stable `blaze://history` and `blaze://settings` address-bar URLs, retain their page content when switching tabs, and turn the same tab back into a normal WebKit tab as soon as a web address or search is submitted.
+- Recreate private internal-page URLs as a safe start tab after restart rather than passing the private scheme to WebKit.
+
+### Native window activation
+- Prevent the owned Win32 WebKit surface host from activating when clicked, preserving the WinUI top-level window's active state and Mica/title-bar appearance.
+- Direct keyboard focus to the WebKit child HWND while allowing mouse input to reach the page.
+
+### Build and smoke-test quality
+- Fix all known WinUI WUI2011 binding warnings by declaring the address-suggestion template bindings as OneWay.
+- Fix the nullable search-term warning and prevent duplicate direct-search suggestion entries.
+- Scope post-launch UI automation to the actual WinUI main HWND, avoiding accidental selection of the owned WebKit popup window.
+
+### Experimental GPU renderer
+- Keep the experimental ANGLE import/render probe and production WinCairo HWND renderer separate; the latter remains the fallback until the WebKit WCScene texture bridge is validated.
+- Continue the synchronized shared-texture and DirectComposition experiments before exposing an experimental renderer switch.
+
+### Validation
+- Pending GitHub Actions Release build, native-host compile, ANGLE probe, installer integration and WebKit tab-close smoke test.
+
 ## [1.1.35] - 2026-11-13
 
 ### Address-bar suggestions

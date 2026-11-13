@@ -48,6 +48,7 @@ public sealed partial class MainPage : Page
     private readonly FaviconCache _faviconCache = new();
     private readonly HashSet<IntPtr> _pendingPopups = [];
     private readonly HashSet<IntPtr> _retainedNativeViews = [];
+    private readonly Dictionary<string, UIElement> _internalPageRoots = [];
     private readonly SemaphoreSlim _dialogGate = new(1, 1);
     private DispatcherQueueTimer? _stateTimer;
     private bool _initialized;
@@ -217,6 +218,11 @@ public sealed partial class MainPage : Page
         _initialized = true;
 
         await ViewModel.InitializeAsync();
+        foreach (var tab in ViewModel.Tabs.Where(tab => IsInternalBrowserUrl(tab.Url)))
+        {
+            tab.Url = BrowserSettings.NativeStartPageUrl;
+            tab.Title = "Blaze";
+        }
         ApplyMotionPreferences();
         if (!_nativeCallbackHandle.IsAllocated)
             // Native download, dialog and popup callbacks can outlive a WKView; retain this bridge for the app process lifetime.
@@ -240,6 +246,7 @@ public sealed partial class MainPage : Page
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
         _isPageUnloading = true;
+        _internalPageRoots.Clear();
         _stateTimer?.Stop();
         _stateTimer = null;
         _ = ViewModel.SaveAsync();
@@ -294,6 +301,7 @@ public sealed partial class MainPage : Page
         try
         {
             var item = FindTabItem(tab);
+            _internalPageRoots.Remove(tab.Id);
             var nativeHandle = tab.NativeHandle;
             // Clear identity before WB_Destroy: native teardown can trigger a
             // delayed WebKit close callback, which must never close a reused handle.
@@ -424,7 +432,7 @@ public sealed partial class MainPage : Page
             return;
 
         ViewModel.SelectedTab = tab;
-        CloseInternalPage();
+        ShowInternalPageForSelectedTab();
         _isAddressEditing = false;
         SynchronizeAddressBoxFromSelectedTab();
         UpdateBookmarkButton();
@@ -708,17 +716,71 @@ public sealed partial class MainPage : Page
         done.Click += (_, _) => CloseInternalPage();
         footer.Children.Add(clear); footer.Children.Add(done);
         Grid.SetRow(footer, 3); root.Children.Add(footer);
-        InternalPageSurface.Children.Clear(); InternalPageSurface.Children.Add(root);
-        _internalPageOpen = true; LayoutNativeViews();
+        OpenInternalPage("blaze://history", "History", root);
+    }
+
+    private void OpenInternalPage(string url, string title, UIElement root)
+    {
+        var tab = ViewModel.SelectedTab;
+        if (tab is null) return;
+        if (!tab.IsNativeStartPage)
+        {
+            tab = ViewModel.AddTab(BrowserSettings.NativeStartPageUrl);
+            var item = AddTabItem(tab);
+            TabStrip.SelectedItem = item;
+        }
+        tab.Url = url;
+        tab.Title = title;
+        tab.CanGoBack = false;
+        tab.CanGoForward = false;
+        _internalPageRoots[tab.Id] = root;
+        if (_tabHeaders.TryGetValue(tab.Id, out var header)) header.Title.Text = title;
+        if (FindTabItem(tab) is { } tabItem) AutomationProperties.SetName(tabItem, title);
+        ViewModel.AddressText = url;
+        AddressBox.Text = url;
+        ShowInternalPageForSelectedTab();
+        LayoutNativeViews();
+        UpdateNavigationButtons();
+        _ = ViewModel.SaveAsync();
+    }
+
+    private void ShowInternalPageForSelectedTab()
+    {
+        InternalPageSurface.Children.Clear();
+        _internalPageOpen = false;
+        var tab = ViewModel.SelectedTab;
+        if (tab is not null && _internalPageRoots.TryGetValue(tab.Id, out var root))
+        {
+            InternalPageSurface.Children.Add(root);
+            _internalPageOpen = true;
+        }
+        InternalPageSurface.Visibility = _internalPageOpen ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void DiscardSelectedInternalPage()
+    {
+        if (ViewModel.SelectedTab is not { } tab || !_internalPageRoots.Remove(tab.Id)) return;
+        InternalPageSurface.Children.Clear();
+        _internalPageOpen = false;
+        InternalPageSurface.Visibility = Visibility.Collapsed;
     }
 
     private void CloseInternalPage()
     {
-        if (!_internalPageOpen) return;
-        _internalPageOpen = false;
+        if (ViewModel.SelectedTab is not { } tab || !_internalPageRoots.Remove(tab.Id)) return;
         InternalPageSurface.Children.Clear();
+        _internalPageOpen = false;
+        tab.Url = BrowserSettings.NativeStartPageUrl;
+        tab.Title = "Blaze";
+        tab.CanGoBack = false;
+        tab.CanGoForward = false;
+        ViewModel.AddressText = string.Empty;
+        AddressBox.Text = string.Empty;
+        if (_tabHeaders.TryGetValue(tab.Id, out var header)) header.Title.Text = "Blaze";
+        if (FindTabItem(tab) is { } item) AutomationProperties.SetName(item, "Blaze");
         InternalPageSurface.Visibility = Visibility.Collapsed;
         if (_initialized && !_isPageUnloading) LayoutNativeViews();
+        _ = ViewModel.SaveAsync();
     }
 
     private void OnDownloadsClick(object sender, RoutedEventArgs e)
@@ -1053,8 +1115,7 @@ public sealed partial class MainPage : Page
         };
         footer.Children.Add(clearData); footer.Children.Add(cancel); footer.Children.Add(save);
         Grid.SetRow(footer, 2); root.Children.Add(footer);
-        InternalPageSurface.Children.Clear(); InternalPageSurface.Children.Add(root);
-        _internalPageOpen = true; LayoutNativeViews();
+        OpenInternalPage("blaze://settings", "Settings", root);
     }
 
     private static void AddSettingsTab(TabView tabs, string title, string automationId, UIElement content)
@@ -1267,6 +1328,7 @@ public sealed partial class MainPage : Page
     private void NavigateTo(string url)
     {
         _isAddressEditing = false;
+        DiscardSelectedInternalPage();
         ViewModel.NavigateAddressCommand.Execute(url);
         var tab = ViewModel.SelectedTab;
         AddressBox.Text = tab?.IsNativeStartPage == true ? string.Empty : ViewModel.AddressText;
@@ -1358,7 +1420,8 @@ public sealed partial class MainPage : Page
 
     private void EnsureNativeView(BrowserTab tab)
     {
-        if (tab.NativeHandle != IntPtr.Zero || !_initialized || tab.IsNativeStartPage)
+        if (tab.NativeHandle != IntPtr.Zero || !_initialized || tab.IsNativeStartPage
+            || _internalPageRoots.ContainsKey(tab.Id) || IsInternalBrowserUrl(tab.Url))
             return;
 
         try
@@ -1471,12 +1534,16 @@ public sealed partial class MainPage : Page
         }
     }
 
+    private static bool IsInternalBrowserUrl(string? url) =>
+        url?.StartsWith("blaze://", StringComparison.OrdinalIgnoreCase) == true;
+
     private void LayoutNativeViews()
     {
         if (!_initialized)
             return;
 
         var selected = ViewModel.SelectedTab;
+        _internalPageOpen = selected is not null && _internalPageRoots.ContainsKey(selected.Id);
         var showStartPage = selected?.IsNativeStartPage == true && !_internalPageOpen;
         StartPageSurface.Visibility = showStartPage ? Visibility.Visible : Visibility.Collapsed;
         InternalPageSurface.Visibility = _internalPageOpen ? Visibility.Visible : Visibility.Collapsed;

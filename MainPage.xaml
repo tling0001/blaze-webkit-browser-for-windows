@@ -14,10 +14,10 @@
                     <ColumnDefinition Width="28" />
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
-                <FontIcon Glyph="{x:Bind Glyph}" FontSize="16" FontFamily="{ThemeResource SymbolThemeFontFamily}" VerticalAlignment="Center" />
+                <FontIcon Glyph="{x:Bind Glyph, Mode=OneWay}" FontSize="16" FontFamily="Segoe Fluent Icons" VerticalAlignment="Center" />
                 <StackPanel Grid.Column="1" Spacing="2">
-                    <TextBlock Text="{x:Bind Title}" Style="{ThemeResource BodyStrongTextBlockStyle}" TextTrimming="CharacterEllipsis" />
-                    <TextBlock Text="{x:Bind Detail}" Style="{ThemeResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Text="{x:Bind Title, Mode=OneWay}" Style="{ThemeResource BodyStrongTextBlockStyle}" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Text="{x:Bind Detail, Mode=OneWay}" Style="{ThemeResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis" />
                 </StackPanel>
             </Grid>
         </DataTemplate>

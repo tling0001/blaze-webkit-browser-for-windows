@@ -435,6 +435,19 @@ WB_VIEW_HANDLE createNativeView(HWND parent, int x, int y, int width, int height
 
 constexpr wchar_t NativeSurfaceHostClass[] = L"Blaze.WebKit.NativeSurfaceHost";
 
+LRESULT CALLBACK nativeSurfaceHostProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
+{
+    if (message == WM_MOUSEACTIVATE) {
+        const auto child = reinterpret_cast<HWND>(GetWindowLongPtrW(window, GWLP_USERDATA));
+        // Preserve the active WinUI top-level window and its Mica/title-bar
+        // treatment while transferring keyboard focus to the WebKit child.
+        if (child && IsWindow(child)) SetFocus(child);
+        return MA_NOACTIVATE;
+    }
+    if (message == WM_NCDESTROY) SetWindowLongPtrW(window, GWLP_USERDATA, 0);
+    return DefWindowProcW(window, message, wParam, lParam);
+}
+
 bool ensureNativeSurfaceHostClass()
 {
     static std::once_flag registration;
@@ -442,7 +455,7 @@ bool ensureNativeSurfaceHostClass()
     std::call_once(registration, [] {
         WNDCLASSEXW windowClass {};
         windowClass.cbSize = sizeof(windowClass);
-        windowClass.lpfnWndProc = DefWindowProcW;
+        windowClass.lpfnWndProc = nativeSurfaceHostProc;
         windowClass.hInstance = GetModuleHandleW(nullptr);
         windowClass.lpszClassName = NativeSurfaceHostClass;
         registered = RegisterClassExW(&windowClass) != 0 || GetLastError() == ERROR_CLASS_ALREADY_EXISTS;
@@ -597,6 +610,7 @@ WB_VIEW_HANDLE createNativeView(HWND parent, int x, int y, int width, int height
 
     result->view = nativeView;
     result->window = nativeWindow;
+    SetWindowLongPtrW(hostWindow, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(nativeWindow));
     result->parentWindow = parent;
     result->hostWindow = hostWindow;
     result->x = showImmediately ? x : 0;
