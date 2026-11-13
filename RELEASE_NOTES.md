@@ -1,5 +1,16 @@
 # Blaze release notes
 
+## [1.1.24] - 2026-11-12
+
+### Browser stability and input
+- Restore adaptive TabView tab widths: favicons remain left of titles, while each tab sizes naturally from its title instead of forcing every tab to 112 DIPs.
+- Move keyboard focus out of the address bar after Enter submits a navigation, and close the suggestion popup.
+- Add privacy-safe toolbar action breadcrumbs to the existing crash log so a native failure can be correlated with the last browser action.
+- Set the WinCairo page user agent to Safari 27.2 for macOS, using Apple's frozen macOS platform token and Safari's current version token.
+
+### Hosting options
+- Keep the proven Win32 owned-window host as the active rendering path. ContentExternalOutputLink remains experimental in the current stable Windows App SDK dependency and is not silently presented as an implemented rendering mode; its integration requires the experimental API projection and a verified WinCairo external-output connection.
+
 ## [1.1.23] - 2026-11-12
 
 ### Native WebKit presentation in WinUI 3
