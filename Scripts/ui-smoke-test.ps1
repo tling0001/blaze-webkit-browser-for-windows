@@ -85,7 +85,7 @@ try {
     $results.Add([ordered]@{ name = 'WinUI main window appeared'; status = 'PASS'; detail = [string]$mainWindow.title })
 
     $screenshot = Join-Path $ArtifactDirectory 'blaze-startup.png'
-    Invoke-WinAppChecked @('ui', 'screenshot', '--output', $screenshot, '-w', [string]$mainWindow.hwnd) | Out-Null
+    Invoke-WinAppChecked @('ui', 'screenshot', '--output', $screenshot, '-a', [string]$appProcessId) | Out-Null
     if (-not (Test-Path -LiteralPath $screenshot -PathType Leaf) -or (Get-Item -LiteralPath $screenshot).Length -eq 0) {
         throw 'The WinUI startup screenshot was not delivered.'
     }
@@ -99,8 +99,8 @@ try {
 <body><h1>Blaze WebKit Smoke</h1><p>Native WinCairo popup host is active.</p></body></html>
 '@ | Set-Content -LiteralPath $smokePage -Encoding utf8
     $smokeUri = ([Uri]$smokePage).AbsoluteUri
-    Invoke-WinAppChecked @('ui', 'send-keys', $smokeUri, '--target', 'AddressBox', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
-    Invoke-WinAppChecked @('ui', 'send-keys', 'enter', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
+    Invoke-WinAppChecked @('ui', 'send-keys', $smokeUri, '--target', 'AddressBox', '--via', 'send-input', '-a', [string]$appProcessId) | Out-Null
+    Invoke-WinAppChecked @('ui', 'send-keys', 'enter', '--via', 'send-input', '-a', [string]$appProcessId) | Out-Null
 
     $nativeHostCreated = $false
     $pageTitleObserved = $false
@@ -119,7 +119,7 @@ try {
             }
         }
         if ($nativeHostCreated) {
-            $inspection = (Invoke-WinAppChecked @('ui', 'inspect', '--interactive', '--json', '-w', [string]$mainWindow.hwnd)) -join [Environment]::NewLine
+            $inspection = (Invoke-WinAppChecked @('ui', 'inspect', '--interactive', '--json', '-a', [string]$appProcessId)) -join [Environment]::NewLine
             if ($inspection -match 'Blaze WebKit Smoke') {
                 $pageTitleObserved = $true
                 break
@@ -173,7 +173,7 @@ namespace BlazeSmoke {
     $results.Add([ordered]@{ name = 'Local WebKit page title reached the tab'; status = 'PASS' })
 
     $contentScreenshot = Join-Path $ArtifactDirectory 'blaze-webkit-content.png'
-    Invoke-WinAppChecked @('ui', 'screenshot', '--capture-screen', '--output', $contentScreenshot, '-w', [string]$mainWindow.hwnd) | Out-Null
+    Invoke-WinAppChecked @('ui', 'screenshot', '--capture-screen', '--output', $contentScreenshot, '-a', [string]$appProcessId) | Out-Null
     if (-not (Test-Path -LiteralPath $contentScreenshot -PathType Leaf) -or (Get-Item -LiteralPath $contentScreenshot).Length -eq 0) {
         throw 'The native WebKit content screenshot was not delivered.'
     }
