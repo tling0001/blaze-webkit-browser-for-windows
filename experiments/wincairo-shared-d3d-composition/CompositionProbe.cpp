@@ -416,9 +416,11 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
     constexpr EGLint EGL_GREEN_SIZE_VALUE = 0x3023;
     constexpr EGLint EGL_BLUE_SIZE_VALUE = 0x3022;
     constexpr EGLint EGL_ALPHA_SIZE_VALUE = 0x3021;
+    constexpr EGLint EGL_WIDTH_VALUE = 0x3057;
+    constexpr EGLint EGL_HEIGHT_VALUE = 0x3056;
     constexpr EGLint EGL_OPENGL_ES_API_VALUE = 0x30A0;
     constexpr EGLint EGL_CONTEXT_CLIENT_VERSION_VALUE = 0x3098;
-    constexpr EGLint EGL_D3D_TEXTURE_ANGLE_VALUE = 0x33A3;
+    constexpr EGLint EGL_D3D_TEXTURE_2D_SHARE_HANDLE_ANGLE_VALUE = 0x3200;
     constexpr EGLint GL_COLOR_BUFFER_BIT_VALUE = 0x00004000;
 
     using EGLConfig = void*;
@@ -454,14 +456,39 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
     if (!chooseConfig || !bindApi || !createContext || !createPbuffer || !makeCurrent
         || !destroySurface || !destroyContext || !getError
         || !glViewport || !glClearColor || !glClear || !glFinish) {
-        std::wcerr << L"FAIL: ANGLE EGL/GL entry points required for D3D texture import are unavailable.\n";
+        std::wcerr << L"FAIL: ANGLE EGL/GL entry points required for D3D shared-handle import are unavailable.\n";
         return false;
     }
 
-    ComPtr<ID3D11Device> device;
-    device = angleD3DDevice; // AddRef the borrowed device returned by EGL_ANGLE_device_d3d11.
-    if (!device) {
+    ComPtr<ID3D11Device> angleDevice;
+    angleDevice = angleD3DDevice; // AddRef the borrowed device returned by EGL_ANGLE_device_d3d11.
+    if (!angleDevice) {
         std::wcerr << L"FAIL: ANGLE did not expose its D3D11 device.\n";
+        return false;
+    }
+
+    ComPtr<IDXGIDevice> angleDxgiDevice;
+    ComPtr<IDXGIAdapter> angleAdapter;
+    DXGI_ADAPTER_DESC angleAdapterDescription{};
+    if (FAILED(angleDevice.As(&angleDxgiDevice))
+        || FAILED(angleDxgiDevice->GetAdapter(&angleAdapter))
+        || FAILED(angleAdapter->GetDesc(&angleAdapterDescription))) {
+        std::wcerr << L"FAIL: could not identify the ANGLE adapter for the shared texture.\n";
+        return false;
+    }
+
+    LUID angleAdapterLuid = angleAdapterDescription.AdapterLuid;
+    ComPtr<ID3D11Device> producerDevice;
+    ComPtr<ID3D11DeviceContext> producerContext;
+    LUID producerAdapterLuid{};
+    if (!createDevice(D3D_DRIVER_TYPE_UNKNOWN, &angleAdapterLuid,
+                      producerDevice, producerContext, producerAdapterLuid)) {
+        std::wcerr << L"FAIL: could not create a second D3D11 device on the ANGLE adapter.\n";
+        return false;
+    }
+    if (producerAdapterLuid.HighPart != angleAdapterLuid.HighPart
+        || producerAdapterLuid.LowPart != angleAdapterLuid.LowPart) {
+        std::wcerr << L"FAIL: shared texture producer and ANGLE selected different adapters.\n";
         return false;
     }
 
@@ -474,11 +501,47 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
     description.SampleDesc.Count = 1;
     description.Usage = D3D11_USAGE_DEFAULT;
     description.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
+    description.MiscFlags = D3D11_RESOURCE_MISC_SHARED_NTHANDLE | D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX;
 
     ComPtr<ID3D11Texture2D> texture;
-    HRESULT hr = device->CreateTexture2D(&description, nullptr, &texture);
+    HRESULT hr = producerDevice->CreateTexture2D(&description, nullptr, &texture);
     if (FAILED(hr)) {
-        printHr(L"Create ANGLE-device D3D11 texture", hr);
+        printHr(L"Create cross-device ANGLE shared D3D11 texture", hr);
+        return false;
+    }
+
+    ComPtr<IDXGIResource1> dxgiResource;
+    hr = texture.As(&dxgiResource);
+    if (FAILED(hr)) {
+        printHr(L"Query IDXGIResource1 for ANGLE shared texture", hr);
+        return false;
+    }
+
+    HANDLE sharedHandle = nullptr;
+    hr = dxgiResource->CreateSharedHandle(
+        nullptr, DXGI_SHARED_RESOURCE_READ | DXGI_SHARED_RESOURCE_WRITE, nullptr, &sharedHandle);
+    if (FAILED(hr) || !sharedHandle) {
+        printHr(L"Create ANGLE-importable NT shared handle", hr);
+        return false;
+    }
+
+    ComPtr<IDXGIKeyedMutex> keyedMutex;
+    hr = texture.As(&keyedMutex);
+    if (FAILED(hr)) {
+        CloseHandle(sharedHandle);
+        printHr(L"Query keyed mutex for ANGLE shared texture", hr);
+        return false;
+    }
+    hr = keyedMutex->AcquireSync(0, 5000);
+    if (FAILED(hr)) {
+        CloseHandle(sharedHandle);
+        printHr(L"Acquire initial ANGLE shared-texture key", hr);
+        return false;
+    }
+    hr = keyedMutex->ReleaseSync(1);
+    if (FAILED(hr)) {
+        CloseHandle(sharedHandle);
+        printHr(L"Release initial ANGLE shared-texture key", hr);
         return false;
     }
 
@@ -496,12 +559,14 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
     if (!chooseConfig(display, configAttributes, &config, 1, &configCount) || configCount < 1) {
         std::wcerr << L"FAIL: eglChooseConfig for an ES2 pbuffer failed; EGL error=0x"
                    << std::hex << getError() << std::dec << L"\n";
+        CloseHandle(sharedHandle);
         return false;
     }
 
     if (!bindApi(EGL_OPENGL_ES_API_VALUE)) {
         std::wcerr << L"FAIL: eglBindAPI(OpenGL ES) failed; EGL error=0x"
                    << std::hex << getError() << std::dec << L"\n";
+        CloseHandle(sharedHandle);
         return false;
     }
 
@@ -510,16 +575,22 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
     if (!context) {
         std::wcerr << L"FAIL: eglCreateContext failed; EGL error=0x"
                    << std::hex << getError() << std::dec << L"\n";
+        CloseHandle(sharedHandle);
         return false;
     }
 
-    const EGLint surfaceAttributes[] = { EGL_NONE_VALUE };
-    EGLSurface surface = createPbuffer(display, EGL_D3D_TEXTURE_ANGLE_VALUE,
-                                       texture.Get(), config, surfaceAttributes);
+    const EGLint surfaceAttributes[] = {
+        EGL_WIDTH_VALUE, static_cast<EGLint>(kWidth),
+        EGL_HEIGHT_VALUE, static_cast<EGLint>(kHeight),
+        EGL_NONE_VALUE
+    };
+    EGLSurface surface = createPbuffer(display, EGL_D3D_TEXTURE_2D_SHARE_HANDLE_ANGLE_VALUE,
+                                       sharedHandle, config, surfaceAttributes);
     if (!surface) {
-        std::wcerr << L"FAIL: eglCreatePbufferFromClientBuffer(EGL_D3D_TEXTURE_ANGLE) failed; EGL error=0x"
+        std::wcerr << L"FAIL: eglCreatePbufferFromClientBuffer(EGL_D3D_TEXTURE_2D_SHARE_HANDLE_ANGLE) failed; EGL error=0x"
                    << std::hex << getError() << std::dec << L"\n";
         destroyContext(display, context);
+        CloseHandle(sharedHandle);
         return false;
     }
 
@@ -532,7 +603,7 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
         glFinish();
         rendered = true;
     } else {
-        std::wcerr << L"FAIL: eglMakeCurrent for the imported D3D texture failed; EGL error=0x"
+        std::wcerr << L"FAIL: eglMakeCurrent for the imported D3D shared handle failed; EGL error=0x"
                    << std::hex << getError() << std::dec << L"\n";
     }
 
@@ -543,11 +614,19 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
     }
     destroySurface(display, surface);
     destroyContext(display, context);
-    if (!rendered)
-        return false;
 
-    ComPtr<ID3D11DeviceContext> d3dContext;
-    device->GetImmediateContext(&d3dContext);
+    if (!rendered) {
+        CloseHandle(sharedHandle);
+        return false;
+    }
+
+    hr = keyedMutex->AcquireSync(1, 10000);
+    if (FAILED(hr)) {
+        printHr(L"Acquire ANGLE-rendered texture for D3D verification", hr);
+        CloseHandle(sharedHandle);
+        return false;
+    }
+
     D3D11_TEXTURE2D_DESC stagingDescription = description;
     stagingDescription.Usage = D3D11_USAGE_STAGING;
     stagingDescription.BindFlags = 0;
@@ -555,30 +634,40 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
     stagingDescription.MiscFlags = 0;
 
     ComPtr<ID3D11Texture2D> staging;
-    hr = device->CreateTexture2D(&stagingDescription, nullptr, &staging);
+    hr = producerDevice->CreateTexture2D(&stagingDescription, nullptr, &staging);
     if (FAILED(hr)) {
+        keyedMutex->ReleaseSync(2);
+        CloseHandle(sharedHandle);
         printHr(L"Create ANGLE render verification staging texture", hr);
         return false;
     }
 
-    d3dContext->CopyResource(staging.Get(), texture.Get());
+    producerContext->CopyResource(staging.Get(), texture.Get());
     D3D11_MAPPED_SUBRESOURCE mapped{};
-    hr = d3dContext->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &mapped);
+    hr = producerContext->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &mapped);
     if (FAILED(hr)) {
-        printHr(L"Map ANGLE-rendered D3D texture", hr);
+        keyedMutex->ReleaseSync(2);
+        CloseHandle(sharedHandle);
+        printHr(L"Map ANGLE-rendered shared D3D texture", hr);
         return false;
     }
 
     constexpr unsigned char expected[4] = { 191, 64, 32, 255 };
     const auto* pixel = static_cast<const unsigned char*>(mapped.pData);
     const bool matches = std::equal(std::begin(expected), std::end(expected), pixel);
-    d3dContext->Unmap(staging.Get(), 0);
+    producerContext->Unmap(staging.Get(), 0);
+    const HRESULT releaseResult = keyedMutex->ReleaseSync(2);
+    CloseHandle(sharedHandle);
+    if (FAILED(releaseResult)) {
+        printHr(L"Release ANGLE shared-texture verification key", releaseResult);
+        return false;
+    }
     if (!matches) {
-        std::wcerr << L"FAIL: D3D11 did not observe the pixel pattern rendered by ANGLE EGL.\n";
+        std::wcerr << L"FAIL: D3D11 producer did not observe the pixel pattern rendered by ANGLE EGL.\n";
         return false;
     }
 
-    std::wcout << L"PASS: ANGLE imported an ID3D11Texture2D on its own D3D11 device, rendered through an EGL pbuffer, and D3D11 verified the resulting BGRA pixels.\n";
+    std::wcout << L"PASS: ANGLE imported an NT shared D3D11 texture from a second device on the same adapter, rendered through EGL, and the producer device verified the resulting BGRA pixels.\n";
     return true;
 }
 
