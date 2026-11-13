@@ -1,6 +1,6 @@
 # WinCairo GPU-to-WinUI composition prototype
 
-Status: architecture spike; not enabled in Blaze and not yet a working renderer.
+Status: P0 capability probe implemented; not enabled in Blaze and not yet a working renderer.
 
 ## Current pinned rendering path
 
@@ -33,6 +33,17 @@ Use a D3D11 shared texture as the process boundary and a WinUI composition swap 
 - A direct composition swap chain is preferable to copying into a second texture if WinUI can consume the same device/resource. If the UI and GPU process devices cannot share a swap chain, use a shared texture ring and one GPU-side copy, never CPU readback.
 - Do not call `eglSwapBuffers` on a dummy HWND and assume it updates the WinUI visual. The scene must render into the exported resource itself.
 
+## Implemented P0 diagnostic
+
+`CompositionProbe.cpp` is a standalone Windows x64 diagnostic built by the experimental browser workflow. It:
+
+- Reports ANGLE EGL vendor/version, display/device extensions and the ANGLE D3D11 adapter LUID when `libEGL.dll` can initialize a D3D11 display.
+- Creates a BGRA8 D3D11 texture using an NT shared handle and keyed mutex.
+- Duplicates the shared handle into a child process, transferring the child-local handle value through an inherited anonymous pipe (not by assuming HANDLE values are global).
+- Opens the texture on a second D3D11 device on the same adapter, synchronizes with the keyed mutex, and verifies a known pixel pattern.
+- Uses a small staging readback only in this diagnostic test to prove that the child can consume the shared resource. This is not the proposed renderer path.
+
+The probe deliberately does **not** claim ANGLE can import the external texture, does not patch `WCSceneContext`, and does not present WebKit content through WinUI. If ANGLE is absent or cannot initialize on the runner, its extension inventory is reported as skipped; the D3D11 sharing test remains mandatory.
 ## Prototype milestones
 
 ### P0 — capability probe (no visible product change)
