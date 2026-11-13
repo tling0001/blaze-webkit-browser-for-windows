@@ -178,6 +178,17 @@ namespace BlazeSmoke {
         throw 'The native WebKit content screenshot was not delivered.'
     }
     $results.Add([ordered]@{ name = 'Native WebKit content screenshot captured'; status = 'PASS'; detail = $contentScreenshot })
+
+    # Open Settings while WebKit content is loaded. The modal must be present
+    # in the WinUI automation tree; the app hides its owned WebKit HWND first.
+    Invoke-WinAppChecked @('ui', 'invoke', 'SettingsButton', '-a', [string]$appProcessId) | Out-Null
+    Invoke-WinAppChecked @('ui', 'wait-for', 'SettingsGeneralTab', '-t', '5000', '-a', [string]$appProcessId) | Out-Null
+    $settingsScreenshot = Join-Path $ArtifactDirectory 'blaze-settings-over-webkit.png'
+    Invoke-WinAppChecked @('ui', 'screenshot', '--capture-screen', '--output', $settingsScreenshot, '-a', [string]$appProcessId) | Out-Null
+    if (-not (Test-Path -LiteralPath $settingsScreenshot -PathType Leaf) -or (Get-Item -LiteralPath $settingsScreenshot).Length -eq 0) {
+        throw 'The settings-over-WebKit screenshot was not delivered.'
+    }
+    $results.Add([ordered]@{ name = 'WinUI settings dialog opened above WebKit'; status = 'PASS'; detail = $settingsScreenshot })
 } catch {
     $results.Add([ordered]@{ name = 'Launch smoke test'; status = 'FAIL'; detail = "$_" })
     Write-Warning $_
