@@ -11,6 +11,7 @@
 
 ### Browser chrome and address editing
 - Put tab favicons before titles and reduce the custom tab header width to 112 DIPs, truncating long titles within the remaining space.
+- Use the built-in globe mark when a site has no usable favicon or an icon fails to decode.
 - Keep the address bar's typed text stable while it is focused or being edited; synchronize it from the active page only after focus leaves or navigation/tab selection changes.
 - Extend the Release smoke test to open a local HTML page through native WinCairo, confirm its owned host is visible and above the WinUI surface, and verify its document title reaches the tab UI.
 
