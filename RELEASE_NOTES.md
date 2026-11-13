@@ -1,5 +1,15 @@
 # Blaze release notes
 
+## [1.1.26] - 2026-11-12
+
+### Browser identity
+- Change the Safari-style user agent platform token from macOS to Windows while retaining the configured Safari/WebKit version tokens.
+
+### Release validation
+- Fix the Release UI smoke test's native-content screenshot selector: target the owned WinCairo host window explicitly instead of selecting both top-level Blaze windows by process.
+- Capture the Settings-over-WebKit state against the WinUI main window explicitly.
+- Keep the installed-app integration test and the native WinCairo content checks mandatory.
+
 ## [1.1.25] - 2026-11-12
 
 ### Dialogs and settings
