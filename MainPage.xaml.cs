@@ -136,8 +136,8 @@ public sealed partial class MainPage : Page
     {
         // The enclosing tab item / shortcut button already has an accessible
         // name; keep these decorative site marks out of the screen-reader tree.
-        AutomationProperties.SetAccessibilityView(image, AccessibilityView.Raw);
-        AutomationProperties.SetAccessibilityView(fallback, AccessibilityView.Raw);
+        AutomationProperties.SetAccessibilityView(image, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
+        AutomationProperties.SetAccessibilityView(fallback, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
         image.ImageFailed += (_, _) =>
         {
             image.Visibility = Visibility.Collapsed;
