@@ -1414,8 +1414,14 @@ public sealed partial class MainPage : Page
         {
             CrashLogger.LogException("Native WebKit view preparation failed; attempting final release.", exception);
         }
-        if (!App.DispatcherQueue.TryEnqueue(() => FinalizeNativeViewDisposal(nativeHandle)))
-            FinalizeNativeViewDisposal(nativeHandle);
+        // A dispatcher turn is not enough for WebKit's asynchronous stop-load
+        // and native-window callbacks to unwind. Keep the retired view alive
+        // for a short quiescence window before the final WKRelease/DestroyWindow.
+        _ = Task.Delay(TimeSpan.FromMilliseconds(750)).ContinueWith(_ =>
+        {
+            if (!App.DispatcherQueue.TryEnqueue(() => FinalizeNativeViewDisposal(nativeHandle)))
+                CrashLogger.Log($"Could not enqueue final disposal for retired WebKit view 0x{nativeHandle:X}; retaining it until unload.");
+        }, TaskScheduler.Default);
     }
 
     private void FinalizeNativeViewDisposal(IntPtr nativeHandle)
@@ -1424,8 +1430,9 @@ public sealed partial class MainPage : Page
             return;
         try
         {
+            CrashLogger.Log($"Beginning final native WebKit release for retired view 0x{nativeHandle:X}.");
             WebKitNative.Destroy(nativeHandle);
-            CrashLogger.Log($"Finalized native WebKit view 0x{nativeHandle:X} after dispatcher deferral.");
+            CrashLogger.Log($"Finalized native WebKit view 0x{nativeHandle:X} after quiescence delay.");
         }
         catch (Exception exception)
         {
