@@ -101,6 +101,9 @@ try {
     $smokeUri = ([Uri]$smokePage).AbsoluteUri
     Invoke-WinAppChecked @('ui', 'send-keys', $smokeUri, '--target', 'AddressBox', '--via', 'send-input', '-a', [string]$appProcessId) | Out-Null
     Invoke-WinAppChecked @('ui', 'send-keys', 'enter', '--via', 'send-input', '-a', [string]$appProcessId) | Out-Null
+    # Enter should submit navigation and move keyboard focus out of AutoSuggestBox.
+    Invoke-WinAppChecked @('ui', 'wait-for', 'AddressBox', '-p', 'HasKeyboardFocus', '--value', 'False', '-t', '5000', '-a', [string]$appProcessId) | Out-Null
+    $results.Add([ordered]@{ name = 'Enter submits navigation and unfocuses the address bar'; status = 'PASS' })
 
     $nativeHostCreated = $false
     $pageTitleObserved = $false
