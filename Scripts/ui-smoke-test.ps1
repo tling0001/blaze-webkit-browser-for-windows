@@ -150,6 +150,9 @@ namespace BlazeSmoke {
         [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(NativePoint point);
         [DllImport("user32.dll")] public static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
         [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hwnd);
+        [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+        [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extraInfo);
+        [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
     }
 }
 '@
@@ -168,6 +171,18 @@ namespace BlazeSmoke {
     if ($hitRoot -ne $hostHandle) {
         throw ("The WebKit host is not the top hit-test window over the page area. Hit HWND: 0x{0:X}" -f $hitWindow.ToInt64())
     }
+    $mainHwnd = [IntPtr]::new([long]$mainWindow.hwnd)
+    if (-not [BlazeSmoke.Native]::SetCursorPos($center.X, $center.Y)) {
+        throw 'Could not position the pointer over the WebKit surface for the activation test.'
+    }
+    [BlazeSmoke.Native]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)
+    [BlazeSmoke.Native]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)
+    Start-Sleep -Milliseconds 200
+    $foreground = [BlazeSmoke.Native]::GetForegroundWindow()
+    if ($foreground -ne $mainHwnd) {
+        throw ("Clicking the WebKit page activated another top-level HWND (foreground=0x{0:X}, WinUI=0x{1:X}); Mica would lose its active state." -f $foreground.ToInt64(), $mainHwnd.ToInt64())
+    }
+    $results.Add([ordered]@{ name = 'WebKit clicks preserve the active WinUI/Mica window'; status = 'PASS' })
     $results.Add([ordered]@{ name = 'Native WebKit host is above the WinUI page surface'; status = 'PASS' })
 
     if (-not $pageTitleObserved) {
@@ -184,17 +199,22 @@ namespace BlazeSmoke {
 
     # Close pages while navigation is active to exercise teardown with outstanding work.
     for ($iteration = 1; $iteration -le 3; $iteration++) {
-        Invoke-WinAppChecked @('ui', 'send-keys', 'ctrl+t', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
+        Invoke-WinAppChecked @('ui', 'send-keys', 'ctrl+t', '--target', 'AddressBox', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
         $loadingPage = Join-Path $env:TEMP ("blaze-close-loading-" + [guid]::NewGuid().ToString('N') + '.html')
         "<!doctype html><html><head><title>Blaze Loading Close $iteration</title></head><body>Closing during navigation.</body></html>" |
             Set-Content -LiteralPath $loadingPage -Encoding utf8
         $loadingUri = ([Uri]$loadingPage).AbsoluteUri
         # --target focuses AutoSuggestBox through WinApp UIA; the standalone
         # focus verb intermittently fails after TabView selection changes.
+        Invoke-WinAppChecked @('ui', 'send-keys', 'ctrl+a', '--target', 'AddressBox', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
         Invoke-WinAppChecked @('ui', 'send-keys', $loadingUri, '--target', 'AddressBox', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
-        Invoke-WinAppChecked @('ui', 'wait-for', 'AddressBox', '--value', $loadingUri, '-t', '3000', '-w', [string]$mainWindow.hwnd) | Out-Null
+        Invoke-WinAppChecked @('ui', 'wait-for', 'AddressBox', '-t', '3000', '-w', [string]$mainWindow.hwnd) | Out-Null
+        $loadingTree = (Invoke-WinAppChecked @('ui', 'inspect', '--interactive', '--json', '-w', [string]$mainWindow.hwnd)) -join [Environment]::NewLine
+        if (-not $loadingTree.Contains($loadingUri)) {
+            throw "AddressBox did not receive the new-tab navigation URL after Ctrl+T. UIA snapshot: $loadingTree"
+        }
         Invoke-WinAppChecked @('ui', 'send-keys', 'enter', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
-        Invoke-WinAppChecked @('ui', 'send-keys', 'ctrl+w', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
+        Invoke-WinAppChecked @('ui', 'send-keys', 'ctrl+w', '--target', 'AddressBox', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
         Start-Sleep -Milliseconds 2000
         if (-not (Get-Process -Id $appProcessId -ErrorAction SilentlyContinue)) {
             throw "Blaze exited while closing a loading native tab $iteration."
@@ -212,7 +232,7 @@ namespace BlazeSmoke {
         $tabTitle = "Blaze Close Smoke $iteration"
         "<!doctype html><html><head><title>$tabTitle</title></head><body><h1>$tabTitle</h1></body></html>" |
             Set-Content -LiteralPath $tabPage -Encoding utf8
-        Invoke-WinAppChecked @('ui', 'send-keys', 'ctrl+t', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
+        Invoke-WinAppChecked @('ui', 'send-keys', 'ctrl+t', '--target', 'AddressBox', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
         $tabUri = ([Uri]$tabPage).AbsoluteUri
         Invoke-WinAppChecked @('ui', 'send-keys', $tabUri, '--target', 'AddressBox', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
         Invoke-WinAppChecked @('ui', 'send-keys', 'enter', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
@@ -223,7 +243,7 @@ namespace BlazeSmoke {
             Start-Sleep -Milliseconds 250
         }
         if (-not $tabLoaded) { throw "Native tab $iteration did not load before close." }
-        Invoke-WinAppChecked @('ui', 'send-keys', 'ctrl+w', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
+        Invoke-WinAppChecked @('ui', 'send-keys', 'ctrl+w', '--target', 'AddressBox', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
         Start-Sleep -Milliseconds 1200
         if (-not (Get-Process -Id $appProcessId -ErrorAction SilentlyContinue)) {
             throw "Blaze exited while closing native tab $iteration."
@@ -243,7 +263,7 @@ namespace BlazeSmoke {
     Invoke-WinAppChecked @('ui', 'wait-for', 'HistoryEntries', '-t', '3000', '-w', [string]$mainWindow.hwnd) | Out-Null
     Invoke-WinAppChecked @('ui', 'invoke', 'HistoryBackButton', '-w', [string]$mainWindow.hwnd) | Out-Null
     Invoke-WinAppChecked @('ui', 'wait-for', 'HistorySearchBox', '--gone', '-t', '3000', '-w', [string]$mainWindow.hwnd) | Out-Null
-    Invoke-WinAppChecked @('ui', 'send-keys', 'ctrl+shift+tab', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
+    Invoke-WinAppChecked @('ui', 'send-keys', 'ctrl+shift+tab', '--target', 'AddressBox', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
     $results.Add([ordered]@{ name = 'History opens in a separate tab with blaze://history'; status = 'PASS' })
 
     # Open Settings from the original WebKit page. It must become a separate tab

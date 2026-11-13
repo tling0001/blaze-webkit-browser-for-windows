@@ -27,7 +27,7 @@ Use a D3D11 shared texture as the process boundary and a WinUI composition swap 
 
 ### Important design checks
 
-- The pinned ANGLE runtime exposes D3D texture-client-buffer, D3D shared-handle client-buffer, and keyed-mutex/query-surface-pointer extensions. The P1 probe validates cross-device legacy DXGI shared-handle import and GLES rendering; explicit keyed-mutex acquisition is the next synchronization gate.
+- The pinned ANGLE runtime exposes D3D texture-client-buffer, D3D shared-handle client-buffer, and keyed-mutex/query-surface-pointer extensions. The P1 probe validates cross-device legacy DXGI shared-handle import and GLES rendering. Explicit keyed-mutex acquisition remains the next synchronization gate before production composition.
 - Cross-process D3D resource sharing requires compatible adapter/device configuration and correct handle duplication/security.
 - Avoid relying on a legacy shared-handle API if the pinned ANGLE import path only supports it; compare legacy-handle support and keyed mutex/fence requirements.
 - A direct composition swap chain is preferable to copying into a second texture if WinUI can consume the same device/resource. If the UI and GPU process devices cannot share a swap chain, use a shared texture ring and one GPU-side copy, never CPU readback.
@@ -39,7 +39,7 @@ Use a D3D11 shared texture as the process boundary and a WinUI composition swap 
 
 - Reports ANGLE EGL vendor/version, display/device extensions and the ANGLE D3D11 adapter LUID when `libEGL.dll` can initialize a D3D11 display.
 - Creates a BGRA8 D3D11 texture using a legacy DXGI shared handle.
-- Duplicates the shared handle into a child process, transferring the child-local handle value through an inherited anonymous pipe (not by assuming HANDLE values are global).
+- Transfers the legacy DXGI share-handle token to a child process through an inherited anonymous pipe; the child opens the resource and verifies its pixels.
 - Opens the texture on a second D3D11 device on the same adapter and verifies a known pixel pattern.
 - Queries the D3D11 device actually owned by the initialized ANGLE EGL display.
 - Creates a BGRA8 legacy-shared D3D11 texture on a second device on the same adapter, so ANGLE must open a real cross-device shared resource rather than receive a same-device texture pointer.
@@ -75,6 +75,7 @@ The hosted-runner P1 test now passes: ANGLE imports the legacy shared texture, r
 - Send frame-ready notifications with bounded in-flight frames and explicit resize generations.
 
 ### P2 — WinUI presentation
+- The DirectComposition HWND probe is not yet attached to a WinUI `SwapChainPanel`; this remains a separate integration milestone.
 - Add a WinUI `SwapChainPanel` in the existing browser content slot.
 - Attach the composition swap chain through the documented WinUI interop interface.
 - Keep all navigation, keyboard, mouse, touch, IME, accessibility, and context-menu routing in WebKit; the surface bridge must only transport pixels and frame synchronization.

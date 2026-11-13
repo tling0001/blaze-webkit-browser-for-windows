@@ -1,5 +1,19 @@
 # Blaze release notes
 
+## [1.1.38] - 2026-11-13
+
+### Native WebKit focus and tab automation
+- Extend Release smoke coverage to click the native WebKit surface and assert the WinUI main HWND remains foreground, protecting the active Mica/title-bar state.
+- Focus the XAML address control before keyboard tab accelerators in smoke tests, and inspect the UIA tree when the new-tab URL is not reflected.
+- Keep close-during-navigation and close-after-load checks strict; do not silently skip failed tab creation.
+
+### GPU experiment documentation
+- Correct the cross-process shared-handle description and explicitly retain keyed-mutex synchronization as the next GPU correctness gate.
+- Keep the successful ANGLE/D3D11 and DirectComposition HWND probe separate from the still-unimplemented WinUI SwapChainPanel and WebKit WCScene bridge.
+
+### Validation
+- Pending GitHub Actions Release build, warning scan, installer integration, native-focus smoke test, and internal-page/tab smoke tests.
+
 ## [1.1.37] - 2026-11-13
 
 ### Internal pages and tab behavior
