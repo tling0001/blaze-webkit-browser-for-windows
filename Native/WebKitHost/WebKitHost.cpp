@@ -723,7 +723,6 @@ void WB_PrepareDestroy(WB_VIEW_HANDLE view)
             WKPageSetPageNavigationClient(page, nullptr);
             WKPageStopLoading(page);
         }
-        WKViewSetIsInWindow(view->view, false);
     }
 }
 
@@ -733,11 +732,18 @@ void WB_Destroy(WB_VIEW_HANDLE view)
         return;
     WB_PrepareDestroy(view);
     if (view->view) {
+        OutputDebugStringW(L"[Blaze][WebKitLifetime] WB_Destroy: detaching view from window.\\n");
+        WKViewSetIsInWindow(view->view, false);
+        OutputDebugStringW(L"[Blaze][WebKitLifetime] WB_Destroy: releasing WKView.\\n");
         WKRelease(view->view);
+        OutputDebugStringW(L"[Blaze][WebKitLifetime] WB_Destroy: WKRelease completed.\\n");
         view->view = nullptr;
     }
-    if (view->hostWindow && IsWindow(view->hostWindow))
+    if (view->hostWindow && IsWindow(view->hostWindow)) {
+        OutputDebugStringW(L"[Blaze][WebKitLifetime] WB_Destroy: destroying native host HWND.\\n");
         DestroyWindow(view->hostWindow);
+        OutputDebugStringW(L"[Blaze][WebKitLifetime] WB_Destroy: host HWND destroyed.\\n");
+    }
     view->window = nullptr;
     view->hostWindow = nullptr;
     delete view;
