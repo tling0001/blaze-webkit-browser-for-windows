@@ -26,6 +26,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <commctrl.h>
+#include <mutex>
 #include <cwchar>
 #include <filesystem>
 #include <new>
@@ -57,6 +59,13 @@ struct WB_VIEW {
     WB_CLOSE_PAGE_CALLBACK closePageCallback{};
     void* popupUserData{};
     HWND parentWindow{};
+    HWND hostWindow{};
+    int x{};
+    int y{};
+    int width{};
+    int height{};
+    UINT dpi{};
+    bool ownerSubclassInstalled{};
 };
 
 std::wstring fromWKString(WKStringRef value);
@@ -420,6 +429,71 @@ namespace {
 WB_VIEW_HANDLE createNativeView(HWND parent, int x, int y, int width, int height,
     WKPageConfigurationRef pageConfiguration, const WB_VIEW* opener, bool showImmediately);
 
+constexpr wchar_t NativeSurfaceHostClass[] = L"Blaze.WebKit.NativeSurfaceHost";
+
+bool ensureNativeSurfaceHostClass()
+{
+    static std::once_flag registration;
+    static bool registered = false;
+    std::call_once(registration, [] {
+        WNDCLASSEXW windowClass {};
+        windowClass.cbSize = sizeof(windowClass);
+        windowClass.lpfnWndProc = DefWindowProcW;
+        windowClass.hInstance = GetModuleHandleW(nullptr);
+        windowClass.lpszClassName = NativeSurfaceHostClass;
+        registered = RegisterClassExW(&windowClass) != 0 || GetLastError() == ERROR_CLASS_ALREADY_EXISTS;
+    });
+    return registered;
+}
+
+UINT_PTR ownerSubclassId(const WB_VIEW* view)
+{
+    return reinterpret_cast<UINT_PTR>(view);
+}
+
+HWND ownedPopupInsertAfter(HWND owner, HWND popup)
+{
+    auto previous = GetWindow(owner, GW_HWNDPREV);
+    while (previous && (previous == popup
+        || (GetWindowLongPtr(previous, GWL_EXSTYLE) & WS_EX_TOPMOST) != 0))
+        previous = GetWindow(previous, GW_HWNDPREV);
+    // HWND_TOP means the top of the non-topmost group, preserving any
+    // unrelated topmost windows while keeping this owned popup above owner.
+    return previous ? previous : HWND_TOP;
+}
+
+LRESULT CALLBACK ownerWindowSubclass(HWND owner, UINT message, WPARAM wParam, LPARAM lParam,
+    UINT_PTR subclassId, DWORD_PTR referenceData)
+{
+    auto* view = reinterpret_cast<WB_VIEW*>(referenceData);
+    const auto result = DefSubclassProc(owner, message, wParam, lParam);
+
+    // Owned popup hosts are top-level windows, so WinUI's DirectComposition
+    // surface cannot cover them. Keep each host aligned as its owner moves
+    // between screens without relying on a XAML SizeChanged event.
+    if (view && view->hostWindow && view->width > 0 && view->height > 0
+        && (message == WM_WINDOWPOSCHANGED || message == WM_DPICHANGED)) {
+        POINT origin { view->x, view->y };
+        if (ClientToScreen(owner, &origin)) {
+            SetWindowPos(view->hostWindow, ownedPopupInsertAfter(owner, view->hostWindow),
+                origin.x, origin.y, view->width, view->height,
+                SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_NOSENDCHANGING);
+            const UINT dpi = GetDpiForWindow(view->hostWindow);
+            if (dpi && dpi != view->dpi && view->view) {
+                view->dpi = dpi;
+                WKPageSetCustomBackingScaleFactor(WKViewGetPage(view->view),
+                    std::round(static_cast<double>(dpi) / 96.0));
+            }
+        }
+    }
+
+    if (message == WM_NCDESTROY)
+        RemoveWindowSubclass(owner, ownerWindowSubclass, subclassId);
+    return result;
+}
+
+
+
 WKPageRef createNewPage(WKPageRef, WKPageConfigurationRef pageConfiguration,
     WKNavigationActionRef, WKWindowFeaturesRef, const void* clientInfo)
 {
@@ -460,16 +534,44 @@ WB_VIEW_HANDLE createNativeView(HWND parent, int x, int y, int width, int height
     if (!parent || !IsWindow(parent) || width <= 0 || height <= 0 || !pageConfiguration)
         return nullptr;
 
-    RECT rect { x, y, x + width, y + height };
-    auto nativeView = WKViewCreate(rect, pageConfiguration, parent);
-    if (!nativeView)
+    if (!parent || !IsWindow(parent) || !ensureNativeSurfaceHostClass())
         return nullptr;
+
+    POINT screenOrigin { x, y };
+    if (!ClientToScreen(parent, &screenOrigin))
+        return nullptr;
+
+    // A borderless owned popup is a separate top-level HWND. Unlike a child
+    // HWND, it is not covered by WinUI's final DirectComposition surface.
+    auto hostWindow = CreateWindowExW(
+        WS_EX_TOOLWINDOW,
+        NativeSurfaceHostClass,
+        L"",
+        WS_POPUP | WS_CLIPSIBLINGS | WS_CLIPCHILDREN,
+        screenOrigin.x,
+        screenOrigin.y,
+        width,
+        height,
+        parent,
+        nullptr,
+        GetModuleHandleW(nullptr),
+        nullptr);
+    if (!hostWindow)
+        return nullptr;
+
+    RECT rect { 0, 0, width, height };
+    auto nativeView = WKViewCreate(rect, pageConfiguration, hostWindow);
+    if (!nativeView) {
+        DestroyWindow(hostWindow);
+        return nullptr;
+    }
 
     WKViewSetIsInWindow(nativeView, true);
     auto nativeWindow = WKViewGetWindow(nativeView);
     if (!nativeWindow || !IsWindow(nativeWindow)) {
         WKViewSetIsInWindow(nativeView, false);
         WKRelease(nativeView);
+        DestroyWindow(hostWindow);
         return nullptr;
     }
 
@@ -477,12 +579,18 @@ WB_VIEW_HANDLE createNativeView(HWND parent, int x, int y, int width, int height
     if (!result) {
         WKViewSetIsInWindow(nativeView, false);
         WKRelease(nativeView);
+        DestroyWindow(hostWindow);
         return nullptr;
     }
 
     result->view = nativeView;
     result->window = nativeWindow;
     result->parentWindow = parent;
+    result->hostWindow = hostWindow;
+    result->x = showImmediately ? x : 0;
+    result->y = showImmediately ? y : 0;
+    result->width = showImmediately ? width : 0;
+    result->height = showImmediately ? height : 0;
     if (opener) {
         result->downloadCallback = opener->downloadCallback;
         result->downloadUserData = opener->downloadUserData;
@@ -499,13 +607,15 @@ WB_VIEW_HANDLE createNativeView(HWND parent, int x, int y, int width, int height
     if (!page) {
         WKViewSetIsInWindow(nativeView, false);
         WKRelease(nativeView);
+        DestroyWindow(hostWindow);
         delete result;
         return nullptr;
     }
 
     // Match the upstream WinCairo MiniBrowser host: explicitly set WebKit's
     // backing scale to the rounded native-window DPI scale.
-    const UINT dpi = GetDpiForWindow(parent);
+    const UINT dpi = GetDpiForWindow(hostWindow);
+    result->dpi = dpi;
     if (dpi)
         WKPageSetCustomBackingScaleFactor(page, std::round(static_cast<double>(dpi) / 96.0));
 
@@ -529,10 +639,27 @@ WB_VIEW_HANDLE createNativeView(HWND parent, int x, int y, int width, int height
     result->uiClient.runBeforeUnloadConfirmPanel = runBeforeUnloadConfirmPanel;
     WKPageSetPageUIClient(page, &result->uiClient.base);
 
-    // WebKit's HWND is a native child over the WinUI-composed page surface.
-    // Keep it above sibling native windows while its bounds keep it below the chrome.
-    SetWindowPos(nativeWindow, HWND_TOP, x, y, width, height, SWP_NOACTIVATE | SWP_SHOWWINDOW);
-    ShowWindow(nativeWindow, showImmediately ? SW_SHOW : SW_HIDE);
+    if (!SetWindowSubclass(parent, ownerWindowSubclass, ownerSubclassId(result),
+        reinterpret_cast<DWORD_PTR>(result))) {
+        WKViewSetIsInWindow(nativeView, false);
+        WKRelease(nativeView);
+        DestroyWindow(hostWindow);
+        delete result;
+        return nullptr;
+    }
+    result->ownerSubclassInstalled = true;
+
+    if (showImmediately) {
+        SetWindowPos(hostWindow, ownedPopupInsertAfter(parent, hostWindow),
+            screenOrigin.x, screenOrigin.y, width, height,
+            SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_NOOWNERZORDER);
+        SetWindowPos(nativeWindow, nullptr, 0, 0, width, height,
+            SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+        ShowWindow(hostWindow, SW_SHOWNA);
+    } else {
+        ShowWindow(hostWindow, SW_HIDE);
+        ShowWindow(nativeWindow, SW_HIDE);
+    }
     return result;
 }
 }
@@ -552,7 +679,8 @@ WB_VIEW_HANDLE WB_Create(HWND parent, int x, int y, int width, int height, const
     WKPageConfigurationSetContext(pageConfiguration, sharedContext);
     WKPageConfigurationSetPreferences(pageConfiguration, sharedPreferences);
 
-    auto result = createNativeView(parent, x, y, width, height, pageConfiguration, nullptr, true);
+    // Create the owned host hidden. LayoutNativeViews will show only the selected tab.
+    auto result = createNativeView(parent, x, y, width, height, pageConfiguration, nullptr, false);
     WKRelease(pageConfiguration);
     if (!result) {
         releaseSharedEngine();
@@ -568,34 +696,71 @@ void WB_Destroy(WB_VIEW_HANDLE view)
 {
     if (!view)
         return;
+    if (view->ownerSubclassInstalled && view->parentWindow && IsWindow(view->parentWindow))
+        RemoveWindowSubclass(view->parentWindow, ownerWindowSubclass, ownerSubclassId(view));
+    if (view->hostWindow && IsWindow(view->hostWindow))
+        ShowWindow(view->hostWindow, SW_HIDE);
     if (view->view) {
         WKViewSetIsInWindow(view->view, false);
         WKRelease(view->view);
         view->view = nullptr;
     }
+    if (view->hostWindow && IsWindow(view->hostWindow))
+        DestroyWindow(view->hostWindow);
     view->window = nullptr;
+    view->hostWindow = nullptr;
     delete view;
     releaseSharedEngine();
 }
 
-void WB_SetBounds(WB_VIEW_HANDLE view, int x, int y, int width, int height)
+BOOL WB_SetBounds(WB_VIEW_HANDLE view, int x, int y, int width, int height)
 {
-    if (!view || !view->window || !IsWindow(view->window))
-        return;
+    if (!view || !view->window || !IsWindow(view->window) || !view->hostWindow || !IsWindow(view->hostWindow)
+        || !view->parentWindow || !IsWindow(view->parentWindow))
+        return FALSE;
     if (width <= 0 || height <= 0) {
-        ShowWindow(view->window, SW_HIDE);
-        return;
+        view->width = 0;
+        view->height = 0;
+        ShowWindow(view->hostWindow, SW_HIDE);
+        return TRUE;
     }
-    // Refresh the backing scale when the browser window moves between monitors.
-    const UINT dpi = GetDpiForWindow(view->parentWindow);
-    if (dpi && view->view)
-        WKPageSetCustomBackingScaleFactor(WKViewGetPage(view->view), std::round(static_cast<double>(dpi) / 96.0));
-    SetWindowPos(view->window, HWND_TOP, x, y, width, height, SWP_NOACTIVATE | SWP_SHOWWINDOW);
+
+    view->x = x;
+    view->y = y;
+    view->width = width;
+    view->height = height;
+
+    POINT screenOrigin { x, y };
+    if (!ClientToScreen(view->parentWindow, &screenOrigin))
+        return FALSE;
+
+    if (!SetWindowPos(view->hostWindow, ownedPopupInsertAfter(view->parentWindow, view->hostWindow),
+        screenOrigin.x, screenOrigin.y, width, height,
+        SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_NOOWNERZORDER))
+        return FALSE;
+
+    // Refresh the backing scale only when the owned host changes monitors.
+    const UINT dpi = GetDpiForWindow(view->hostWindow);
+    if (dpi && dpi != view->dpi && view->view) {
+        view->dpi = dpi;
+        WKPageSetCustomBackingScaleFactor(WKViewGetPage(view->view),
+            std::round(static_cast<double>(dpi) / 96.0));
+    }
+    if (!SetWindowPos(view->window, nullptr, 0, 0, width, height,
+        SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW))
+        return FALSE;
+    ShowWindow(view->hostWindow, SW_SHOWNA);
+    return TRUE;
 }
 
 HWND WB_GetWindow(WB_VIEW_HANDLE view)
 {
     return view ? view->window : nullptr;
+}
+
+HWND WB_GetHostWindow(WB_VIEW_HANDLE view)
+{
+    return view ? view->hostWindow : nullptr;
 }
 
 void WB_Navigate(WB_VIEW_HANDLE view, const wchar_t* url)
