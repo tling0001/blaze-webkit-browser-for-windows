@@ -107,6 +107,8 @@ jobs:
           Write-Host "Validated SDK $sdkTag ($actualHash); staged $((Get-ChildItem $runtime -File -Recurse).Count) runtime files."
 
       - name: Build and run WinCairo ANGLE shared-texture import/render probe
+        id: angle_probe
+        continue-on-error: true
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -377,6 +379,12 @@ jobs:
           path: release-assets/Blaze-Setup-*-x64.exe
           if-no-files-found: error
           retention-days: 14
+
+      - name: Enforce ANGLE experimental probe result after packaging
+        if: always() && steps.angle_probe.outcome == 'failure'
+        shell: pwsh
+        run: |
+          throw 'The ANGLE EGL shared-texture render probe failed. The stable WinUI build and installer artifacts were still produced for diagnosis; do not enable the experimental renderer until this probe passes.'
 
   release:
     name: Publish versioned GitHub Release

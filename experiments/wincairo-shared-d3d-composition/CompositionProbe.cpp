@@ -432,6 +432,7 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
     using EglGetConfigAttrib = EGLBoolean (WINAPI*)(EGLDisplay, EGLConfig, EGLint, EGLint*);
     using EglBindApi = EGLBoolean (WINAPI*)(EGLint);
     using EglCreateContext = EGLContext (WINAPI*)(EGLDisplay, EGLConfig, EGLContext, const EGLint*);
+    using EglCreatePbufferSurface = EGLSurface (WINAPI*)(EGLDisplay, EGLConfig, const EGLint*);
     using EglCreatePbufferFromClientBuffer = EGLSurface (WINAPI*)(EGLDisplay, EGLint, void*, EGLConfig, const EGLint*);
     using EglMakeCurrent = EGLBoolean (WINAPI*)(EGLDisplay, EGLSurface, EGLSurface, EGLContext);
     using EglSwapBuffers = EGLBoolean (WINAPI*)(EGLDisplay, EGLSurface);
@@ -443,12 +444,16 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
     using GlClear = void (WINAPI*)(unsigned int);
     using GlFinish = void (WINAPI*)();
     using GlReadPixels = void (WINAPI*)(int, int, int, int, unsigned int, unsigned int, void*);
+    using GlBindFramebuffer = void (WINAPI*)(unsigned int, unsigned int);
+    using GlCheckFramebufferStatus = unsigned int (WINAPI*)(unsigned int);
+    using GlGetError = unsigned int (WINAPI*)();
 
     auto egl = [&](const char* name) { return getProcAddress(name); };
     auto chooseConfig = reinterpret_cast<EglChooseConfig>(egl("eglChooseConfig"));
     auto getConfigAttrib = reinterpret_cast<EglGetConfigAttrib>(egl("eglGetConfigAttrib"));
     auto bindApi = reinterpret_cast<EglBindApi>(egl("eglBindAPI"));
     auto createContext = reinterpret_cast<EglCreateContext>(egl("eglCreateContext"));
+    auto createPlainPbuffer = reinterpret_cast<EglCreatePbufferSurface>(egl("eglCreatePbufferSurface"));
     auto createPbuffer = reinterpret_cast<EglCreatePbufferFromClientBuffer>(egl("eglCreatePbufferFromClientBuffer"));
     auto makeCurrent = reinterpret_cast<EglMakeCurrent>(egl("eglMakeCurrent"));
     auto swapBuffers = reinterpret_cast<EglSwapBuffers>(egl("eglSwapBuffers"));
@@ -460,10 +465,14 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
     auto glClear = reinterpret_cast<GlClear>(egl("glClear"));
     auto glFinish = reinterpret_cast<GlFinish>(egl("glFinish"));
     auto glReadPixels = reinterpret_cast<GlReadPixels>(egl("glReadPixels"));
+    auto glBindFramebuffer = reinterpret_cast<GlBindFramebuffer>(egl("glBindFramebuffer"));
+    auto glCheckFramebufferStatus = reinterpret_cast<GlCheckFramebufferStatus>(egl("glCheckFramebufferStatus"));
+    auto glGetError = reinterpret_cast<GlGetError>(egl("glGetError"));
 
-    if (!chooseConfig || !getConfigAttrib || !bindApi || !createContext || !createPbuffer || !makeCurrent
+    if (!chooseConfig || !getConfigAttrib || !bindApi || !createContext || !createPlainPbuffer || !createPbuffer || !makeCurrent
         || !swapBuffers || !destroySurface || !destroyContext || !getError
-        || !glViewport || !glClearColor || !glClear || !glFinish || !glReadPixels) {
+        || !glViewport || !glClearColor || !glClear || !glFinish || !glReadPixels
+        || !glBindFramebuffer || !glCheckFramebufferStatus || !glGetError) {
         std::wcerr << L"FAIL: ANGLE EGL/GL entry points required for D3D shared-handle import are unavailable.\n";
         return false;
     }
@@ -587,8 +596,18 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
         const auto candidate = configs[static_cast<size_t>(index)];
         EGLint nativeVisualId = 0;
         EGLint configId = 0;
+        EGLint red = 0, green = 0, blue = 0, alpha = 0, surfaceType = 0, renderableType = 0;
         getConfigAttrib(display, candidate, EGL_NATIVE_VISUAL_ID_VALUE, &nativeVisualId);
         getConfigAttrib(display, candidate, EGL_CONFIG_ID_VALUE, &configId);
+        getConfigAttrib(display, candidate, EGL_RED_SIZE_VALUE, &red);
+        getConfigAttrib(display, candidate, EGL_GREEN_SIZE_VALUE, &green);
+        getConfigAttrib(display, candidate, EGL_BLUE_SIZE_VALUE, &blue);
+        getConfigAttrib(display, candidate, EGL_ALPHA_SIZE_VALUE, &alpha);
+        getConfigAttrib(display, candidate, EGL_SURFACE_TYPE_VALUE, &surfaceType);
+        getConfigAttrib(display, candidate, EGL_RENDERABLE_TYPE_VALUE, &renderableType);
+        std::wcout << L"EGL candidate " << configId << L": RGBA=" << red << L"/" << green
+                   << L"/" << blue << L"/" << alpha << L", surfaceType=0x" << std::hex
+                   << surfaceType << L", renderableType=0x" << renderableType << std::dec << L".\n";
         auto candidateSurface = createPbuffer(display, EGL_D3D_TEXTURE_2D_SHARE_HANDLE_ANGLE_VALUE,
                                               sharedHandle, candidate, surfaceAttributes);
         if (candidateSurface) {
@@ -629,38 +648,71 @@ bool renderThroughAngleD3DTexture(EGLDisplay display, EglGetProcAddress getProcA
 
     bool rendered = false;
     bool glPixelMatches = false;
-    if (makeCurrent(display, surface, surface, context)) {
+    constexpr unsigned char expectedRgba[4] = { 32, 64, 191, 255 };
+    EGLSurface baselineSurface = createPlainPbuffer(display, config, surfaceAttributes);
+    if (!baselineSurface) {
+        std::wcerr << L"FAIL: eglCreatePbufferSurface baseline failed; EGL error=0x"
+                   << std::hex << getError() << std::dec << L"\\n";
+    } else if (makeCurrent(display, baselineSurface, baselineSurface, context)) {
+        glBindFramebuffer(0x8D40 /* GL_FRAMEBUFFER */, 0);
         glViewport(0, 0, static_cast<int>(kWidth), static_cast<int>(kHeight));
-        // RGBA clear; D3D11 BGRA8 should expose { 191, 64, 32, 255 }.
         glClearColor(0.125f, 0.25f, 0.75f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT_VALUE);
         glFinish();
-
-        constexpr unsigned char expectedRgba[4] = { 32, 64, 191, 255 };
-        unsigned char glPixel[4]{};
+        unsigned char baselinePixel[4]{};
         glReadPixels(static_cast<int>(kWidth / 2), static_cast<int>(kHeight / 2),
-                     1, 1, 0x1908 /* GL_RGBA */, 0x1401 /* GL_UNSIGNED_BYTE */, glPixel);
-        glFinish();
-        glPixelMatches = std::equal(std::begin(expectedRgba), std::end(expectedRgba), glPixel);
-        std::wcout << L"GLES center pixel RGBA: "
-                   << static_cast<unsigned>(glPixel[0]) << L", "
-                   << static_cast<unsigned>(glPixel[1]) << L", "
-                   << static_cast<unsigned>(glPixel[2]) << L", "
-                   << static_cast<unsigned>(glPixel[3])
-                   << (glPixelMatches ? L" (PASS)" : L" (MISMATCH)") << L"\n";
-
-        // eglSwapBuffers is the EGL presentation/flush boundary for this
-        // client-buffer pbuffer; glFinish alone only completes GL commands.
-        if (swapBuffers(display, surface)) {
-            rendered = true;
+                     1, 1, 0x1908 /* GL_RGBA */, 0x1401 /* GL_UNSIGNED_BYTE */, baselinePixel);
+        const auto baselineError = glGetError();
+        const auto baselineFramebuffer = glCheckFramebufferStatus(0x8D40 /* GL_FRAMEBUFFER */);
+        const bool baselineMatches = std::equal(std::begin(expectedRgba), std::end(expectedRgba), baselinePixel);
+        std::wcout << L"Baseline pbuffer: framebuffer=0x" << std::hex << baselineFramebuffer
+                   << L", GL error=0x" << baselineError << std::dec << L", RGBA="
+                   << static_cast<unsigned>(baselinePixel[0]) << L", "
+                   << static_cast<unsigned>(baselinePixel[1]) << L", "
+                   << static_cast<unsigned>(baselinePixel[2]) << L", "
+                   << static_cast<unsigned>(baselinePixel[3]) << L".\\n";
+        makeCurrent(display, nullptr, nullptr, nullptr);
+        if (!baselineMatches || baselineError != 0 || baselineFramebuffer != 0x8CD5 /* GL_FRAMEBUFFER_COMPLETE */) {
+            std::wcerr << L"FAIL: normal EGL pbuffer did not render the expected GLES clear.\\n";
+        } else if (makeCurrent(display, surface, surface, context)) {
+            glBindFramebuffer(0x8D40 /* GL_FRAMEBUFFER */, 0);
+            glViewport(0, 0, static_cast<int>(kWidth), static_cast<int>(kHeight));
+            glClearColor(0.125f, 0.25f, 0.75f, 1.0f);
+            glClear(GL_COLOR_BUFFER_BIT_VALUE);
+            glFinish();
+            unsigned char glPixel[4]{};
+            glReadPixels(static_cast<int>(kWidth / 2), static_cast<int>(kHeight / 2),
+                         1, 1, 0x1908 /* GL_RGBA */, 0x1401 /* GL_UNSIGNED_BYTE */, glPixel);
+            const auto glError = glGetError();
+            const auto framebufferStatus = glCheckFramebufferStatus(0x8D40 /* GL_FRAMEBUFFER */);
+            glPixelMatches = std::equal(std::begin(expectedRgba), std::end(expectedRgba), glPixel);
+            std::wcout << L"Imported pbuffer: framebuffer=0x" << std::hex << framebufferStatus
+                       << L", GL error=0x" << glError << std::dec << L", RGBA="
+                       << static_cast<unsigned>(glPixel[0]) << L", "
+                       << static_cast<unsigned>(glPixel[1]) << L", "
+                       << static_cast<unsigned>(glPixel[2]) << L", "
+                       << static_cast<unsigned>(glPixel[3])
+                       << (glPixelMatches ? L" (PASS)" : L" (MISMATCH)") << L"\\n";
+            glFinish();
+            if (swapBuffers(display, surface) && glError == 0
+                && framebufferStatus == 0x8CD5 /* GL_FRAMEBUFFER_COMPLETE */) {
+                rendered = true;
+            } else {
+                std::wcerr << L"FAIL: imported pbuffer render/flush failed; EGL error=0x"
+                           << std::hex << getError() << std::dec << L"\\n";
+            }
         } else {
-            std::wcerr << L"FAIL: eglSwapBuffers for imported shared-handle pbuffer failed; EGL error=0x"
-                       << std::hex << getError() << std::dec << L"\n";
+            std::wcerr << L"FAIL: eglMakeCurrent for imported shared-handle pbuffer failed; EGL error=0x"
+                       << std::hex << getError() << std::dec << L"\\n";
         }
     } else {
-        std::wcerr << L"FAIL: eglMakeCurrent for the imported D3D shared handle failed; EGL error=0x"
-                   << std::hex << getError() << std::dec << L"\n";
+        std::wcerr << L"FAIL: eglMakeCurrent for baseline pbuffer failed; EGL error=0x"
+                   << std::hex << getError() << std::dec << L"\\n";
     }
+    if (baselineSurface)
+        destroySurface(display, baselineSurface);
+    if (!makeCurrent(display, nullptr, nullptr, nullptr))
+        rendered = false;
 
     if (!makeCurrent(display, nullptr, nullptr, nullptr)) {
         std::wcerr << L"FAIL: eglMakeCurrent(unbind) failed; EGL error=0x"

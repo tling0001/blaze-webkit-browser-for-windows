@@ -1,5 +1,15 @@
 # Blaze release notes
 
+## [1.1.31] - 2026-11-13
+
+### Build pipeline resilience
+- Run the stable WinUI compile, installer packaging and UI smoke tests even when the experimental ANGLE rendering probe fails.
+- Upload the standalone installer and smoke-test artifacts before enforcing the ANGLE probe result, so an experimental GPU issue no longer hides a usable stable build.
+
+### ANGLE render diagnostics
+- Compare a normal EGL pbuffer against the imported NT shared-handle pbuffer using framebuffer completeness, GL errors and GLES pixel readback.
+- Log the selected EGL config's color sizes and renderable/surface bits to isolate why imported-surface drawing currently reads back transparent black.
+
 ## [1.1.30] - 2026-11-13
 
 ### Native tab lifetime regression coverage

@@ -44,10 +44,11 @@ Use a D3D11 shared texture as the process boundary and a WinUI composition swap 
 - Queries the D3D11 device actually owned by the initialized ANGLE EGL display.
 - Creates a BGRA8 NT-shared D3D11 texture on a second device on the same adapter, so ANGLE must open a real cross-device shared resource rather than receive a same-device texture pointer.
 - Creates an NT shared handle from the producer texture and imports it with `eglCreatePbufferFromClientBuffer(EGL_D3D_TEXTURE_2D_SHARE_HANDLE_ANGLE)`, exercising ANGLE's `OpenSharedResource` / `OpenSharedResource1` path.
-- Creates an OpenGL ES 2 context, clears the imported pbuffer to a known RGBA color, checks a diagnostic GLES pixel, calls `eglSwapBuffers`, and unbinds the EGL surface.
+- First renders a known clear color to a normal EGL pbuffer as a control, then renders to the imported NT shared-handle pbuffer.
+- Checks framebuffer completeness, GL errors and GLES pixel readback for each surface, calls `eglSwapBuffers`, and unbinds the EGL surface.
 - Reads the texture back through a D3D11 staging resource and logs the resulting BGRA pixel values. This readback is diagnostic-only and is not used by the proposed renderer.
 
-The test fails the workflow if the staged ANGLE runtime is missing, cannot initialize, does not expose its D3D11 device, cannot import the texture, or produces incorrect pixels. The latest hosted-runner result confirms that EGL surface import succeeds but the producer does not yet observe the expected pixels; this remains an open interoperability issue, not a passing render test. It still does **not** modify WebKit `WCSceneContext` or present actual WebKit page frames through WinUI.
+The test fails the workflow if the staged ANGLE runtime is missing, cannot initialize, does not expose its D3D11 device, cannot import the texture, or produces incorrect pixels. The latest hosted-runner result confirms that EGL surface import succeeds but both GLES and D3D11 readback show transparent black; the next run separates a broken GLES baseline from an imported-surface render-target issue. This remains an open interoperability issue, not a passing render test. It still does **not** modify WebKit `WCSceneContext` or present actual WebKit page frames through WinUI.
 ## Prototype milestones
 
 ### P0 — capability probe (no visible product change)
