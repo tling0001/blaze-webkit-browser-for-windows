@@ -1,5 +1,19 @@
 # Blaze release notes
 
+## [1.1.28] - 2026-11-13
+
+### WebKit GPU composition experiment
+- Add a real ANGLE EGL import/render test using the staged WinCairo runtime's D3D11 device.
+- Create a BGRA8 texture on ANGLE's own D3D11 device, import it as an EGL pbuffer, render a GLES test pattern, and verify the D3D11 pixels.
+- Keep the staging readback diagnostic-only; no CPU readback is introduced into the browser renderer.
+- Preserve the stable WinCairo HWND path while the WebKit WCScene output adapter and WinUI composition presentation are still under development.
+
+### Address bar keyboard behavior
+- Defer focus restoration an additional dispatcher turn so AutoSuggestBox can finish its internal Enter and suggestion-popup handling.
+- Extend the Release UI smoke test to assert that Enter moves keyboard focus away from the address bar.
+
+
+
 ## [1.1.27] - 2026-11-12
 
 ### WebKit GPU composition experiment
