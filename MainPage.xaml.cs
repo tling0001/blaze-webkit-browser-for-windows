@@ -54,6 +54,7 @@ public sealed partial class MainPage : Page
     private bool _isPageUnloading;
     private bool _engineAvailable;
     private bool _isAddressEditing;
+    private bool _internalPageOpen;
     private bool _addressSubmissionQueued;
     private GCHandle _nativeCallbackHandle;
 
@@ -417,6 +418,7 @@ public sealed partial class MainPage : Page
             return;
 
         ViewModel.SelectedTab = tab;
+        CloseInternalPage();
         _isAddressEditing = false;
         SynchronizeAddressBoxFromSelectedTab();
         UpdateBookmarkButton();
@@ -476,6 +478,7 @@ public sealed partial class MainPage : Page
     private void OnHomeClick(object sender, RoutedEventArgs e)
     {
         CrashLogger.Log("Toolbar action: Home.");
+        CloseInternalPage();
         NavigateTo(ViewModel.Settings.HomePage);
     }
 
@@ -618,25 +621,85 @@ public sealed partial class MainPage : Page
 
     private void OnHistoryClick(object sender, RoutedEventArgs e)
     {
-        CrashLogger.Log("Toolbar action: Open history.");
-        var flyout = CreateMenuFlyout();
-        if (ViewModel.History.Count == 0)
-            flyout.Items.Add(new MenuFlyoutItem { Text = "No browsing history yet", IsEnabled = false });
-        else
+        CrashLogger.Log("Toolbar action: Open history page.");
+        ShowHistoryPage();
+    }
+
+    private void ShowHistoryPage()
+    {
+        var root = new Grid { Padding = new Thickness(28, 24, 28, 20), RowSpacing = 16 };
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        var heading = new Grid { ColumnSpacing = 14 };
+        heading.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        heading.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var titleStack = new StackPanel { Spacing = 4 };
+        titleStack.Children.Add(new TextBlock { Text = "History", Style = (Style)Application.Current.Resources["TitleTextBlockStyle"] });
+        titleStack.Children.Add(new TextBlock { Text = "Pages you have visited in Blaze", Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"] });
+        heading.Children.Add(titleStack);
+        var close = new Button { Content = new FontIcon { Glyph = "\uE72B", FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Segoe Fluent Icons") }, Width = 40, Height = 40 };
+        AutomationProperties.SetName(close, "Close history");
+        AutomationProperties.SetAutomationId(close, "HistoryBackButton");
+        close.Click += (_, _) => CloseInternalPage();
+        Grid.SetColumn(close, 1); heading.Children.Add(close); root.Children.Add(heading);
+
+        var search = new TextBox { PlaceholderText = "Search history" };
+        AutomationProperties.SetName(search, "Search browsing history");
+        AutomationProperties.SetAutomationId(search, "HistorySearchBox");
+        Grid.SetRow(search, 1); root.Children.Add(search);
+        var list = new ListView { SelectionMode = ListViewSelectionMode.None };
+        AutomationProperties.SetName(list, "Browsing history entries");
+        AutomationProperties.SetAutomationId(list, "HistoryEntries");
+        Grid.SetRow(list, 2); root.Children.Add(list);
+
+        void RefreshEntries()
         {
-            foreach (var entry in ViewModel.History.Take(30))
+            list.Items.Clear();
+            var query = search.Text?.Trim() ?? string.Empty;
+            foreach (var entry in ViewModel.History)
             {
-                var item = new MenuFlyoutItem { Text = string.IsNullOrWhiteSpace(entry.Title) ? entry.Url : entry.Title };
-                item.Click += (_, _) => NavigateTo(entry.Url);
-                flyout.Items.Add(item);
+                var title = string.IsNullOrWhiteSpace(entry.Title) ? entry.Url : entry.Title;
+                if (query.Length > 0 && !title.Contains(query, StringComparison.OrdinalIgnoreCase)
+                    && !entry.Url.Contains(query, StringComparison.OrdinalIgnoreCase)) continue;
+                var content = new StackPanel { Spacing = 3 };
+                content.Children.Add(new TextBlock { Text = title, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis });
+                content.Children.Add(new TextBlock { Text = entry.Url, Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"], TextTrimming = TextTrimming.CharacterEllipsis });
+                var open = new Button { HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch, Padding = new Thickness(12, 9, 12, 9), Content = content };
+                AutomationProperties.SetName(open, "Open " + title);
+                open.Click += (_, _) => { CloseInternalPage(); NavigateTo(entry.Url); };
+                list.Items.Add(open);
             }
-            flyout.Items.Add(new MenuFlyoutSeparator());
-            var clear = new MenuFlyoutItem { Text = "Clear history" };
-            clear.Click += async (_, _) => await ViewModel.ClearHistoryAsync();
-            flyout.Items.Add(clear);
+            if (list.Items.Count == 0)
+                list.Items.Add(new TextBlock { Text = query.Length == 0 ? "No browsing history yet." : "No history matches your search.", Margin = new Thickness(12, 18, 12, 18), Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"] });
         }
-        if (sender is FrameworkElement element)
-            flyout.ShowAt(element);
+        search.TextChanged += (_, _) => RefreshEntries();
+        RefreshEntries();
+
+        var footer = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Spacing = 8 };
+        var clear = new Button { Content = "Clear history" };
+        AutomationProperties.SetAutomationId(clear, "ClearHistoryButton");
+        clear.Click += async (_, _) =>
+        {
+            var confirmation = new ContentDialog { Title = "Clear browsing history?", Content = "This removes the browsing history saved by Blaze. Cookies and website data are not affected.", PrimaryButtonText = "Clear history", CloseButtonText = "Cancel", DefaultButton = ContentDialogButton.Close, XamlRoot = XamlRoot };
+            if (await ShowDialogAsync(confirmation) == ContentDialogResult.Primary) { await ViewModel.ClearHistoryAsync(); RefreshEntries(); }
+        };
+        var done = new Button { Content = "Done", IsDefault = true };
+        done.Click += (_, _) => CloseInternalPage();
+        footer.Children.Add(clear); footer.Children.Add(done);
+        Grid.SetRow(footer, 3); root.Children.Add(footer);
+        InternalPageSurface.Children.Clear(); InternalPageSurface.Children.Add(root);
+        _internalPageOpen = true; LayoutNativeViews();
+    }
+
+    private void CloseInternalPage()
+    {
+        if (!_internalPageOpen) return;
+        _internalPageOpen = false;
+        InternalPageSurface.Children.Clear();
+        InternalPageSurface.Visibility = Visibility.Collapsed;
+        if (_initialized && !_isPageUnloading) LayoutNativeViews();
     }
 
     private void OnDownloadsClick(object sender, RoutedEventArgs e)
@@ -675,10 +738,10 @@ public sealed partial class MainPage : Page
         AreOpenCloseAnimationsEnabled = AreAnimationsEnabled
     };
 
-    private async void OnSettingsClick(object sender, RoutedEventArgs e)
+    private void OnSettingsClick(object sender, RoutedEventArgs e)
     {
-        CrashLogger.Log("Toolbar action: Settings.");
-        await ShowSettingsDialogAsync();
+        CrashLogger.Log("Toolbar action: Open settings page.");
+        ShowSettingsPage();
     }
 
     private TransitionCollection CreateEntranceTransitions()
@@ -697,6 +760,7 @@ public sealed partial class MainPage : Page
         PageLoadingProgress.Transitions = CreateEntranceTransitions();
         BrowserSurface.Transitions = CreateEntranceTransitions();
         StartPageSurface.Transitions = CreateEntranceTransitions();
+        InternalPageSurface.Transitions = CreateEntranceTransitions();
         StartPageShortcutsGrid.Transitions = CreateEntranceTransitions();
     }
 
@@ -730,7 +794,7 @@ public sealed partial class MainPage : Page
         }
     }
 
-    private async Task ShowSettingsDialogAsync()
+    private void ShowSettingsPage()
     {
         var position = new RadioButtons
         {
@@ -895,74 +959,88 @@ public sealed partial class MainPage : Page
         AddSettingsTab(settingsTabs, "Appearance", "SettingsAppearanceTab", appearancePanel);
         AddSettingsTab(settingsTabs, "Advanced", "SettingsAdvancedTab", advancedPanel);
 
-        var dialog = new ContentDialog
+        settingsTabs.MinWidth = 0;
+        settingsTabs.MaxWidth = 960;
+        settingsTabs.MaxHeight = double.PositiveInfinity;
+        settingsTabs.HorizontalAlignment = HorizontalAlignment.Stretch;
+        settingsTabs.VerticalAlignment = VerticalAlignment.Stretch;
+        var root = new Grid { Padding = new Thickness(28, 24, 28, 20), RowSpacing = 16 };
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        var heading = new Grid { ColumnSpacing = 14 };
+        heading.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        heading.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var titleStack = new StackPanel { Spacing = 4 };
+        titleStack.Children.Add(new TextBlock { Text = "Settings", Style = (Style)Application.Current.Resources["TitleTextBlockStyle"] });
+        titleStack.Children.Add(new TextBlock { Text = "Customize how Blaze looks, behaves and protects your browsing.", Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"], TextWrapping = TextWrapping.Wrap });
+        heading.Children.Add(titleStack);
+        var close = new Button { Content = new FontIcon { Glyph = "\uE72B", FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Segoe Fluent Icons") }, Width = 40, Height = 40 };
+        AutomationProperties.SetName(close, "Close settings");
+        AutomationProperties.SetAutomationId(close, "SettingsBackButton");
+        close.Click += (_, _) => CloseInternalPage();
+        Grid.SetColumn(close, 1); heading.Children.Add(close); root.Children.Add(heading);
+        Grid.SetRow(settingsTabs, 1); root.Children.Add(settingsTabs);
+        var footer = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Spacing = 8 };
+        var clearData = new Button { Content = "Clear browsing data" };
+        AutomationProperties.SetAutomationId(clearData, "ClearBrowsingDataButton");
+        clearData.Click += async (_, _) =>
         {
-            Title = "Settings",
-            Content = settingsTabs,
-            PrimaryButtonText = "Save",
-            SecondaryButtonText = "Clear browsing data",
-            CloseButtonText = "Cancel",
-            DefaultButton = ContentDialogButton.Primary,
-            XamlRoot = XamlRoot
-        };
-        AutomationProperties.SetAutomationId(dialog, "BrowserSettingsDialog");
-        AutomationProperties.SetName(dialog, "Browser settings");
-
-        var result = await ShowDialogAsync(dialog);
-        if (result == ContentDialogResult.Secondary)
-        {
-            var confirmation = new ContentDialog
-            {
-                Title = "Clear browsing data?",
-                Content = "This removes cookies, caches, local storage, service workers, indexed databases and browsing history for the open WebKit profiles. You may be signed out of websites.",
-                PrimaryButtonText = "Clear data",
-                CloseButtonText = "Cancel",
-                DefaultButton = ContentDialogButton.Close,
-                XamlRoot = XamlRoot
-            };
+            var confirmation = new ContentDialog { Title = "Clear browsing data?", Content = "This removes cookies, caches, local storage, service workers, indexed databases and browsing history for the open WebKit profiles. You may be signed out of websites.", PrimaryButtonText = "Clear data", CloseButtonText = "Cancel", DefaultButton = ContentDialogButton.Close, XamlRoot = XamlRoot };
             if (await ShowDialogAsync(confirmation) == ContentDialogResult.Primary)
             {
                 var activeProfile = ViewModel.Tabs.FirstOrDefault(tab => tab.NativeHandle != IntPtr.Zero);
-                if (activeProfile is not null)
-                    WebKitNative.ClearWebsiteData(activeProfile.NativeHandle);
+                if (activeProfile is not null) WebKitNative.ClearWebsiteData(activeProfile.NativeHandle);
                 await ViewModel.ClearHistoryAsync();
             }
-            return;
-        }
-        if (result != ContentDialogResult.Primary)
-            return;
-
-        ViewModel.Settings.StartupBehavior = startupBehavior.SelectedIndex == 0
-            ? StartupBehavior.NewTab
-            : StartupBehavior.ContinueSession;
-        ViewModel.Settings.TabBarAboveToolbar = position.SelectedIndex == 0;
-        ViewModel.Settings.HomePageCustomized = !string.IsNullOrWhiteSpace(homePage.Text);
-        ViewModel.Settings.HomePage = ViewModel.Settings.HomePageCustomized
-            ? homePage.Text.Trim()
-            : BrowserSettings.NativeStartPageUrl;
-        ViewModel.Settings.SearchEngine = (BrowserSearchEngine)Math.Clamp(searchEngine.SelectedIndex, 0, 3);
-        ViewModel.Settings.JavaScriptEnabled = javaScript.IsOn;
-        ViewModel.Settings.LoadImagesAutomatically = images.IsOn;
-        ViewModel.Settings.ReduceMotion = reduceMotion.IsOn;
-        ViewModel.Settings.PopupHandlingMode = popupHandling.SelectedIndex switch
-        {
-            1 => PopupHandlingMode.AlwaysAllow,
-            2 => PopupHandlingMode.AlwaysDeny,
-            _ => PopupHandlingMode.Ask
         };
-        ApplyMotionPreferences();
-        foreach (var control in permissionControls)
-            ViewModel.ApplySitePermission(control.Site, control.Location.IsOn, control.Notifications.IsOn);
-        foreach (var tab in ViewModel.Tabs)
+        var cancel = new Button { Content = "Cancel" };
+        cancel.Click += (_, _) => CloseInternalPage();
+        var save = new Button { Content = "Save", IsDefault = true };
+        AutomationProperties.SetAutomationId(save, "SettingsSaveButton");
+        save.Click += async (_, _) =>
         {
-            if (tab.NativeHandle == IntPtr.Zero)
-                continue;
-            WebKitNative.SetJavaScriptEnabled(tab.NativeHandle, javaScript.IsOn);
-            WebKitNative.SetLoadsImagesAutomatically(tab.NativeHandle, images.IsOn);
+            ViewModel.Settings.StartupBehavior = startupBehavior.SelectedIndex == 0
+                ? StartupBehavior.NewTab
+                : StartupBehavior.ContinueSession;
+            ViewModel.Settings.TabBarAboveToolbar = position.SelectedIndex == 0;
+            ViewModel.Settings.HomePageCustomized = !string.IsNullOrWhiteSpace(homePage.Text);
+            ViewModel.Settings.HomePage = ViewModel.Settings.HomePageCustomized
+                ? homePage.Text.Trim()
+                : BrowserSettings.NativeStartPageUrl;
+            ViewModel.Settings.SearchEngine = (BrowserSearchEngine)Math.Clamp(searchEngine.SelectedIndex, 0, 3);
+            ViewModel.Settings.JavaScriptEnabled = javaScript.IsOn;
+            ViewModel.Settings.LoadImagesAutomatically = images.IsOn;
+            ViewModel.Settings.ReduceMotion = reduceMotion.IsOn;
+            ViewModel.Settings.PopupHandlingMode = popupHandling.SelectedIndex switch
+            {
+                1 => PopupHandlingMode.AlwaysAllow,
+                2 => PopupHandlingMode.AlwaysDeny,
+                _ => PopupHandlingMode.Ask
+            };
+            ApplyMotionPreferences();
+            foreach (var control in permissionControls)
+                ViewModel.ApplySitePermission(control.Site, control.Location.IsOn, control.Notifications.IsOn);
+            foreach (var tab in ViewModel.Tabs)
+            {
+                if (tab.NativeHandle == IntPtr.Zero)
+                    continue;
+                WebKitNative.SetJavaScriptEnabled(tab.NativeHandle, javaScript.IsOn);
+                WebKitNative.SetLoadsImagesAutomatically(tab.NativeHandle, images.IsOn);
+            }
+            ApplyTabBarPlacement();
+            LayoutNativeViews();
+            await ViewModel.SaveAsync();
         }
-        ApplyTabBarPlacement();
-        LayoutNativeViews();
-        await ViewModel.SaveAsync();
+    
+    
+            CloseInternalPage();
+            await ViewModel.SaveAsync();
+        };
+        footer.Children.Add(clearData); footer.Children.Add(cancel); footer.Children.Add(save);
+        Grid.SetRow(footer, 2); root.Children.Add(footer);
+        InternalPageSurface.Children.Clear(); InternalPageSurface.Children.Add(root);
+        _internalPageOpen = true; LayoutNativeViews();
     }
 
     private static void AddSettingsTab(TabView tabs, string title, string automationId, UIElement content)
@@ -975,7 +1053,7 @@ public sealed partial class MainPage : Page
                 Content = content,
                 VerticalScrollMode = ScrollMode.Auto,
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                MaxHeight = 520
+                MaxHeight = double.PositiveInfinity
             },
             IsClosable = false
         };
@@ -1376,10 +1454,11 @@ public sealed partial class MainPage : Page
             return;
 
         var selected = ViewModel.SelectedTab;
-        var showStartPage = selected?.IsNativeStartPage == true;
+        var showStartPage = selected?.IsNativeStartPage == true && !_internalPageOpen;
         StartPageSurface.Visibility = showStartPage ? Visibility.Visible : Visibility.Collapsed;
+        InternalPageSurface.Visibility = _internalPageOpen ? Visibility.Visible : Visibility.Collapsed;
 
-        if (showStartPage || EngineError.IsOpen || selected is null)
+        if (_internalPageOpen || showStartPage || EngineError.IsOpen || selected is null)
         {
             foreach (var tab in ViewModel.Tabs)
             {
