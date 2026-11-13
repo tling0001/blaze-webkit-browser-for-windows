@@ -671,6 +671,7 @@ public sealed partial class MainPage : Page
         LayoutRoot.Transitions = CreateEntranceTransitions();
         TabStrip.Transitions = CreateEntranceTransitions();
         Toolbar.Transitions = CreateEntranceTransitions();
+        PageLoadingProgress.Transitions = CreateEntranceTransitions();
         BrowserSurface.Transitions = CreateEntranceTransitions();
         StartPageSurface.Transitions = CreateEntranceTransitions();
         StartPageShortcutsGrid.Transitions = CreateEntranceTransitions();
