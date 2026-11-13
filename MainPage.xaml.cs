@@ -774,7 +774,6 @@ public sealed partial class MainPage : Page
         var settingsTabs = new TabView
         {
             IsAddTabButtonVisible = false,
-            IsTabStripVisible = true,
             CanReorderTabs = false,
             MinWidth = 480,
             MaxWidth = 720,
