@@ -802,7 +802,7 @@ public sealed partial class MainPage : Page
         });
         advancedPanel.Children.Add(new TextBlock
         {
-            Text = "Win32 owned-window hosting is the active, validated renderer. ContentExternalOutputLink is an experimental composition output-target API; it does not provide a supported way to import the WinCairo WKView HWND into the WinUI visual tree. An opt-in browser mode will appear here only after a real WebKit output bridge is implemented and verified.",
+            Text = "Win32 owned-window hosting is the active, validated renderer. The separate WinCairo shared-D3D experiment now has a P0 diagnostic that checks cross-process D3D11 texture sharing and reports available ANGLE extensions. It does not yet import an external texture into ANGLE or connect WCScene to a WinUI composition surface. The browser will continue using the validated renderer until real WebKit frames, input, dialogs, resizing and DPI behavior are verified end to end.",
             TextWrapping = TextWrapping.Wrap
         });
         advancedPanel.Children.Add(new TextBlock
