@@ -1,5 +1,21 @@
 # Blaze release notes
 
+## [1.1.46] - 2026-11-14
+
+### Native WebKit focus restoration
+- Attach the WinUI owner and WebKit child input queues while restoring focus across the owned-popup HWND boundary.
+- Preserve WebKit keyboard focus only when the WebKit child still owned focus before foreground restoration; do not steal focus from the address bar or other WinUI controls.
+- Extend activation diagnostics with input-queue attachment and thread identity.
+
+### Password manager
+- Retain the 1.1.45 nonce-scoped WebKit credential bridge, native save confirmation, origin-matched autofill, and loopback end-to-end smoke coverage.
+
+### Versioning
+- Align product, assembly, file, informational and package versions at 1.1.46.
+
+### Validation
+- Windows CI rebuilds the native host and WinUI app, installs the EXE, and exercises WebKit keyboard focus and credential flows. The shared-D3D live page-output integration remains experimental and is not enabled in production.
+
 ## [1.1.45] - 2026-11-13
 
 ### Password manager integration
