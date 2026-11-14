@@ -31,6 +31,7 @@ The upstream WinCairo port is an x64 development/testing port rather than a regu
 - Downloads into the Windows Downloads folder with progress and completion tracking
 - Per-site geolocation and notification permission decisions; camera/microphone are denied until device-selection support exists
 - Privacy settings for JavaScript, automatic image loading and clearing cookies/cache/site data
+- Native WinUI password manager with per-user Windows Credential Locker storage, explicit password reveal, and confirmed deletion; secrets are not stored in browser JSON files
 - Tab strip placement preference (above or below the navigation toolbar)
 - Persistent Reduce motion preference; WinUI transitions are suppressed when enabled
 - Native WinUI `ContentDialog`, `MenuFlyout`, `TabView`, `AutoSuggestBox`, `ToggleSwitch` and `Button` controls
@@ -50,7 +51,7 @@ See [`.github/workflows/build-windows.yml`](.github/workflows/build-windows.yml)
 7. Run WinApp UI automation against the native WinUI start page and live WebKit navigation, popup-tab creation and JavaScript tab closure.
 8. Publish the standalone EXE installer and install guide as a versioned GitHub Release.
 
-Popup/new-window tab creation and JavaScript tab closure are implemented; certificate exception UI, camera/microphone device selection and broader security hardening remain in progress. The complete WinCairo build and clean-machine installation still require successful CI validation.
+Automatic password-save prompts and automatic form filling are not yet wired to WebKit; the current password manager supports explicit save, review, reveal and delete. A secure page-script bridge with origin validation is required before enabling browser-driven credential capture or autofill. Certificate exception UI, camera/microphone device selection and broader security hardening remain in progress. The complete WinCairo build and clean-machine installation still require successful CI validation.
 
 The project `Version` property is the single release-version source. Blaze uses normal product versions: `1.0.0`, `1.0.1` through `1.0.9`, then `1.1.0` and onward. Use [`Scripts/bump-version.ps1`](Scripts/bump-version.ps1) to increment the patch number, roll `1.0.9` to `1.1.0`, update the four-part Windows package version, and add dated release notes.
 
