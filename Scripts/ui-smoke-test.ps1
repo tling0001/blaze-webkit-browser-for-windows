@@ -85,7 +85,7 @@ try {
     $results.Add([ordered]@{ name = 'WinUI main window appeared'; status = 'PASS'; detail = [string]$mainWindow.title })
 
     $screenshot = Join-Path $ArtifactDirectory 'blaze-startup.png'
-    Invoke-WinAppChecked @('ui', 'screenshot', '--output', $screenshot, '-a', [string]$appProcessId) | Out-Null
+    Invoke-WinAppChecked @('ui', 'screenshot', '--output', $screenshot, '-w', [string]$mainWindow.hwnd) | Out-Null
     if (-not (Test-Path -LiteralPath $screenshot -PathType Leaf) -or (Get-Item -LiteralPath $screenshot).Length -eq 0) {
         throw 'The WinUI startup screenshot was not delivered.'
     }
@@ -99,8 +99,11 @@ try {
 <body><h1>Blaze WebKit Smoke</h1><p>Native WinCairo popup host is active.</p></body></html>
 '@ | Set-Content -LiteralPath $smokePage -Encoding utf8
     $smokeUri = ([Uri]$smokePage).AbsoluteUri
-    Invoke-WinAppChecked @('ui', 'send-keys', $smokeUri, '--target', 'AddressBox', '--via', 'send-input', '-a', [string]$appProcessId) | Out-Null
-    Invoke-WinAppChecked @('ui', 'send-keys', 'enter', '--via', 'send-input', '-a', [string]$appProcessId) | Out-Null
+    Invoke-WinAppChecked @('ui', 'send-keys', $smokeUri, '--target', 'AddressBox', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
+    Invoke-WinAppChecked @('ui', 'send-keys', 'enter', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
+    # Enter should submit navigation and move keyboard focus out of AutoSuggestBox.
+    Invoke-WinAppChecked @('ui', 'wait-for', 'AddressBox', '-p', 'HasKeyboardFocus', '--value', 'False', '-t', '5000', '-w', [string]$mainWindow.hwnd) | Out-Null
+    $results.Add([ordered]@{ name = 'Enter submits navigation and unfocuses the address bar'; status = 'PASS' })
 
     $nativeHostCreated = $false
     $pageTitleObserved = $false
@@ -119,7 +122,7 @@ try {
             }
         }
         if ($nativeHostCreated) {
-            $inspection = (Invoke-WinAppChecked @('ui', 'inspect', '--interactive', '--json', '-a', [string]$appProcessId)) -join [Environment]::NewLine
+            $inspection = (Invoke-WinAppChecked @('ui', 'inspect', '--interactive', '--json', '-w', [string]$mainWindow.hwnd)) -join [Environment]::NewLine
             if ($inspection -match 'Blaze WebKit Smoke') {
                 $pageTitleObserved = $true
                 break
@@ -147,6 +150,13 @@ namespace BlazeSmoke {
         [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(NativePoint point);
         [DllImport("user32.dll")] public static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
         [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hwnd);
+        [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+        [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extraInfo);
+        [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetClassName(IntPtr hwnd, System.Text.StringBuilder className, int maxCount);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr hwnd, System.Text.StringBuilder title, int maxCount);
+        [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint processId);
+        [DllImport("user32.dll")] public static extern IntPtr GetWindow(IntPtr hwnd, uint command);
     }
 }
 '@
@@ -165,6 +175,25 @@ namespace BlazeSmoke {
     if ($hitRoot -ne $hostHandle) {
         throw ("The WebKit host is not the top hit-test window over the page area. Hit HWND: 0x{0:X}" -f $hitWindow.ToInt64())
     }
+    $mainHwnd = [IntPtr]::new([long]$mainWindow.hwnd)
+    if (-not [BlazeSmoke.Native]::SetCursorPos($center.X, $center.Y)) {
+        throw 'Could not position the pointer over the WebKit surface for the activation test.'
+    }
+    [BlazeSmoke.Native]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)
+    [BlazeSmoke.Native]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)
+    Start-Sleep -Milliseconds 200
+    $foreground = [BlazeSmoke.Native]::GetForegroundWindow()
+    if ($foreground -ne $mainHwnd) {
+        $className = [System.Text.StringBuilder]::new(256)
+        $windowTitle = [System.Text.StringBuilder]::new(256)
+        [void][BlazeSmoke.Native]::GetClassName($foreground, $className, $className.Capacity)
+        [void][BlazeSmoke.Native]::GetWindowText($foreground, $windowTitle, $windowTitle.Capacity)
+        [uint32]$foregroundPid = 0
+        [void][BlazeSmoke.Native]::GetWindowThreadProcessId($foreground, [ref]$foregroundPid)
+        $owner = [BlazeSmoke.Native]::GetWindow($foreground, 4) # GW_OWNER
+        throw ("Clicking the WebKit page activated HWND=0x{0:X} class='{1}' title='{2}' pid={3} owner=0x{4:X}; WinUI HWND=0x{5:X}." -f $foreground.ToInt64(), $className.ToString(), $windowTitle.ToString(), $foregroundPid, $owner.ToInt64(), $mainHwnd.ToInt64())
+    }
+    $results.Add([ordered]@{ name = 'WebKit clicks preserve the active WinUI/Mica window'; status = 'PASS' })
     $results.Add([ordered]@{ name = 'Native WebKit host is above the WinUI page surface'; status = 'PASS' })
 
     if (-not $pageTitleObserved) {
@@ -179,16 +208,97 @@ namespace BlazeSmoke {
     }
     $results.Add([ordered]@{ name = 'Native WebKit content screenshot captured'; status = 'PASS'; detail = $contentScreenshot })
 
-    # Open Settings while WebKit content is loaded. The modal must be present
-    # in the WinUI automation tree; the app hides its owned WebKit HWND first.
-    Invoke-WinAppChecked @('ui', 'invoke', 'SettingsButton', '-a', [string]$appProcessId) | Out-Null
-    Invoke-WinAppChecked @('ui', 'wait-for', 'SettingsGeneralTab', '-t', '5000', '-a', [string]$appProcessId) | Out-Null
+    # Close pages while navigation is active to exercise teardown with outstanding work.
+    for ($iteration = 1; $iteration -le 3; $iteration++) {
+        Invoke-WinAppChecked @('ui', 'send-keys', 'ctrl+t', '--target', 'AddressBox', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
+        $loadingPage = Join-Path $env:TEMP ("blaze-close-loading-" + [guid]::NewGuid().ToString('N') + '.html')
+        "<!doctype html><html><head><title>Blaze Loading Close $iteration</title></head><body>Closing during navigation.</body></html>" |
+            Set-Content -LiteralPath $loadingPage -Encoding utf8
+        $loadingUri = ([Uri]$loadingPage).AbsoluteUri
+        # --target focuses AutoSuggestBox through WinApp UIA; the standalone
+        # focus verb intermittently fails after TabView selection changes.
+        Invoke-WinAppChecked @('ui', 'send-keys', 'ctrl+a', '--target', 'AddressBox', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
+        Invoke-WinAppChecked @('ui', 'send-keys', $loadingUri, '--target', 'AddressBox', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
+        Invoke-WinAppChecked @('ui', 'wait-for', 'AddressBox', '-t', '3000', '-w', [string]$mainWindow.hwnd) | Out-Null
+        $loadingTree = (Invoke-WinAppChecked @('ui', 'inspect', '--interactive', '--json', '-w', [string]$mainWindow.hwnd)) -join [Environment]::NewLine
+        if (-not $loadingTree.Contains($loadingUri)) {
+            throw "AddressBox did not receive the new-tab navigation URL after Ctrl+T. UIA snapshot: $loadingTree"
+        }
+        Invoke-WinAppChecked @('ui', 'send-keys', 'enter', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
+        Invoke-WinAppChecked @('ui', 'send-keys', 'ctrl+w', '--target', 'AddressBox', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
+        Start-Sleep -Milliseconds 2000
+        if (-not (Get-Process -Id $appProcessId -ErrorAction SilentlyContinue)) {
+            throw "Blaze exited while closing a loading native tab $iteration."
+        }
+        $remainingTree = (Invoke-WinAppChecked @('ui', 'inspect', '--interactive', '--json', '-w', [string]$mainWindow.hwnd)) -join [Environment]::NewLine
+        if (-not $remainingTree.Contains('Blaze WebKit Smoke')) {
+            throw "The original native page was not retained after closing loading tab $iteration."
+        }
+        Remove-Item -LiteralPath $loadingPage -Force -ErrorAction SilentlyContinue
+    }
+
+    # Repeatedly create, navigate and close loaded native tabs while retaining the original page.
+    for ($iteration = 1; $iteration -le 3; $iteration++) {
+        $tabPage = Join-Path $env:TEMP ("blaze-close-smoke-" + [guid]::NewGuid().ToString('N') + '.html')
+        $tabTitle = "Blaze Close Smoke $iteration"
+        "<!doctype html><html><head><title>$tabTitle</title></head><body><h1>$tabTitle</h1></body></html>" |
+            Set-Content -LiteralPath $tabPage -Encoding utf8
+        Invoke-WinAppChecked @('ui', 'send-keys', 'ctrl+t', '--target', 'AddressBox', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
+        $tabUri = ([Uri]$tabPage).AbsoluteUri
+        Invoke-WinAppChecked @('ui', 'send-keys', $tabUri, '--target', 'AddressBox', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
+        Invoke-WinAppChecked @('ui', 'send-keys', 'enter', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
+        $tabLoaded = $false
+        for ($attempt = 0; $attempt -lt 80; $attempt++) {
+            $tree = (Invoke-WinAppChecked @('ui', 'inspect', '--interactive', '--json', '-w', [string]$mainWindow.hwnd)) -join [Environment]::NewLine
+            if ($tree.Contains($tabTitle)) { $tabLoaded = $true; break }
+            Start-Sleep -Milliseconds 250
+        }
+        if (-not $tabLoaded) { throw "Native tab $iteration did not load before close." }
+        Invoke-WinAppChecked @('ui', 'send-keys', 'ctrl+w', '--target', 'AddressBox', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
+        Start-Sleep -Milliseconds 1200
+        if (-not (Get-Process -Id $appProcessId -ErrorAction SilentlyContinue)) {
+            throw "Blaze exited while closing native tab $iteration."
+        }
+        $remainingTree = (Invoke-WinAppChecked @('ui', 'inspect', '--interactive', '--json', '-w', [string]$mainWindow.hwnd)) -join [Environment]::NewLine
+        if (-not $remainingTree.Contains('Blaze WebKit Smoke')) {
+            throw "The original native page was not retained after closing tab $iteration."
+        }
+        Remove-Item -LiteralPath $tabPage -Force -ErrorAction SilentlyContinue
+    }
+    $results.Add([ordered]@{ name = 'Three native WebKit tabs navigated and closed without terminating the browser'; status = 'PASS' })
+
+    # History is a first-class internal tab with its own address-bar URL.
+    Invoke-WinAppChecked @('ui', 'invoke', 'HistoryButton', '-w', [string]$mainWindow.hwnd) | Out-Null
+    Invoke-WinAppChecked @('ui', 'wait-for', 'AddressBox', '--value', 'blaze://history', '-t', '3000', '-w', [string]$mainWindow.hwnd) | Out-Null
+    Invoke-WinAppChecked @('ui', 'wait-for', 'HistorySearchBox', '-t', '3000', '-w', [string]$mainWindow.hwnd) | Out-Null
+    Invoke-WinAppChecked @('ui', 'wait-for', 'HistoryEntries', '-t', '3000', '-w', [string]$mainWindow.hwnd) | Out-Null
+    Invoke-WinAppChecked @('ui', 'invoke', 'HistoryBackButton', '-w', [string]$mainWindow.hwnd) | Out-Null
+    Invoke-WinAppChecked @('ui', 'wait-for', 'HistorySearchBox', '--gone', '-t', '3000', '-w', [string]$mainWindow.hwnd) | Out-Null
+    Invoke-WinAppChecked @('ui', 'send-keys', 'ctrl+shift+tab', '--target', 'AddressBox', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
+    $results.Add([ordered]@{ name = 'History opens in a separate tab with blaze://history'; status = 'PASS' })
+
+    # Open Settings from the original WebKit page. It must become a separate tab
+    # with its own private URL rather than replacing the website tab.
+    Invoke-WinAppChecked @('ui', 'invoke', 'SettingsButton', '-w', [string]$mainWindow.hwnd) | Out-Null
+    Invoke-WinAppChecked @('ui', 'wait-for', 'AddressBox', '--value', 'blaze://settings', '-t', '3000', '-w', [string]$mainWindow.hwnd) | Out-Null
+    Invoke-WinAppChecked @('ui', 'wait-for', 'SettingsGeneralTab', '-t', '5000', '-w', [string]$mainWindow.hwnd) | Out-Null
+    Invoke-WinAppChecked @('ui', 'wait-for', 'StartupNewTab', '-t', '3000', '-w', [string]$mainWindow.hwnd) | Out-Null
+    Invoke-WinAppChecked @('ui', 'wait-for', 'StartupContinueSession', '-t', '3000', '-w', [string]$mainWindow.hwnd) | Out-Null
+    $results.Add([ordered]@{ name = 'Settings opens in a separate tab with blaze://settings'; status = 'PASS' })
     $settingsScreenshot = Join-Path $ArtifactDirectory 'blaze-settings-over-webkit.png'
     Invoke-WinAppChecked @('ui', 'screenshot', '--capture-screen', '--output', $settingsScreenshot, '-w', [string]$mainWindow.hwnd) | Out-Null
     if (-not (Test-Path -LiteralPath $settingsScreenshot -PathType Leaf) -or (Get-Item -LiteralPath $settingsScreenshot).Length -eq 0) {
         throw 'The settings-over-WebKit screenshot was not delivered.'
     }
-    $results.Add([ordered]@{ name = 'WinUI settings dialog opened above WebKit'; status = 'PASS'; detail = $settingsScreenshot })
+    $results.Add([ordered]@{ name = 'WinUI settings page opened in its own browser tab'; status = 'PASS'; detail = $settingsScreenshot })
+    Invoke-WinAppChecked @('ui', 'send-keys', 'ctrl+a', '--target', 'AddressBox', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
+    Invoke-WinAppChecked @('ui', 'send-keys', $smokeUri, '--target', 'AddressBox', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
+    Invoke-WinAppChecked @('ui', 'send-keys', 'enter', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
+    Invoke-WinAppChecked @('ui', 'wait-for', 'SettingsGeneralTab', '--gone', '-t', '5000', '-w', [string]$mainWindow.hwnd) | Out-Null
+    Invoke-WinAppChecked @('ui', 'wait-for', 'AddressBox', '--value', $smokeUri, '-t', '5000', '-w', [string]$mainWindow.hwnd) | Out-Null
+    $webViewTree = (Invoke-WinAppChecked @('ui', 'inspect', '--interactive', '--json', '-w', [string]$mainWindow.hwnd)) -join [Environment]::NewLine
+    if (-not $webViewTree.Contains('Blaze WebKit Smoke')) { throw 'Changing the internal page URL did not restore a native WebKit tab.' }
+    $results.Add([ordered]@{ name = 'Changing an internal page URL restores the WebKit view in that tab'; status = 'PASS' })
 } catch {
     $results.Add([ordered]@{ name = 'Launch smoke test'; status = 'FAIL'; detail = "$_" })
     Write-Warning $_
@@ -196,6 +306,10 @@ namespace BlazeSmoke {
     if ($smokePage -and (Test-Path -LiteralPath $smokePage)) {
         Remove-Item -LiteralPath $smokePage -Force -ErrorAction SilentlyContinue
     }
+    Get-ChildItem -LiteralPath $env:TEMP -Filter 'blaze-close-smoke-*.html' -File -ErrorAction SilentlyContinue |
+        Remove-Item -Force -ErrorAction SilentlyContinue
+    Get-ChildItem -LiteralPath $env:TEMP -Filter 'blaze-close-loading-*.html' -File -ErrorAction SilentlyContinue |
+        Remove-Item -Force -ErrorAction SilentlyContinue
     if ($appProcess -and (Get-Process -Id $appProcess.Id -ErrorAction SilentlyContinue)) {
         Stop-Process -Id $appProcess.Id -Force -ErrorAction SilentlyContinue
         Wait-Process -Id $appProcess.Id -Timeout 10 -ErrorAction SilentlyContinue

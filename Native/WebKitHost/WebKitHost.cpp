@@ -66,6 +66,7 @@ struct WB_VIEW {
     int height{};
     UINT dpi{};
     bool ownerSubclassInstalled{};
+    bool destroyPrepared{};
 };
 
 std::wstring fromWKString(WKStringRef value);
@@ -115,9 +116,11 @@ WKWebsiteDataStoreRef sharedDataStore = nullptr;
 WKContextRef sharedContext = nullptr;
 WKPreferencesRef sharedPreferences = nullptr;
 unsigned activeViewCount = 0;
+std::mutex sharedEngineMutex;
 
 void releaseSharedEngine()
 {
+    std::lock_guard<std::mutex> lock(sharedEngineMutex);
     if (activeViewCount > 0)
         --activeViewCount;
     if (activeViewCount != 0)
@@ -184,6 +187,7 @@ bool configurePersistentWebsiteDataStore(WKWebsiteDataStoreConfigurationRef conf
 
 bool acquireSharedEngine()
 {
+    std::lock_guard<std::mutex> lock(sharedEngineMutex);
     if (!sharedDataStore || !sharedContext || !sharedPreferences) {
         auto storeConfiguration = WKWebsiteDataStoreConfigurationCreate();
         auto contextConfiguration = WKContextConfigurationCreate();
@@ -431,6 +435,39 @@ WB_VIEW_HANDLE createNativeView(HWND parent, int x, int y, int width, int height
 
 constexpr wchar_t NativeSurfaceHostClass[] = L"Blaze.WebKit.NativeSurfaceHost";
 
+constexpr UINT_PTR NativeWebKitSubclassId = 0xB1A2E;
+LRESULT CALLBACK nativeWebKitWindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam,
+    UINT_PTR subclassId, DWORD_PTR ownerValue)
+{
+    if (message == WM_MOUSEACTIVATE) {
+        // SetFocus is required for WebKit keyboard input. It activates the
+        // owned popup, so immediately restore the real WinUI owner as foreground.
+        SetFocus(window);
+        const auto owner = reinterpret_cast<HWND>(ownerValue);
+        if (owner && IsWindow(owner))
+            SetForegroundWindow(owner);
+        return MA_NOACTIVATE;
+    }
+    if (message == WM_NCDESTROY)
+        RemoveWindowSubclass(window, nativeWebKitWindowProc, subclassId);
+    return DefSubclassProc(window, message, wParam, lParam);
+}
+
+LRESULT CALLBACK nativeSurfaceHostProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
+{
+    if (message == WM_MOUSEACTIVATE) {
+        const auto child = reinterpret_cast<HWND>(GetWindowLongPtrW(window, GWLP_USERDATA));
+        const auto owner = GetWindow(window, GW_OWNER);
+        // Focus the WebKit child, then restore the WinUI owner as the active
+        // top-level window. This keeps page keyboard input and Mica together.
+        if (child && IsWindow(child)) SetFocus(child);
+        if (owner && IsWindow(owner)) SetForegroundWindow(owner);
+        return MA_NOACTIVATE;
+    }
+    if (message == WM_NCDESTROY) SetWindowLongPtrW(window, GWLP_USERDATA, 0);
+    return DefWindowProcW(window, message, wParam, lParam);
+}
+
 bool ensureNativeSurfaceHostClass()
 {
     static std::once_flag registration;
@@ -438,7 +475,7 @@ bool ensureNativeSurfaceHostClass()
     std::call_once(registration, [] {
         WNDCLASSEXW windowClass {};
         windowClass.cbSize = sizeof(windowClass);
-        windowClass.lpfnWndProc = DefWindowProcW;
+        windowClass.lpfnWndProc = nativeSurfaceHostProc;
         windowClass.hInstance = GetModuleHandleW(nullptr);
         windowClass.lpszClassName = NativeSurfaceHostClass;
         registered = RegisterClassExW(&windowClass) != 0 || GetLastError() == ERROR_CLASS_ALREADY_EXISTS;
@@ -524,8 +561,16 @@ WKPageRef createNewPage(WKPageRef, WKPageConfigurationRef pageConfiguration,
 void closePage(WKPageRef, const void* clientInfo)
 {
     auto* view = const_cast<WB_VIEW*>(static_cast<const WB_VIEW*>(clientInfo));
-    if (view && view->closePageCallback)
+    if (view && !view->destroyPrepared && view->closePageCallback)
         view->closePageCallback(view, view->popupUserData);
+}
+
+void didNotHandleKeyEvent(WKPageRef, WKNativeEventPtr event, const void* clientInfo)
+{
+    auto* view = const_cast<WB_VIEW*>(static_cast<const WB_VIEW*>(clientInfo));
+    if (!view || view->destroyPrepared || !event || !view->parentWindow || !IsWindow(view->parentWindow))
+        return;
+    PostMessageW(view->parentWindow, event->message, event->wParam, event->lParam);
 }
 
 WB_VIEW_HANDLE createNativeView(HWND parent, int x, int y, int width, int height,
@@ -544,7 +589,7 @@ WB_VIEW_HANDLE createNativeView(HWND parent, int x, int y, int width, int height
     // A borderless owned popup is a separate top-level HWND. Unlike a child
     // HWND, it is not covered by WinUI's final DirectComposition surface.
     auto hostWindow = CreateWindowExW(
-        WS_EX_TOOLWINDOW,
+        WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
         NativeSurfaceHostClass,
         L"",
         WS_POPUP | WS_CLIPSIBLINGS | WS_CLIPCHILDREN,
@@ -583,8 +628,18 @@ WB_VIEW_HANDLE createNativeView(HWND parent, int x, int y, int width, int height
         return nullptr;
     }
 
+    if (!SetWindowSubclass(nativeWindow, nativeWebKitWindowProc, NativeWebKitSubclassId,
+            reinterpret_cast<DWORD_PTR>(parent))) {
+        WKViewSetIsInWindow(nativeView, false);
+        WKRelease(nativeView);
+        delete result;
+        DestroyWindow(hostWindow);
+        return nullptr;
+    }
+
     result->view = nativeView;
     result->window = nativeWindow;
+    SetWindowLongPtrW(hostWindow, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(nativeWindow));
     result->parentWindow = parent;
     result->hostWindow = hostWindow;
     result->x = showImmediately ? x : 0;
@@ -630,6 +685,7 @@ WB_VIEW_HANDLE createNativeView(HWND parent, int x, int y, int width, int height
     result->uiClient.base.clientInfo = result;
     result->uiClient.createNewPage = createNewPage;
     result->uiClient.close = closePage;
+    result->uiClient.didNotHandleKeyEvent = didNotHandleKeyEvent;
     result->uiClient.decidePolicyForGeolocationPermissionRequest = decideGeolocationPermission;
     result->uiClient.decidePolicyForNotificationPermissionRequest = decideNotificationPermission;
     result->uiClient.decidePolicyForUserMediaPermissionRequest = denyUserMediaPermission;
@@ -692,21 +748,50 @@ WB_VIEW_HANDLE WB_Create(HWND parent, int x, int y, int width, int height, const
     return result;
 }
 
+void WB_PrepareDestroy(WB_VIEW_HANDLE view)
+{
+    if (!view || view->destroyPrepared)
+        return;
+    view->destroyPrepared = true;
+    OutputDebugStringW(L"[Blaze][WebKitLifetime] WB_PrepareDestroy: begin native retirement.\\n");
+    if (view->ownerSubclassInstalled && view->parentWindow && IsWindow(view->parentWindow)) {
+        RemoveWindowSubclass(view->parentWindow, ownerWindowSubclass, ownerSubclassId(view));
+        view->ownerSubclassInstalled = false;
+    }
+    if (view->hostWindow && IsWindow(view->hostWindow))
+        ShowWindow(view->hostWindow, SW_HIDE);
+    OutputDebugStringW(L"[Blaze][WebKitLifetime] WB_PrepareDestroy: host hidden and owner subclass detached.\\n");
+    if (view->view) {
+        auto page = WKViewGetPage(view->view);
+        if (page) {
+            WKPageSetPageUIClient(page, nullptr);
+            WKPageSetPageNavigationClient(page, nullptr);
+            // Avoid stopping navigation synchronously from the WinUI tab-close
+            // event. WKRelease performs final page shutdown after the view has
+            // remains retained until browser shutdown. The caller deliberately
+            // avoids releasing this WKView during ordinary tab-close operations.
+        }
+    }
+}
+
 void WB_Destroy(WB_VIEW_HANDLE view)
 {
     if (!view)
         return;
-    if (view->ownerSubclassInstalled && view->parentWindow && IsWindow(view->parentWindow))
-        RemoveWindowSubclass(view->parentWindow, ownerWindowSubclass, ownerSubclassId(view));
-    if (view->hostWindow && IsWindow(view->hostWindow))
-        ShowWindow(view->hostWindow, SW_HIDE);
+    WB_PrepareDestroy(view);
     if (view->view) {
+        OutputDebugStringW(L"[Blaze][WebKitLifetime] WB_Destroy: detaching view from window.\\n");
         WKViewSetIsInWindow(view->view, false);
+        OutputDebugStringW(L"[Blaze][WebKitLifetime] WB_Destroy: releasing WKView.\\n");
         WKRelease(view->view);
+        OutputDebugStringW(L"[Blaze][WebKitLifetime] WB_Destroy: WKRelease completed.\\n");
         view->view = nullptr;
     }
-    if (view->hostWindow && IsWindow(view->hostWindow))
+    if (view->hostWindow && IsWindow(view->hostWindow)) {
+        OutputDebugStringW(L"[Blaze][WebKitLifetime] WB_Destroy: destroying native host HWND.\\n");
         DestroyWindow(view->hostWindow);
+        OutputDebugStringW(L"[Blaze][WebKitLifetime] WB_Destroy: host HWND destroyed.\\n");
+    }
     view->window = nullptr;
     view->hostWindow = nullptr;
     delete view;

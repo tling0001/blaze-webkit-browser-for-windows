@@ -1,5 +1,231 @@
 # Blaze release notes
 
+## [1.1.40] - 2026-11-13
+
+### Experimental GPU renderer
+- Extend keyed-mutex ownership through the DirectComposition consumer: producer readback releases key 3, DirectComposition acquires key 3 for the GPU-only swap-chain copy, and releases key 4 before Present.
+- Require the DComp consumer to acquire the shared texture before copying; no unsynchronized read of the ANGLE-rendered resource is accepted.
+
+### Native WebKit activation
+- Restore the WinUI owner as foreground immediately after transferring focus to the WebKit HWND, preserving keyboard-focus intent while testing whether Mica remains active.
+- Expand smoke-test failure diagnostics to report the foreground HWND class, title, process, and owner.
+
+### Build quality
+- Make address suggestion items observable and restore explicit OneWay bindings, satisfying the WinUI analyzer without WMC1506 warnings.
+
+### Validation
+- Pending hosted Release build, warning scan, full keyed-mutex EGL/DComp probe, installer, and native-focus smoke test.
+
+## [1.1.39] - 2026-11-13
+
+### Experimental GPU renderer
+- Require keyed-mutex-capable D3D11 shared textures in the ANGLE import diagnostic.
+- Synchronize producer initialization, ANGLE surface rendering, and producer readback with explicit keys 0 → 1 → 2 → 3.
+- Query the imported EGL surface's `EGL_DXGI_KEYED_MUTEX_ANGLE` pointer and acquire/release it around GLES rendering; no unsynchronized producer readback is accepted.
+- Keep DirectComposition presentation GPU-only. This still does not connect real WebKit `WCScene` frames to WinUI; versioned WebKit SDK source changes, IPC frame transport, and a WinUI composition bridge remain the next milestone.
+
+### Win32 WebKit activation
+- Mark the owned native host as no-activate and subclass the actual WKView HWND to return `MA_NOACTIVATE` on mouse activation while transferring keyboard focus to WebKit.
+- Preserve the WinUI owner as the foreground top-level window so Mica and title-bar active state remain consistent when clicking page content.
+
+### Build quality
+- Remove incorrect `OneWay` bindings from immutable address-suggestion template records, eliminating the three WMC1506 XAML warnings without suppressing diagnostics.
+
+### Validation
+- Pending hosted Release build, warning scan, keyed-mutex EGL import/render, DirectComposition presentation, installer, and native-focus smoke test.
+
+## [1.1.38] - 2026-11-13
+
+### Native WebKit focus and tab automation
+- Extend Release smoke coverage to click the native WebKit surface and assert the WinUI main HWND remains foreground, protecting the active Mica/title-bar state.
+- Focus the XAML address control before keyboard tab accelerators in smoke tests, and inspect the UIA tree when the new-tab URL is not reflected.
+- Keep close-during-navigation and close-after-load checks strict; do not silently skip failed tab creation.
+
+### GPU experiment documentation
+- Correct the cross-process shared-handle description and explicitly retain keyed-mutex synchronization as the next GPU correctness gate.
+- Keep the successful ANGLE/D3D11 and DirectComposition HWND probe separate from the still-unimplemented WinUI SwapChainPanel and WebKit WCScene bridge.
+
+### Validation
+- Pending GitHub Actions Release build, warning scan, installer integration, native-focus smoke test, and internal-page/tab smoke tests.
+
+## [1.1.37] - 2026-11-13
+
+### Internal pages and tab behavior
+- Add smoke assertions for the History and Settings internal URLs and verify both pages open in their own tabs from a WebKit page.
+- Verify entering a web address from Settings replaces the internal surface with a live WebKit view in that same tab.
+- Disable bookmarking for private `blaze://` pages.
+
+### Warning cleanup and test targeting
+- Resolve the final nullable warning in the saved-search suggestion title.
+- Target every post-discovery WinApp UI operation at the exact WinUI main HWND. Keep process targeting only for initial window discovery, avoiding the second owned WebKit HWND selection ambiguity.
+
+### DirectComposition GPU presentation experiment
+- Extend the ANGLE shared-texture probe to create a DirectComposition swap chain and visual on a temporary HWND.
+- Copy the ANGLE-rendered D3D11 texture to the composition swap-chain back buffer on the GPU, then Present and Commit without CPU pixel upload.
+- Link the experimental probe against `dcomp.lib` and document the scope: this validates DComp presentation primitives, not yet the WinUI integration or WebKit WCScene bridge.
+
+### Validation
+- Pending GitHub Actions Release build, warning scan, ANGLE/DComp probe, installer integration, and expanded internal-page/WebKit smoke tests.
+
+## [1.1.36] - 2026-11-13
+
+### Internal browser pages and tab navigation
+- Open History and Settings in their own browser tab whenever the active tab contains a website; reuse the native start tab when it is already selected.
+- Give the pages stable `blaze://history` and `blaze://settings` address-bar URLs, retain their page content when switching tabs, and turn the same tab back into a normal WebKit tab as soon as a web address or search is submitted.
+- Recreate private internal-page URLs as a safe start tab after restart rather than passing the private scheme to WebKit.
+
+### Native window activation
+- Prevent the owned Win32 WebKit surface host from activating when clicked, preserving the WinUI top-level window's active state and Mica/title-bar appearance.
+- Direct keyboard focus to the WebKit child HWND while allowing mouse input to reach the page.
+
+### Build and smoke-test quality
+- Fix all known WinUI WUI2011 binding warnings by declaring the address-suggestion template bindings as OneWay.
+- Fix the nullable search-term warning and prevent duplicate direct-search suggestion entries.
+- Scope post-launch UI automation to the actual WinUI main HWND, avoiding accidental selection of the owned WebKit popup window.
+
+### Experimental GPU renderer
+- Keep the experimental ANGLE import/render probe and production WinCairo HWND renderer separate; the latter remains the fallback until the WebKit WCScene texture bridge is validated.
+- Continue the synchronized shared-texture and DirectComposition experiments before exposing an experimental renderer switch.
+
+### Validation
+- Pending GitHub Actions Release build, native-host compile, ANGLE probe, installer integration and WebKit tab-close smoke test.
+
+## [1.1.35] - 2026-11-13
+
+### Address-bar suggestions
+- Add Chrome-style inline suggestions from local browsing history, bookmarks, and previously used search queries.
+- Rank repeated and recent visits above less relevant matches, show the source/URL beneath each result, and include a direct search action using the selected search engine.
+- Keep suggestions local to the device; do not send every typed character to a remote suggestion provider.
+
+### Native tab-close stability
+- Hide retired WebKit views and detach their callbacks immediately, but retain the WKView and its native resources until the browser page shuts down.
+- Remove the 750 ms delayed WKRelease path, which still allowed the GPU process and WebKit compositor to have outstanding work when the UI process destroyed the view.
+- Add native retirement markers and keep shutdown-only finalization explicit. This is a bounded-lifetime diagnostic mitigation, not yet proof that every WebKit close race is resolved.
+
+### ANGLE probe corrections
+- Fix the cross-process shared-handle byte-count check to use the actual legacy handle token string.
+- Remove keyed-mutex operations from a texture created with D3D11_RESOURCE_MISC_SHARED; keyed mutex APIs are only valid for textures created with the keyed-mutex flag.
+- Flush the producer D3D11 context before staging readback.
+- Correct the probe success wording to identify the legacy DXGI handle path.
+
+### Release smoke test
+- Use the UI automation target selector to focus AddressBox instead of the standalone focus command, which intermittently failed after selecting a newly created TabView tab.
+- Extend the post-close process-survival window to two seconds for the loading-tab stress loop.
+
+### Validation
+- Run 200 compiled the WinUI app, published the self-contained browser, built the installer, and passed all seven installed-app integration checks.
+- The ANGLE probe did not execute because the probe source failed to compile (stale `remoteHandleText` and removed keyed-mutex references). The Release smoke test passed eight checks but failed the standalone AddressBox focus action before reaching the tab-close loops.
+- The actual WebKit `WCScene` implementation was inspected at the pinned SDK revision. It currently either renders directly to its native HWND or uses `glReadPixels` into a ShareableBitmap for offscreen rendering; neither mode exposes a GPU texture to WinUI. The D3D composition connection therefore still requires a WebKit SDK source change and an end-to-end GPU-process/UI-process texture bridge. No CPU-readback fallback is being misrepresented as GPU composition.
+
+## [1.1.34] - 2026-11-12
+
+### ANGLE shared-texture interop
+- Use legacy DXGI shared handles from IDXGIResource::GetSharedHandle for EGL_ANGLE_d3d_share_handle_client_buffer. The pinned ANGLE implementation opens these through ID3D11Device::OpenSharedResource; NT handles from CreateSharedHandle require OpenSharedResource1 and left the imported EGL surface transparent.
+- Remove the keyed mutex from the first transport test so it isolates handle import and GPU visibility; flush the producer and ANGLE contexts before readback.
+- Pass the legacy DXGI share-handle token through the child-process pipe without DuplicateHandle or CloseHandle, which are invalid for this non-NT handle type.
+
+### Tab-close diagnostics
+- Avoid calling WKPageStopLoading synchronously in the tab-close event; keep the native view retained during the quiescence window and let WKRelease perform final page shutdown.
+- Add managed lifecycle markers around native retirement, view-model removal and remaining-view layout.
+- Extend close stress-test waits beyond the deferred release window so delayed crashes cannot pass the smoke test.
+
+### WinUI content pages
+- Remove an unsupported Button.IsDefault initializer caught by the 1.1.33 build.
+- Add timestamps to history entries and entrance transitions that use the app's Reduce Motion-aware transition factory.
+
+### Validation
+- Run 199 proved that the imported EGL surface could be created but still rendered transparent black. The legacy-handle correction is a targeted hypothesis based on the pinned ANGLE OpenSharedResource implementation; it must pass the GPU pixel probe before the experimental renderer is considered usable.
+
+### Browser content pages
+- Move History and Settings into the browser's WinUI content viewport, alongside the native start page, instead of showing History as a flyout and Settings as a modal page.
+- Add searchable browsing history, an explicit clear-history confirmation, and in-page Settings navigation with Save, Cancel and Clear browsing data actions.
+- Keep the native WebKit HWND hidden while an internal page occupies the content viewport.
+
+### ANGLE shared-texture diagnostics
+- Remove the unrelated EGL_BIND_TO_TEXTURE_RGBA config-selection constraint; it applies to eglBindTexImage on ordinary pbuffers and can leave ANGLE with zero otherwise-compatible configs.
+- Keep EGL_TEXTURE_TARGET=EGL_TEXTURE_2D and EGL_TEXTURE_FORMAT=EGL_TEXTURE_RGBA on the imported client-buffer surface, while creating the baseline pbuffer with only width and height attributes.
+
+### Native tab teardown diagnostics
+- Delay final WKView release after stopping loading and detaching callbacks, and trace the native release stages to help identify the exact failing teardown operation.
+- Make the Release smoke test explicitly target the main WinUI HWND when creating and closing tabs, avoiding ambiguous foreground-window selection.
+- Add UI automation coverage for the in-content History page.
+
+### Validation
+- The preceding 1.1.32 workflow built and installed the EXE installer, but its Release launch smoke test and ANGLE enforcement failed. This version must pass the full workflow before it is treated as a validated release.
+
+### Native tab stability
+- Split WebKit tab teardown into a prepare phase and a deferred final release on the next WinUI dispatcher turn, allowing pending native window work to drain after callbacks are detached and loading is stopped.
+- Forward WebKit-unhandled keyboard events to the owning WinUI window so browser shortcuts work while native page content has focus.
+- Extend the Windows smoke test to close tabs during navigation as well as after loading.
+
+### ANGLE shared-texture diagnostics
+- Require a texture-bindable RGBA EGL config and explicitly set EGL_TEXTURE_2D / EGL_TEXTURE_RGBA on the imported shared-handle pbuffer.
+- Flush GLES commands before verifying the D3D11 producer texture.
+
+## [1.1.31] - 2026-11-13
+
+### Build pipeline resilience
+- Run the stable WinUI compile, installer packaging and UI smoke tests even when the experimental ANGLE rendering probe fails.
+- Upload the standalone installer and smoke-test artifacts before enforcing the ANGLE probe result, so an experimental GPU issue no longer hides a usable stable build.
+
+### ANGLE render diagnostics
+- Compare a normal EGL pbuffer against the imported NT shared-handle pbuffer using framebuffer completeness, GL errors and GLES pixel readback.
+- Log the selected EGL config's color sizes and renderable/surface bits to isolate why imported-surface drawing currently reads back transparent black.
+
+## [1.1.30] - 2026-11-13
+
+### Native tab lifetime regression coverage
+- Make managed tab-close guards exception-safe and keep the browser's original native page alive through repeated tab churn.
+- Extend the Windows Release smoke test to create, navigate and close three native WebKit tabs, checking that Blaze remains alive and the original page remains selected.
+- Verify that both startup behavior choices are exposed in the Settings UI automation tree.
+
+### ANGLE EGL diagnostics
+- Read a diagnostic GLES pixel from the imported pbuffer, call eglSwapBuffers, and log the producer device's mapped BGRA pixel.
+- Separate a GLES render mismatch from an EGL presentation/flush or D3D shared-resource visibility mismatch.
+
+## [1.1.29] - 2026-11-13
+
+### Tab stability
+- Make tab close idempotent and clear the managed native handle before destroying its WebKit view.
+- Track native-handle-to-tab identity so delayed WebKit close callbacks cannot accidentally target a different tab after a handle is reused.
+- Detach WebKit page clients before releasing the view and serialize shared WebKit engine reference-count changes.
+
+### Startup behavior
+- Add a General setting to open a new tab at launch or restore the previous tab session.
+- Preserve the existing continue-session behavior as the default for upgraded installations.
+
+### ANGLE shared-texture probe
+- Select EGL pbuffer configs by testing the actual NT shared-handle import rather than comparing EGL_NATIVE_VISUAL_ID to a DXGI_FORMAT enum.
+- Report each candidate config and EGL error when the pinned ANGLE runtime rejects an import.
+
+## [1.1.28] - 2026-11-13
+
+### WebKit GPU composition experiment
+- Add a real ANGLE EGL import/render test using the staged WinCairo runtime's D3D11 device.
+- Create a BGRA8 texture on ANGLE's own D3D11 device, import it as an EGL pbuffer, render a GLES test pattern, and verify the D3D11 pixels.
+- Keep the staging readback diagnostic-only; no CPU readback is introduced into the browser renderer.
+- Preserve the stable WinCairo HWND path while the WebKit WCScene output adapter and WinUI composition presentation are still under development.
+
+### Address bar keyboard behavior
+- Defer focus restoration an additional dispatcher turn so AutoSuggestBox can finish its internal Enter and suggestion-popup handling.
+- Extend the Release UI smoke test to assert that Enter moves keyboard focus away from the address bar.
+
+
+
+## [1.1.27] - 2026-11-12
+
+### WebKit GPU composition experiment
+- Add a standalone x64 D3D11 capability probe for NT shared textures, cross-process handle duplication, keyed-mutex synchronization and child-process content verification.
+- Report ANGLE EGL vendor, version, display/device extensions and D3D adapter identity when the staged runtime exposes an initializable ANGLE display.
+- Build and run the probe in the experimental Windows Actions workflow without changing the stable WinCairo HWND renderer or enabling an unverified composition mode.
+- Explicitly distinguish successful D3D shared-resource transport from the still-unproven ANGLE texture import and WebKit WCScene output integration.
+
+### Browser consistency
+- Add a slim, native WinUI page-loading progress indicator driven by WebKit's estimated load progress; hide it for the start page and idle tabs.
+- Align the favicon discovery HTTP User-Agent with the browser's Safari-style Windows User-Agent.
+
+
+
 ## [1.1.26] - 2026-11-12
 
 ### Browser identity

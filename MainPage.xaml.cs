@@ -42,15 +42,20 @@ public sealed partial class MainPage : Page
 
     private readonly Dictionary<TabViewItem, BrowserTab> _tabItems = [];
     private readonly Dictionary<string, TabHeaderVisuals> _tabHeaders = [];
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<IntPtr, string> _nativeTabIds = new();
+    private readonly HashSet<string> _closingTabIds = [];
     private readonly Dictionary<string, string> _requestedTabFaviconUrls = [];
     private readonly FaviconCache _faviconCache = new();
     private readonly HashSet<IntPtr> _pendingPopups = [];
+    private readonly HashSet<IntPtr> _retainedNativeViews = [];
+    private readonly Dictionary<string, UIElement> _internalPageRoots = [];
     private readonly SemaphoreSlim _dialogGate = new(1, 1);
     private DispatcherQueueTimer? _stateTimer;
     private bool _initialized;
     private bool _isPageUnloading;
     private bool _engineAvailable;
     private bool _isAddressEditing;
+    private bool _internalPageOpen;
     private bool _addressSubmissionQueued;
     private GCHandle _nativeCallbackHandle;
 
@@ -213,6 +218,11 @@ public sealed partial class MainPage : Page
         _initialized = true;
 
         await ViewModel.InitializeAsync();
+        foreach (var tab in ViewModel.Tabs.Where(tab => IsInternalBrowserUrl(tab.Url)))
+        {
+            tab.Url = BrowserSettings.NativeStartPageUrl;
+            tab.Title = "Blaze";
+        }
         ApplyMotionPreferences();
         if (!_nativeCallbackHandle.IsAllocated)
             // Native download, dialog and popup callbacks can outlive a WKView; retain this bridge for the app process lifetime.
@@ -236,12 +246,15 @@ public sealed partial class MainPage : Page
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
         _isPageUnloading = true;
+        _internalPageRoots.Clear();
         _stateTimer?.Stop();
         _stateTimer = null;
         _ = ViewModel.SaveAsync();
         foreach (var popup in _pendingPopups.ToArray())
-            WebKitNative.Destroy(popup);
+            DestroyNativeViewHandleImmediately(popup);
         _pendingPopups.Clear();
+        foreach (var pendingHandle in _retainedNativeViews.ToArray())
+            FinalizeNativeViewDisposal(pendingHandle);
         foreach (var tab in ViewModel.Tabs)
             DestroyNativeView(tab);
     }
@@ -264,16 +277,17 @@ public sealed partial class MainPage : Page
             CloseBrowserTab(tab);
     }
 
-    private void CloseNativeTab(IntPtr nativeHandle)
+    private void CloseNativeTab(IntPtr nativeHandle, string tabId)
     {
-        if (nativeHandle == IntPtr.Zero)
+        if (nativeHandle == IntPtr.Zero || string.IsNullOrEmpty(tabId))
             return;
         if (_pendingPopups.Remove(nativeHandle))
         {
-            WebKitNative.Destroy(nativeHandle);
+            RetireNativeView(nativeHandle);
             return;
         }
-        var tab = ViewModel.Tabs.FirstOrDefault(candidate => candidate.NativeHandle == nativeHandle);
+        var tab = ViewModel.Tabs.FirstOrDefault(candidate =>
+            candidate.Id == tabId && candidate.NativeHandle == nativeHandle);
         if (tab is not null)
             CloseBrowserTab(tab);
     }
@@ -281,33 +295,56 @@ public sealed partial class MainPage : Page
     private void CloseBrowserTab(BrowserTab tab)
     {
         CrashLogger.Log("Tab action: Close tab.");
-        if (!ViewModel.Tabs.Contains(tab))
+        if (!ViewModel.Tabs.Contains(tab) || !_closingTabIds.Add(tab.Id))
             return;
 
-        var item = FindTabItem(tab);
-        DestroyNativeView(tab);
-        if (item is not null)
+        try
         {
-            _tabItems.Remove(item);
-            _tabHeaders.Remove(tab.Id);
-            _requestedTabFaviconUrls.Remove(tab.Id);
-            TabStrip.TabItems.Remove(item);
-        }
-        ViewModel.CloseTab(tab);
+            var item = FindTabItem(tab);
+            _internalPageRoots.Remove(tab.Id);
+            var nativeHandle = tab.NativeHandle;
+            // Clear identity before WB_Destroy: native teardown can trigger a
+            // delayed WebKit close callback, which must never close a reused handle.
+            tab.NativeHandle = IntPtr.Zero;
+            if (nativeHandle != IntPtr.Zero)
+            {
+                CrashLogger.Log($"Tab close: retiring WebKit handle 0x{nativeHandle:X}.");
+                _nativeTabIds.TryRemove(nativeHandle, out _);
+                RetireNativeView(nativeHandle);
+                CrashLogger.Log($"Tab close: native handle 0x{nativeHandle:X} detached and hidden; native WKView remains retained.");
+            }
 
-        if (ViewModel.Tabs.Count == 0)
+            if (item is not null)
+            {
+                _tabItems.Remove(item);
+                _tabHeaders.Remove(tab.Id);
+                _requestedTabFaviconUrls.Remove(tab.Id);
+                TabStrip.TabItems.Remove(item);
+            }
+            CrashLogger.Log("Tab close: removing tab from the WinUI TabView and view model.");
+            ViewModel.CloseTab(tab);
+            CrashLogger.Log("Tab close: view-model removal completed.");
+
+            if (ViewModel.Tabs.Count == 0)
+            {
+                var replacement = ViewModel.AddTab();
+                var replacementItem = AddTabItem(replacement);
+                TabStrip.SelectedItem = replacementItem;
+                EnsureNativeView(replacement);
+            }
+            else if (ViewModel.SelectedTab is not null)
+                TabStrip.SelectedItem = FindTabItem(ViewModel.SelectedTab);
+
+            UpdateClosableTabs();
+            CrashLogger.Log("Tab close: laying out remaining native WebKit views.");
+            LayoutNativeViews();
+            CrashLogger.Log("Tab close: remaining view layout completed.");
+            _ = ViewModel.SaveAsync();
+        }
+        finally
         {
-            var replacement = ViewModel.AddTab();
-            var replacementItem = AddTabItem(replacement);
-            TabStrip.SelectedItem = replacementItem;
-            EnsureNativeView(replacement);
+            _closingTabIds.Remove(tab.Id);
         }
-        else if (ViewModel.SelectedTab is not null)
-            TabStrip.SelectedItem = FindTabItem(ViewModel.SelectedTab);
-
-        UpdateClosableTabs();
-        LayoutNativeViews();
-        _ = ViewModel.SaveAsync();
     }
 
     private void AttachPopupTab(IntPtr nativeHandle)
@@ -324,6 +361,7 @@ public sealed partial class MainPage : Page
         // native start-page URL used by ordinary new tabs.
         var tab = ViewModel.AddTab("about:blank");
         tab.NativeHandle = nativeHandle;
+        _nativeTabIds[nativeHandle] = tab.Id;
         var item = AddTabItem(tab);
         ConfigureNativeView(tab);
         TabStrip.SelectedItem = item;
@@ -383,7 +421,7 @@ public sealed partial class MainPage : Page
         finally
         {
             if (_pendingPopups.Remove(nativeHandle))
-                WebKitNative.Destroy(nativeHandle);
+                RetireNativeView(nativeHandle);
         }
     }
 
@@ -394,6 +432,7 @@ public sealed partial class MainPage : Page
             return;
 
         ViewModel.SelectedTab = tab;
+        ShowInternalPageForSelectedTab();
         _isAddressEditing = false;
         SynchronizeAddressBoxFromSelectedTab();
         UpdateBookmarkButton();
@@ -453,17 +492,19 @@ public sealed partial class MainPage : Page
     private void OnHomeClick(object sender, RoutedEventArgs e)
     {
         CrashLogger.Log("Toolbar action: Home.");
+        CloseInternalPage();
         NavigateTo(ViewModel.Settings.HomePage);
     }
 
     private void OnAddressQuerySubmitted(AutoSuggestBox sender, AutoSuggestBoxQuerySubmittedEventArgs args)
     {
         var query = args.QueryText?.Trim();
-        CrashLogger.Log($"Address action: Submit navigation (query length: {query?.Length ?? 0}).");
+        var destination = args.ChosenSuggestion is AddressSuggestion chosen ? chosen.TargetUrl : query;
+        CrashLogger.Log($"Address action: Submit navigation (suggestion: {args.ChosenSuggestion is AddressSuggestion}; query length: {query?.Length ?? 0}).");
         sender.IsSuggestionListOpen = false;
         _isAddressEditing = false;
 
-        if (string.IsNullOrWhiteSpace(query) || _addressSubmissionQueued)
+        if (string.IsNullOrWhiteSpace(destination) || _addressSubmissionQueued)
             return;
 
         // AutoSuggestBox raises QuerySubmitted while it is still processing Enter.
@@ -476,19 +517,52 @@ public sealed partial class MainPage : Page
             try
             {
                 if (_isPageUnloading)
+                {
+                    _addressSubmissionQueued = false;
                     return;
+                }
 
-                NavigateTo(query);
-                BackButton.Focus(FocusState.Programmatic);
+                NavigateTo(destination!);
+                // Give AutoSuggestBox one more dispatcher turn to finish its
+                // internal Enter/suggestion-popup focus work. Focusing in the
+                // QuerySubmitted turn can be immediately undone by that control.
+                if (!App.DispatcherQueue.TryEnqueue(() =>
+                {
+                    try
+                    {
+                        if (_isPageUnloading)
+                            return;
+
+                        _isAddressEditing = false;
+                        var focused = BackButton.Focus(FocusState.Programmatic);
+                        if (!focused)
+                            focused = TabStrip.Focus(FocusState.Programmatic);
+                        if (AddressBox.FocusState != FocusState.Unfocused)
+                            focused = TabStrip.Focus(FocusState.Programmatic) || focused;
+
+                        CrashLogger.Log($"Address submission focus result: moved={focused}; addressFocus={AddressBox.FocusState}.");
+                        if (AddressBox.FocusState != FocusState.Unfocused)
+                            ViewModel.StatusMessage = "The page loaded, but keyboard focus remained in the address bar.";
+                    }
+                    catch (Exception exception)
+                    {
+                        CrashLogger.LogException("Address-bar focus restoration failed.", exception);
+                    }
+                    finally
+                    {
+                        _addressSubmissionQueued = false;
+                    }
+                }))
+                {
+                    _addressSubmissionQueued = false;
+                    CrashLogger.Log("Address-bar focus restoration could not be queued.");
+                }
             }
             catch (Exception exception)
             {
+                _addressSubmissionQueued = false;
                 CrashLogger.LogException("Address-bar navigation failed.", exception);
                 ViewModel.StatusMessage = "The address could not be opened. Check the crash log for details.";
-            }
-            finally
-            {
-                _addressSubmissionQueued = false;
             }
         }))
         {
@@ -514,8 +588,19 @@ public sealed partial class MainPage : Page
 
     private void OnAddressTextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
     {
-        if (args.Reason == AutoSuggestionBoxTextChangeReason.UserInput)
-            _isAddressEditing = true;
+        if (args.Reason != AutoSuggestionBoxTextChangeReason.UserInput)
+            return;
+
+        _isAddressEditing = true;
+        var suggestions = ViewModel.GetAddressSuggestions(sender.Text);
+        sender.ItemsSource = suggestions;
+        sender.IsSuggestionListOpen = suggestions.Count > 0;
+    }
+
+    private void OnAddressSuggestionChosen(AutoSuggestBox sender, AutoSuggestBoxSuggestionChosenEventArgs args)
+    {
+        if (args.SelectedItem is AddressSuggestion suggestion)
+            sender.Text = suggestion.Title;
     }
 
     private void SynchronizeAddressBoxFromSelectedTab()
@@ -562,25 +647,140 @@ public sealed partial class MainPage : Page
 
     private void OnHistoryClick(object sender, RoutedEventArgs e)
     {
-        CrashLogger.Log("Toolbar action: Open history.");
-        var flyout = CreateMenuFlyout();
-        if (ViewModel.History.Count == 0)
-            flyout.Items.Add(new MenuFlyoutItem { Text = "No browsing history yet", IsEnabled = false });
-        else
+        CrashLogger.Log("Toolbar action: Open history page.");
+        ShowHistoryPage();
+    }
+
+    private void ShowHistoryPage()
+    {
+        var root = new Grid { Padding = new Thickness(28, 24, 28, 20), RowSpacing = 16, Transitions = CreateEntranceTransitions() };
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        var heading = new Grid { ColumnSpacing = 14 };
+        heading.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        heading.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var titleStack = new StackPanel { Spacing = 4 };
+        titleStack.Children.Add(new TextBlock { Text = "History", Style = (Style)Application.Current.Resources["TitleTextBlockStyle"] });
+        titleStack.Children.Add(new TextBlock { Text = "Pages you have visited in Blaze", Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"] });
+        heading.Children.Add(titleStack);
+        var close = new Button { Content = new FontIcon { Glyph = "\uE72B", FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Segoe Fluent Icons") }, Width = 40, Height = 40 };
+        AutomationProperties.SetName(close, "Close history");
+        AutomationProperties.SetAutomationId(close, "HistoryBackButton");
+        close.Click += (_, _) => CloseInternalPage();
+        Grid.SetColumn(close, 1); heading.Children.Add(close); root.Children.Add(heading);
+
+        var search = new TextBox { PlaceholderText = "Search history" };
+        AutomationProperties.SetName(search, "Search browsing history");
+        AutomationProperties.SetAutomationId(search, "HistorySearchBox");
+        Grid.SetRow(search, 1); root.Children.Add(search);
+        var list = new ListView { SelectionMode = ListViewSelectionMode.None };
+        AutomationProperties.SetName(list, "Browsing history entries");
+        AutomationProperties.SetAutomationId(list, "HistoryEntries");
+        Grid.SetRow(list, 2); root.Children.Add(list);
+
+        void RefreshEntries()
         {
-            foreach (var entry in ViewModel.History.Take(30))
+            list.Items.Clear();
+            var query = search.Text?.Trim() ?? string.Empty;
+            foreach (var entry in ViewModel.History)
             {
-                var item = new MenuFlyoutItem { Text = string.IsNullOrWhiteSpace(entry.Title) ? entry.Url : entry.Title };
-                item.Click += (_, _) => NavigateTo(entry.Url);
-                flyout.Items.Add(item);
+                var title = string.IsNullOrWhiteSpace(entry.Title) ? entry.Url : entry.Title;
+                if (query.Length > 0 && !title.Contains(query, StringComparison.OrdinalIgnoreCase)
+                    && !entry.Url.Contains(query, StringComparison.OrdinalIgnoreCase)) continue;
+                var content = new StackPanel { Spacing = 3 };
+                content.Children.Add(new TextBlock { Text = title, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis });
+                content.Children.Add(new TextBlock { Text = entry.Url, Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"], TextTrimming = TextTrimming.CharacterEllipsis });
+                content.Children.Add(new TextBlock { Text = entry.VisitedAt.ToLocalTime().ToString("g"), Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorTertiaryBrush"], FontSize = 12 });
+                var open = new Button { HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch, Padding = new Thickness(12, 9, 12, 9), Content = content };
+                AutomationProperties.SetName(open, "Open " + title);
+                open.Click += (_, _) => { CloseInternalPage(); NavigateTo(entry.Url); };
+                list.Items.Add(open);
             }
-            flyout.Items.Add(new MenuFlyoutSeparator());
-            var clear = new MenuFlyoutItem { Text = "Clear history" };
-            clear.Click += async (_, _) => await ViewModel.ClearHistoryAsync();
-            flyout.Items.Add(clear);
+            if (list.Items.Count == 0)
+                list.Items.Add(new TextBlock { Text = query.Length == 0 ? "No browsing history yet." : "No history matches your search.", Margin = new Thickness(12, 18, 12, 18), Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"] });
         }
-        if (sender is FrameworkElement element)
-            flyout.ShowAt(element);
+        search.TextChanged += (_, _) => RefreshEntries();
+        RefreshEntries();
+
+        var footer = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Spacing = 8 };
+        var clear = new Button { Content = "Clear history" };
+        AutomationProperties.SetAutomationId(clear, "ClearHistoryButton");
+        clear.Click += async (_, _) =>
+        {
+            var confirmation = new ContentDialog { Title = "Clear browsing history?", Content = "This removes the browsing history saved by Blaze. Cookies and website data are not affected.", PrimaryButtonText = "Clear history", CloseButtonText = "Cancel", DefaultButton = ContentDialogButton.Close, XamlRoot = XamlRoot };
+            if (await ShowDialogAsync(confirmation) == ContentDialogResult.Primary) { await ViewModel.ClearHistoryAsync(); RefreshEntries(); }
+        };
+        var done = new Button { Content = "Done" };
+        done.Click += (_, _) => CloseInternalPage();
+        footer.Children.Add(clear); footer.Children.Add(done);
+        Grid.SetRow(footer, 3); root.Children.Add(footer);
+        OpenInternalPage("blaze://history", "History", root);
+    }
+
+    private void OpenInternalPage(string url, string title, UIElement root)
+    {
+        var tab = ViewModel.SelectedTab;
+        if (tab is null) return;
+        if (!tab.IsNativeStartPage)
+        {
+            tab = ViewModel.AddTab(BrowserSettings.NativeStartPageUrl);
+            var item = AddTabItem(tab);
+            TabStrip.SelectedItem = item;
+        }
+        tab.Url = url;
+        tab.Title = title;
+        tab.CanGoBack = false;
+        tab.CanGoForward = false;
+        _internalPageRoots[tab.Id] = root;
+        if (_tabHeaders.TryGetValue(tab.Id, out var header)) header.Title.Text = title;
+        if (FindTabItem(tab) is { } tabItem) AutomationProperties.SetName(tabItem, title);
+        ViewModel.AddressText = url;
+        AddressBox.Text = url;
+        ShowInternalPageForSelectedTab();
+        LayoutNativeViews();
+        UpdateNavigationButtons();
+        _ = ViewModel.SaveAsync();
+    }
+
+    private void ShowInternalPageForSelectedTab()
+    {
+        InternalPageSurface.Children.Clear();
+        _internalPageOpen = false;
+        var tab = ViewModel.SelectedTab;
+        if (tab is not null && _internalPageRoots.TryGetValue(tab.Id, out var root))
+        {
+            InternalPageSurface.Children.Add(root);
+            _internalPageOpen = true;
+        }
+        InternalPageSurface.Visibility = _internalPageOpen ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void DiscardSelectedInternalPage()
+    {
+        if (ViewModel.SelectedTab is not { } tab || !_internalPageRoots.Remove(tab.Id)) return;
+        InternalPageSurface.Children.Clear();
+        _internalPageOpen = false;
+        InternalPageSurface.Visibility = Visibility.Collapsed;
+    }
+
+    private void CloseInternalPage()
+    {
+        if (ViewModel.SelectedTab is not { } tab || !_internalPageRoots.Remove(tab.Id)) return;
+        InternalPageSurface.Children.Clear();
+        _internalPageOpen = false;
+        tab.Url = BrowserSettings.NativeStartPageUrl;
+        tab.Title = "Blaze";
+        tab.CanGoBack = false;
+        tab.CanGoForward = false;
+        ViewModel.AddressText = string.Empty;
+        AddressBox.Text = string.Empty;
+        if (_tabHeaders.TryGetValue(tab.Id, out var header)) header.Title.Text = "Blaze";
+        if (FindTabItem(tab) is { } item) AutomationProperties.SetName(item, "Blaze");
+        InternalPageSurface.Visibility = Visibility.Collapsed;
+        if (_initialized && !_isPageUnloading) LayoutNativeViews();
+        _ = ViewModel.SaveAsync();
     }
 
     private void OnDownloadsClick(object sender, RoutedEventArgs e)
@@ -619,10 +819,10 @@ public sealed partial class MainPage : Page
         AreOpenCloseAnimationsEnabled = AreAnimationsEnabled
     };
 
-    private async void OnSettingsClick(object sender, RoutedEventArgs e)
+    private void OnSettingsClick(object sender, RoutedEventArgs e)
     {
-        CrashLogger.Log("Toolbar action: Settings.");
-        await ShowSettingsDialogAsync();
+        CrashLogger.Log("Toolbar action: Open settings page.");
+        ShowSettingsPage();
     }
 
     private TransitionCollection CreateEntranceTransitions()
@@ -638,8 +838,10 @@ public sealed partial class MainPage : Page
         LayoutRoot.Transitions = CreateEntranceTransitions();
         TabStrip.Transitions = CreateEntranceTransitions();
         Toolbar.Transitions = CreateEntranceTransitions();
+        PageLoadingProgress.Transitions = CreateEntranceTransitions();
         BrowserSurface.Transitions = CreateEntranceTransitions();
         StartPageSurface.Transitions = CreateEntranceTransitions();
+        InternalPageSurface.Transitions = CreateEntranceTransitions();
         StartPageShortcutsGrid.Transitions = CreateEntranceTransitions();
     }
 
@@ -673,7 +875,7 @@ public sealed partial class MainPage : Page
         }
     }
 
-    private async Task ShowSettingsDialogAsync()
+    private void ShowSettingsPage()
     {
         var position = new RadioButtons
         {
@@ -736,7 +938,21 @@ public sealed partial class MainPage : Page
         AutomationProperties.SetAutomationId(popupHandling, "PopupHandlingMode");
         AutomationProperties.SetName(popupHandling, "Pop-up windows");
 
+        var startupBehavior = new RadioButtons { Header = "When Blaze starts" };
+        var startupNewTab = new RadioButton { Content = "Open a new tab" };
+        var startupContinue = new RadioButton { Content = "Continue where you left off" };
+        AutomationProperties.SetAutomationId(startupNewTab, "StartupNewTab");
+        AutomationProperties.SetAutomationId(startupContinue, "StartupContinueSession");
+        AutomationProperties.SetName(startupNewTab, "Open a new tab on launch");
+        AutomationProperties.SetName(startupContinue, "Continue where you left off on launch");
+        startupBehavior.Items.Add(startupNewTab);
+        startupBehavior.Items.Add(startupContinue);
+        startupBehavior.SelectedIndex = ViewModel.Settings.StartupBehavior == StartupBehavior.NewTab ? 0 : 1;
+        AutomationProperties.SetAutomationId(startupBehavior, "StartupBehavior");
+        AutomationProperties.SetName(startupBehavior, "Startup behavior");
+
         var generalPanel = new StackPanel { Spacing = 14, MinWidth = 420, Padding = new Thickness(12) };
+        generalPanel.Children.Add(startupBehavior);
         generalPanel.Children.Add(position);
         generalPanel.Children.Add(homePage);
         generalPanel.Children.Add(searchEngine);
@@ -802,12 +1018,12 @@ public sealed partial class MainPage : Page
         });
         advancedPanel.Children.Add(new TextBlock
         {
-            Text = "Win32 owned-window hosting is the active, validated renderer. ContentExternalOutputLink is an experimental composition output-target API; it does not provide a supported way to import the WinCairo WKView HWND into the WinUI visual tree. An opt-in browser mode will appear here only after a real WebKit output bridge is implemented and verified.",
+            Text = "Win32 owned-window hosting is the active renderer. The WinCairo ANGLE shared-texture experiment is still diagnostic-only: the EGL import/render probe must pass, and WebKit WCScene frames must be presented through a WinUI composition surface before this can become a usable renderer.",
             TextWrapping = TextWrapping.Wrap
         });
         advancedPanel.Children.Add(new TextBlock
         {
-            Text = "The experimental Windows App SDK API is intentionally not activated by a cosmetic toggle. The stable renderer remains available and is not changed by this setting page.",
+            Text = "There is currently no experimental-renderer switch. It is intentionally unavailable while the ANGLE probe and end-to-end WebKit composition are incomplete. Blaze always uses the stable Win32 host in this build.",
             TextWrapping = TextWrapping.Wrap
         });
 
@@ -824,71 +1040,82 @@ public sealed partial class MainPage : Page
         AddSettingsTab(settingsTabs, "Appearance", "SettingsAppearanceTab", appearancePanel);
         AddSettingsTab(settingsTabs, "Advanced", "SettingsAdvancedTab", advancedPanel);
 
-        var dialog = new ContentDialog
+        settingsTabs.MinWidth = 0;
+        settingsTabs.MaxWidth = 960;
+        settingsTabs.MaxHeight = double.PositiveInfinity;
+        settingsTabs.HorizontalAlignment = HorizontalAlignment.Stretch;
+        settingsTabs.VerticalAlignment = VerticalAlignment.Stretch;
+        var root = new Grid { Padding = new Thickness(28, 24, 28, 20), RowSpacing = 16 };
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        var heading = new Grid { ColumnSpacing = 14 };
+        heading.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        heading.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var titleStack = new StackPanel { Spacing = 4 };
+        titleStack.Children.Add(new TextBlock { Text = "Settings", Style = (Style)Application.Current.Resources["TitleTextBlockStyle"] });
+        titleStack.Children.Add(new TextBlock { Text = "Customize how Blaze looks, behaves and protects your browsing.", Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"], TextWrapping = TextWrapping.Wrap });
+        heading.Children.Add(titleStack);
+        var close = new Button { Content = new FontIcon { Glyph = "\uE72B", FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Segoe Fluent Icons") }, Width = 40, Height = 40 };
+        AutomationProperties.SetName(close, "Close settings");
+        AutomationProperties.SetAutomationId(close, "SettingsBackButton");
+        close.Click += (_, _) => CloseInternalPage();
+        Grid.SetColumn(close, 1); heading.Children.Add(close); root.Children.Add(heading);
+        Grid.SetRow(settingsTabs, 1); root.Children.Add(settingsTabs);
+        var footer = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Spacing = 8 };
+        var clearData = new Button { Content = "Clear browsing data" };
+        AutomationProperties.SetAutomationId(clearData, "ClearBrowsingDataButton");
+        clearData.Click += async (_, _) =>
         {
-            Title = "Settings",
-            Content = settingsTabs,
-            PrimaryButtonText = "Save",
-            SecondaryButtonText = "Clear browsing data",
-            CloseButtonText = "Cancel",
-            DefaultButton = ContentDialogButton.Primary,
-            XamlRoot = XamlRoot
-        };
-        AutomationProperties.SetAutomationId(dialog, "BrowserSettingsDialog");
-        AutomationProperties.SetName(dialog, "Browser settings");
-
-        var result = await ShowDialogAsync(dialog);
-        if (result == ContentDialogResult.Secondary)
-        {
-            var confirmation = new ContentDialog
-            {
-                Title = "Clear browsing data?",
-                Content = "This removes cookies, caches, local storage, service workers, indexed databases and browsing history for the open WebKit profiles. You may be signed out of websites.",
-                PrimaryButtonText = "Clear data",
-                CloseButtonText = "Cancel",
-                DefaultButton = ContentDialogButton.Close,
-                XamlRoot = XamlRoot
-            };
+            var confirmation = new ContentDialog { Title = "Clear browsing data?", Content = "This removes cookies, caches, local storage, service workers, indexed databases and browsing history for the open WebKit profiles. You may be signed out of websites.", PrimaryButtonText = "Clear data", CloseButtonText = "Cancel", DefaultButton = ContentDialogButton.Close, XamlRoot = XamlRoot };
             if (await ShowDialogAsync(confirmation) == ContentDialogResult.Primary)
             {
                 var activeProfile = ViewModel.Tabs.FirstOrDefault(tab => tab.NativeHandle != IntPtr.Zero);
-                if (activeProfile is not null)
-                    WebKitNative.ClearWebsiteData(activeProfile.NativeHandle);
+                if (activeProfile is not null) WebKitNative.ClearWebsiteData(activeProfile.NativeHandle);
                 await ViewModel.ClearHistoryAsync();
             }
-            return;
-        }
-        if (result != ContentDialogResult.Primary)
-            return;
-
-        ViewModel.Settings.TabBarAboveToolbar = position.SelectedIndex == 0;
-        ViewModel.Settings.HomePageCustomized = !string.IsNullOrWhiteSpace(homePage.Text);
-        ViewModel.Settings.HomePage = ViewModel.Settings.HomePageCustomized
-            ? homePage.Text.Trim()
-            : BrowserSettings.NativeStartPageUrl;
-        ViewModel.Settings.SearchEngine = (BrowserSearchEngine)Math.Clamp(searchEngine.SelectedIndex, 0, 3);
-        ViewModel.Settings.JavaScriptEnabled = javaScript.IsOn;
-        ViewModel.Settings.LoadImagesAutomatically = images.IsOn;
-        ViewModel.Settings.ReduceMotion = reduceMotion.IsOn;
-        ViewModel.Settings.PopupHandlingMode = popupHandling.SelectedIndex switch
-        {
-            1 => PopupHandlingMode.AlwaysAllow,
-            2 => PopupHandlingMode.AlwaysDeny,
-            _ => PopupHandlingMode.Ask
         };
-        ApplyMotionPreferences();
-        foreach (var control in permissionControls)
-            ViewModel.ApplySitePermission(control.Site, control.Location.IsOn, control.Notifications.IsOn);
-        foreach (var tab in ViewModel.Tabs)
+        var cancel = new Button { Content = "Cancel" };
+        cancel.Click += (_, _) => CloseInternalPage();
+        var save = new Button { Content = "Save" };
+        AutomationProperties.SetAutomationId(save, "SettingsSaveButton");
+        save.Click += async (_, _) =>
         {
-            if (tab.NativeHandle == IntPtr.Zero)
-                continue;
-            WebKitNative.SetJavaScriptEnabled(tab.NativeHandle, javaScript.IsOn);
-            WebKitNative.SetLoadsImagesAutomatically(tab.NativeHandle, images.IsOn);
-        }
-        ApplyTabBarPlacement();
-        LayoutNativeViews();
-        await ViewModel.SaveAsync();
+            ViewModel.Settings.StartupBehavior = startupBehavior.SelectedIndex == 0
+                ? StartupBehavior.NewTab
+                : StartupBehavior.ContinueSession;
+            ViewModel.Settings.TabBarAboveToolbar = position.SelectedIndex == 0;
+            ViewModel.Settings.HomePageCustomized = !string.IsNullOrWhiteSpace(homePage.Text);
+            ViewModel.Settings.HomePage = ViewModel.Settings.HomePageCustomized
+                ? homePage.Text.Trim()
+                : BrowserSettings.NativeStartPageUrl;
+            ViewModel.Settings.SearchEngine = (BrowserSearchEngine)Math.Clamp(searchEngine.SelectedIndex, 0, 3);
+            ViewModel.Settings.JavaScriptEnabled = javaScript.IsOn;
+            ViewModel.Settings.LoadImagesAutomatically = images.IsOn;
+            ViewModel.Settings.ReduceMotion = reduceMotion.IsOn;
+            ViewModel.Settings.PopupHandlingMode = popupHandling.SelectedIndex switch
+            {
+                1 => PopupHandlingMode.AlwaysAllow,
+                2 => PopupHandlingMode.AlwaysDeny,
+                _ => PopupHandlingMode.Ask
+            };
+            ApplyMotionPreferences();
+            foreach (var control in permissionControls)
+                ViewModel.ApplySitePermission(control.Site, control.Location.IsOn, control.Notifications.IsOn);
+            foreach (var tab in ViewModel.Tabs)
+            {
+                if (tab.NativeHandle == IntPtr.Zero)
+                    continue;
+                WebKitNative.SetJavaScriptEnabled(tab.NativeHandle, javaScript.IsOn);
+                WebKitNative.SetLoadsImagesAutomatically(tab.NativeHandle, images.IsOn);
+            }
+            ApplyTabBarPlacement();
+            CloseInternalPage();
+            await ViewModel.SaveAsync();
+        };
+        footer.Children.Add(clearData); footer.Children.Add(cancel); footer.Children.Add(save);
+        Grid.SetRow(footer, 2); root.Children.Add(footer);
+        OpenInternalPage("blaze://settings", "Settings", root);
     }
 
     private static void AddSettingsTab(TabView tabs, string title, string automationId, UIElement content)
@@ -901,7 +1128,6 @@ public sealed partial class MainPage : Page
                 Content = content,
                 VerticalScrollMode = ScrollMode.Auto,
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                MaxHeight = 520
             },
             IsClosable = false
         };
@@ -930,7 +1156,7 @@ public sealed partial class MainPage : Page
         try
         {
             if (await ShowDialogAsync(dialog) == ContentDialogResult.Primary && permissionType != 2)
-                await ShowSettingsDialogAsync();
+                ShowSettingsPage();
         }
         catch (Exception ex)
         {
@@ -1031,8 +1257,9 @@ public sealed partial class MainPage : Page
     {
         try
         {
-            if (GCHandle.FromIntPtr(userData).Target is MainPage page)
-                App.DispatcherQueue.TryEnqueue(() => page.CloseNativeTab(nativeHandle));
+            if (GCHandle.FromIntPtr(userData).Target is MainPage page
+                && page._nativeTabIds.TryGetValue(nativeHandle, out var tabId))
+                App.DispatcherQueue.TryEnqueue(() => page.CloseNativeTab(nativeHandle, tabId));
         }
         catch
         {
@@ -1101,6 +1328,7 @@ public sealed partial class MainPage : Page
     private void NavigateTo(string url)
     {
         _isAddressEditing = false;
+        DiscardSelectedInternalPage();
         ViewModel.NavigateAddressCommand.Execute(url);
         var tab = ViewModel.SelectedTab;
         AddressBox.Text = tab?.IsNativeStartPage == true ? string.Empty : ViewModel.AddressText;
@@ -1192,7 +1420,8 @@ public sealed partial class MainPage : Page
 
     private void EnsureNativeView(BrowserTab tab)
     {
-        if (tab.NativeHandle != IntPtr.Zero || !_initialized || tab.IsNativeStartPage)
+        if (tab.NativeHandle != IntPtr.Zero || !_initialized || tab.IsNativeStartPage
+            || _internalPageRoots.ContainsKey(tab.Id) || IsInternalBrowserUrl(tab.Url))
             return;
 
         try
@@ -1201,6 +1430,7 @@ public sealed partial class MainPage : Page
             tab.NativeHandle = WebKitNative.Create(App.WindowHandle, x, y, Math.Max(1, width), Math.Max(1, height), tab.Url);
             if (tab.NativeHandle == IntPtr.Zero)
                 throw new InvalidOperationException("WKViewCreate did not return a native view.");
+            _nativeTabIds[tab.NativeHandle] = tab.Id;
             ConfigureNativeView(tab);
             CrashLogger.Log($"Created native WebKit view in owned popup host. Host HWND={WebKitNative.GetHostWindow(tab.NativeHandle):X}; child HWND={WebKitNative.GetWindow(tab.NativeHandle):X}; owner={App.WindowHandle:X}; bounds={x},{y},{width},{height}.");
             WebKitNative.SetJavaScriptEnabled(tab.NativeHandle, ViewModel.Settings.JavaScriptEnabled);
@@ -1213,8 +1443,10 @@ public sealed partial class MainPage : Page
         {
             if (tab.NativeHandle != IntPtr.Zero)
             {
-                WebKitNative.Destroy(tab.NativeHandle);
+                var failedHandle = tab.NativeHandle;
                 tab.NativeHandle = IntPtr.Zero;
+                _nativeTabIds.TryRemove(failedHandle, out _);
+                WebKitNative.Destroy(failedHandle);
             }
             _engineAvailable = false;
             EngineError.Message = $"The pinned WinCairo runtime failed to initialize: {ex.Message}";
@@ -1239,9 +1471,71 @@ public sealed partial class MainPage : Page
     {
         if (tab.NativeHandle == IntPtr.Zero)
             return;
-        WebKitNative.Destroy(tab.NativeHandle);
+        var nativeHandle = tab.NativeHandle;
         tab.NativeHandle = IntPtr.Zero;
+        _nativeTabIds.TryRemove(nativeHandle, out _);
+        DestroyNativeViewHandleImmediately(nativeHandle);
     }
+
+    private void RetireNativeView(IntPtr nativeHandle)
+    {
+        if (nativeHandle == IntPtr.Zero)
+            return;
+        if (_isPageUnloading)
+        {
+            DestroyNativeViewHandleImmediately(nativeHandle);
+            return;
+        }
+        if (!_retainedNativeViews.Add(nativeHandle))
+            return;
+
+        try
+        {
+            // Detach and hide immediately, but do not release WKView while the
+            // WebKit GPU process may still have outstanding scene/compositing
+            // work. Retain the native object until the browser page shuts down.
+            WebKitNative.PrepareDestroy(nativeHandle);
+            CrashLogger.Log($"Retired WebKit view 0x{nativeHandle:X}: hidden and callbacks detached; WKRelease deferred until application shutdown.");
+        }
+        catch (Exception exception)
+        {
+            CrashLogger.LogException("Native WebKit view retirement failed; retaining the handle for shutdown.", exception);
+        }
+    }
+
+    private void FinalizeNativeViewDisposal(IntPtr nativeHandle)
+    {
+        if (!_retainedNativeViews.Remove(nativeHandle))
+            return;
+        try
+        {
+            CrashLogger.Log($"Beginning shutdown-only native WebKit release for retired view 0x{nativeHandle:X}.");
+            WebKitNative.Destroy(nativeHandle);
+            CrashLogger.Log($"Finalized retained native WebKit view 0x{nativeHandle:X} during page shutdown.");
+        }
+        catch (Exception exception)
+        {
+            CrashLogger.LogException("Native WebKit view final release failed.", exception);
+        }
+    }
+
+    private static void DestroyNativeViewHandleImmediately(IntPtr nativeHandle)
+    {
+        if (nativeHandle == IntPtr.Zero)
+            return;
+        try
+        {
+            WebKitNative.PrepareDestroy(nativeHandle);
+            WebKitNative.Destroy(nativeHandle);
+        }
+        catch (Exception exception)
+        {
+            CrashLogger.LogException("Immediate native WebKit view destruction failed.", exception);
+        }
+    }
+
+    private static bool IsInternalBrowserUrl(string? url) =>
+        url?.StartsWith("blaze://", StringComparison.OrdinalIgnoreCase) == true;
 
     private void LayoutNativeViews()
     {
@@ -1249,10 +1543,12 @@ public sealed partial class MainPage : Page
             return;
 
         var selected = ViewModel.SelectedTab;
-        var showStartPage = selected?.IsNativeStartPage == true;
+        _internalPageOpen = selected is not null && _internalPageRoots.ContainsKey(selected.Id);
+        var showStartPage = selected?.IsNativeStartPage == true && !_internalPageOpen;
         StartPageSurface.Visibility = showStartPage ? Visibility.Visible : Visibility.Collapsed;
+        InternalPageSurface.Visibility = _internalPageOpen ? Visibility.Visible : Visibility.Collapsed;
 
-        if (showStartPage || EngineError.IsOpen || selected is null)
+        if (_internalPageOpen || showStartPage || EngineError.IsOpen || selected is null)
         {
             foreach (var tab in ViewModel.Tabs)
             {
@@ -1318,7 +1614,8 @@ public sealed partial class MainPage : Page
     private void UpdateBookmarkButton()
     {
         var isBookmarked = ViewModel.IsBookmarked(ViewModel.SelectedTab?.Url);
-        BookmarkButton.IsEnabled = ViewModel.SelectedTab?.IsNativeStartPage != true;
+        BookmarkButton.IsEnabled = ViewModel.SelectedTab?.IsNativeStartPage != true
+            && !IsInternalBrowserUrl(ViewModel.SelectedTab?.Url);
         var accessibleName = isBookmarked ? "Remove bookmark" : "Add bookmark";
         AutomationProperties.SetName(BookmarkButton, accessibleName);
         ToolTipService.SetToolTip(BookmarkButton, accessibleName);
@@ -1333,10 +1630,26 @@ public sealed partial class MainPage : Page
         ToolTipService.SetToolTip(ReloadStopButton, isLoading ? "Stop loading" : "Reload");
     }
 
+    private void UpdateLoadingProgress()
+    {
+        var tab = ViewModel.SelectedTab;
+        if (tab is null || tab.IsNativeStartPage || !tab.IsLoading || tab.NativeHandle == IntPtr.Zero)
+        {
+            PageLoadingProgress.Value = 0;
+            PageLoadingProgress.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        var progress = WebKitNative.GetEstimatedProgress(tab.NativeHandle);
+        PageLoadingProgress.Value = Math.Clamp(progress * 100.0, 0.0, 100.0);
+        PageLoadingProgress.Visibility = Visibility.Visible;
+    }
+
     private void UpdateNavigationButtons()
     {
         BackButton.IsEnabled = ViewModel.SelectedTab?.CanGoBack == true;
         ForwardButton.IsEnabled = ViewModel.SelectedTab?.CanGoForward == true;
         UpdateLoadingButton();
+        UpdateLoadingProgress();
     }
 }

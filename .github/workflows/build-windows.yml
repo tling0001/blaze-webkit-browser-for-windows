@@ -106,6 +106,22 @@ jobs:
           foreach ($required in @('WebKit2.dll','WebKitHost.dll')) { if (-not (Test-Path (Join-Path $runtime $required))) { throw "Staged runtime is missing $required." } }
           Write-Host "Validated SDK $sdkTag ($actualHash); staged $((Get-ChildItem $runtime -File -Recurse).Count) runtime files."
 
+      - name: Build and run WinCairo ANGLE shared-texture import/render probe
+        id: angle_probe
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cmake -S experiments\wincairo-shared-d3d-composition -B CompositionProbeBuild -A x64
+          if ($LASTEXITCODE -ne 0) { throw 'Configuring the shared-D3D capability probe failed.' }
+          cmake --build CompositionProbeBuild --config Release
+          if ($LASTEXITCODE -ne 0) { throw 'Building the shared-D3D capability probe failed.' }
+          $probe = Get-ChildItem -LiteralPath 'CompositionProbeBuild' -Filter 'BlazeCompositionProbe.exe' -Recurse -File | Select-Object -First 1
+          if (-not $probe) { throw 'The shared-D3D capability probe executable was not produced.' }
+          $env:PATH = (Join-Path $PWD 'webkit-runtime') + ';' + $env:PATH
+          & $probe.FullName
+          if ($LASTEXITCODE -ne 0) { throw 'The ANGLE EGL D3D11 texture import/render or cross-process shared-texture probe failed.' }
+
       - name: Set up .NET 10
         uses: actions/setup-dotnet@v5
         with:
@@ -230,6 +246,8 @@ jobs:
           winapp find-api check-property UISettings AnimationsEnabled --json --project-dir .
           if ($LASTEXITCODE -ne 0) { throw 'Windows UISettings animation preference API verification failed.' }
           winapp find-api check-property FlyoutBase AreOpenCloseAnimationsEnabled --json --project-dir .
+          winapp find-api check-property ProgressBar Minimum Maximum Value IsIndeterminate --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'WinUI ProgressBar API verification failed.' }
           if ($LASTEXITCODE -ne 0) { throw 'Native WinUI FlyoutBase animation API verification failed.' }
           winapp find-api members AutomationProperties --filter SetAccessibilityView --json --project-dir .
           if ($LASTEXITCODE -ne 0) { throw 'WinUI AutomationProperties accessibility-view API verification failed.' }
@@ -361,6 +379,12 @@ jobs:
           path: release-assets/Blaze-Setup-*-x64.exe
           if-no-files-found: error
           retention-days: 14
+
+      - name: Enforce ANGLE experimental probe result after packaging
+        if: always() && steps.angle_probe.outcome == 'failure'
+        shell: pwsh
+        run: |
+          throw 'The ANGLE EGL shared-texture render probe failed. The stable WinUI build and installer artifacts were still produced for diagnosis; do not enable the experimental renderer until this probe passes.'
 
   release:
     name: Publish versioned GitHub Release

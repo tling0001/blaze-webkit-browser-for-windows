@@ -1,3 +1,5 @@
+using CommunityToolkit.Mvvm.ComponentModel;
+
 namespace WebKitBrowser.Models;
 
 public enum BrowserSearchEngine
@@ -15,6 +17,12 @@ public enum PopupHandlingMode
     AlwaysDeny
 }
 
+public enum StartupBehavior
+{
+    NewTab,
+    ContinueSession
+}
+
 public sealed class BrowserSettings
 {
     public const string NativeStartPageUrl = "blaze://home";
@@ -23,6 +31,7 @@ public sealed class BrowserSettings
     public bool LoadImagesAutomatically { get; set; } = true;
     public bool ReduceMotion { get; set; } = false;
     public PopupHandlingMode PopupHandlingMode { get; set; } = PopupHandlingMode.Ask;
+    public StartupBehavior StartupBehavior { get; set; } = StartupBehavior.ContinueSession;
     public string HomePage { get; set; } = NativeStartPageUrl;
     public bool HomePageCustomized { get; set; }
     public BrowserSearchEngine SearchEngine { get; set; } = BrowserSearchEngine.Google;
@@ -71,3 +80,26 @@ public sealed class SitePermissionEntry
 }
 
 public sealed record StartPageShortcut(string Title, string Url, string Glyph, string AutomationId);
+
+public sealed partial class AddressSuggestion : ObservableObject
+{
+    [ObservableProperty]
+    public partial string Title { get; set; }
+
+    [ObservableProperty]
+    public partial string Detail { get; set; }
+
+    [ObservableProperty]
+    public partial string TargetUrl { get; set; }
+
+    [ObservableProperty]
+    public partial string Glyph { get; set; }
+
+    public AddressSuggestion(string title, string detail, string targetUrl, string glyph)
+    {
+        Title = title;
+        Detail = detail;
+        TargetUrl = targetUrl;
+        Glyph = glyph;
+    }
+}

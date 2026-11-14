@@ -17,6 +17,7 @@ using WB_NEW_PAGE_CALLBACK = int (__cdecl*)(WB_VIEW_HANDLE view, void* userData)
 using WB_CLOSE_PAGE_CALLBACK = void (__cdecl*)(WB_VIEW_HANDLE view, void* userData);
 
 WB_API WB_VIEW_HANDLE WB_Create(HWND parent, int x, int y, int width, int height, const wchar_t* initialUrl);
+WB_API void WB_PrepareDestroy(WB_VIEW_HANDLE view);
 WB_API void WB_Destroy(WB_VIEW_HANDLE view);
 WB_API BOOL WB_SetBounds(WB_VIEW_HANDLE view, int x, int y, int width, int height);
 WB_API HWND WB_GetWindow(WB_VIEW_HANDLE view);
