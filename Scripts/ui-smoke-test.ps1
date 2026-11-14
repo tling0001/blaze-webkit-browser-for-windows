@@ -103,7 +103,7 @@ try {
   style="position:fixed;left:24px;top:24px;width:340px;height:42px;font:18px sans-serif;">
 <script>
 document.getElementById('keyboard-focus-target').addEventListener('input', event => {
-  document.title = 'Blaze Keyboard: ' + event.target.value;
+  document.title = 'Blaze WebKit Smoke — Keyboard: ' + event.target.value;
 });
 </script>
 </body></html>
@@ -274,7 +274,7 @@ namespace BlazeSmoke {
     $keyboardInputObserved = $false
     for ($attempt = 0; $attempt -lt 40; $attempt++) {
         $keyboardTree = (Invoke-WinAppChecked @('ui', 'inspect', '--interactive', '--json', '-w', [string]$mainWindow.hwnd)) -join [Environment]::NewLine
-        if ($keyboardTree.Contains('Blaze Keyboard: BlazeKeyboardCheck')) {
+        if ($keyboardTree.Contains('Blaze WebKit Smoke — Keyboard: BlazeKeyboardCheck')) {
             $keyboardInputObserved = $true
             break
         }
