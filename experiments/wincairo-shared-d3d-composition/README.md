@@ -3,6 +3,8 @@
 Status: The production browser explicitly uses WinCairo's GPU-accelerated `WCScene` / TextureMapper presentation path with offscreen bitmap readback disabled. P1.5 ANGLE import/render plus DirectComposition GPU presentation also passed on the hosted Windows runner (Blaze 1.1.40 / Actions run 206). The test validates keyed-mutex ownership across the ANGLE producer, a second D3D11 device, and a DirectComposition swap-chain consumer, including a GPU-only copy before Present. It remains a diagnostic harness: live WebKit `WCScene` output transport into the WinUI composition tree is not implemented. The usable production renderer is the GPU-accelerated native HWND path.
 
 ## Versioned output-surface protocol groundwork (1.1.44)
+The same experimental target now also builds a D3D11 ring probe. It allocates three BGRA8 keyed-mutex shared textures, opens each on a second D3D11 device on the same adapter, performs nine producer→consumer handoffs per generation, and GPU-copies each frame to a consumer-owned texture. It recreates the ring at a larger size under a new generation while keeping frame sequence IDs monotonic. This is a D3D resource/synchronization test; it does not yet use ANGLE to render a WebKit scene or attach a WinUI visual.
+
 
 SharedSurfaceProtocol.h now defines the fixed-width v1 descriptor intended for the browser-process ↔ WebKit GPU-process boundary:
 - Per-view identity and monotonically increasing resize generation.
