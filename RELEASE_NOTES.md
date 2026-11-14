@@ -1,5 +1,19 @@
 # Blaze release notes
 
+## [1.1.47] - 2026-11-14
+
+### Native WebKit keyboard focus
+- Attach the WinUI owner and WebKit child input queues during mouse activation, before setting child focus.
+- Defer owner foreground restoration until the activation transaction unwinds, then preserve the child focus only if the shared input queue still reports WebKit focused.
+- Detach the queues after the focus decision, so moving focus to the address bar during the transition is not overridden.
+- Extend activation diagnostics with attached thread identity and focus-preservation outcome.
+
+### Versioning
+- Align product, assembly, file, informational and package versions at 1.1.47.
+
+### Validation
+- Windows CI verifies native keyboard input to WebKit after foreground/Mica restoration and runs the password manager's loopback save/autofill tests. The live WebKit shared-D3D composition path remains unimplemented; HWND rendering stays active.
+
 ## [1.1.46] - 2026-11-14
 
 ### Native WebKit focus restoration
