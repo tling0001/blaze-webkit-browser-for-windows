@@ -1,5 +1,23 @@
 # Blaze release notes
 
+## [1.1.41] - 2026-11-14
+
+### Win32 window activation and Mica
+- Defer restoration of the WinUI owner activation until after the native WebKit host's `WM_MOUSEACTIVATE` transaction has returned. This avoids racing Windows' activation processing while preserving focus transfer to the WebKit child.
+- Restore activation on the WinUI owner's message queue and emit focused HWND/foreground diagnostics for failed activation investigations.
+- Update the Release smoke test to wait for the deferred owner-activation message before asserting that the WinUI HWND is foreground; the assertion remains strict.
+
+### GPU composition groundwork
+- Keep the ANGLE shared-D3D11 texture and DirectComposition GPU-copy probe in the mainline as diagnostic-only infrastructure.
+- Hosted Actions verified the keyed-mutex ANGLE import/render and GPU-only DirectComposition copy path. This does not yet constitute WebKit `WCScene` integration or a production renderer.
+
+### General app and build
+- Continue using the stable WinCairo HWND renderer by default; no CPU bitmap readback fallback is presented as GPU composition.
+- Bump product, assembly, file, informational and package versions together.
+
+### Validation
+- Pending the new main-branch Release build, installer integration, and deferred Win32 activation/Mica smoke test.
+
 ## [1.1.40] - 2026-11-13
 
 ### Experimental GPU renderer
