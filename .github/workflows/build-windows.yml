@@ -11,6 +11,12 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      publish_release_on_smoke_failure:
+        description: 'Publish the installer even if the WinUI/WebKit smoke test fails (only if build, installer and GPU probe succeed)'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -25,6 +31,10 @@ jobs:
   build:
     name: Build and package WinUI browser (x64)
     runs-on: windows-latest
+    outputs:
+      smoke_test_outcome: ${{ steps.ui_smoke_test.outcome }}
+      installer_artifact_outcome: ${{ steps.upload_installer.outcome }}
+      angle_probe_outcome: ${{ steps.angle_probe.outcome }}
     steps:
       - name: Check out browser source
         uses: actions/checkout@v5
@@ -361,6 +371,7 @@ jobs:
           .\Scripts\installer-smoke-test.ps1 -InstallerPath $installer.FullName -ArtifactDirectory '.\installer-test-artifacts'
 
       - name: Run lightweight Release launch smoke test
+        id: ui_smoke_test
         shell: pwsh
         run: .\Scripts\ui-smoke-test.ps1
 
@@ -377,6 +388,7 @@ jobs:
           retention-days: 14
 
       - name: Upload standalone Blaze EXE installer
+        id: upload_installer
         if: always() && !cancelled()
         uses: actions/upload-artifact@v6
         with:
@@ -393,7 +405,7 @@ jobs:
 
   release:
     name: Publish versioned GitHub Release
-    if: ${{ github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch') }}
+    if: ${{ always() && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch') && (needs.build.result == 'success' || (github.event_name == 'workflow_dispatch' && inputs.publish_release_on_smoke_failure == true && needs.build.outputs.smoke_test_outcome == 'failure' && needs.build.outputs.installer_artifact_outcome == 'success' && needs.build.outputs.angle_probe_outcome == 'success')) }}
     needs: [build]
     runs-on: ubuntu-latest
     steps:
