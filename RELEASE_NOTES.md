@@ -8,12 +8,13 @@
 - Add native WinUI account selection for multiple saved credentials, origin-matched autofill, and an explicit save-password confirmation.
 - Keep credentials in Windows Credential Locker; do not write password values to browser profile JSON or diagnostics logs.
 - Preserve normal website JavaScript prompts when they do not match the private per-view bridge.
+- Extend the Release UI smoke test with a loopback HTTP login form that verifies trusted-submit save prompting, trusted password-focus autofill, and removal of the ephemeral test credential afterward.
 
 ### Versioning
 - Align product, assembly, file, informational and package versions at 1.1.45.
 
 ### Validation
-- The Windows workflow compiles the native WebKit host and WinUI application and runs browser UI smoke tests. Automatic credential flows are now implemented but remain subject to the new end-to-end smoke coverage; the production GPU renderer remains the HWND fallback until the WebKit shared-surface integration is complete.
+- The Windows workflow compiles the native WebKit host and WinUI application and runs browser UI smoke tests. Automatic credential flows and their loopback end-to-end smoke coverage are implemented; the latest Windows run is still validating the changes; the production GPU renderer remains the HWND fallback until the WebKit shared-surface integration is complete.
 
 ## [1.1.44] - 2026-11-13
 
