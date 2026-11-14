@@ -96,7 +96,17 @@ try {
     @'
 <!doctype html>
 <html><head><meta charset="utf-8"><title>Blaze WebKit Smoke</title></head>
-<body><h1>Blaze WebKit Smoke</h1><p>Native WinCairo popup host is active.</p></body></html>
+<body>
+<h1>Blaze WebKit Smoke</h1>
+<p>Native WinCairo popup host is active.</p>
+<input id="keyboard-focus-target" aria-label="Keyboard focus test" type="text"
+  style="position:fixed;left:24px;top:24px;width:340px;height:42px;font:18px sans-serif;">
+<script>
+document.getElementById('keyboard-focus-target').addEventListener('input', event => {
+  document.title = 'Blaze Keyboard: ' + event.target.value;
+});
+</script>
+</body></html>
 '@ | Set-Content -LiteralPath $smokePage -Encoding utf8
     $smokeUri = ([Uri]$smokePage).AbsoluteUri
     Invoke-WinAppChecked @('ui', 'send-keys', $smokeUri, '--target', 'AddressBox', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
@@ -157,6 +167,34 @@ namespace BlazeSmoke {
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr hwnd, System.Text.StringBuilder title, int maxCount);
         [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint processId);
         [DllImport("user32.dll")] public static extern IntPtr GetWindow(IntPtr hwnd, uint command);
+        [StructLayout(LayoutKind.Sequential)] private struct KeyboardInput {
+            public ushort VirtualKey;
+            public ushort ScanCode;
+            public uint Flags;
+            public uint Time;
+            public UIntPtr ExtraInfo;
+        }
+        [StructLayout(LayoutKind.Explicit)] private struct InputUnion {
+            [FieldOffset(0)] public KeyboardInput Keyboard;
+        }
+        [StructLayout(LayoutKind.Sequential)] private struct Input {
+            public uint Type;
+            public InputUnion Data;
+        }
+        [DllImport("user32.dll", SetLastError = true)] private static extern uint SendInput(uint count, Input[] inputs, int size);
+        public static void SendUnicodeText(string value) {
+            foreach (char character in value) {
+                var inputs = new Input[2];
+                inputs[0].Type = 1;
+                inputs[0].Data.Keyboard.ScanCode = character;
+                inputs[0].Data.Keyboard.Flags = 0x0004;
+                inputs[1].Type = 1;
+                inputs[1].Data.Keyboard.ScanCode = character;
+                inputs[1].Data.Keyboard.Flags = 0x0004 | 0x0002;
+                if (SendInput(2, inputs, Marshal.SizeOf(typeof(Input))) != 2)
+                    throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(), "SendInput Unicode text failed.");
+            }
+        }
     }
 }
 '@
@@ -213,6 +251,30 @@ namespace BlazeSmoke {
         throw 'The native WebKit content screenshot was not delivered.'
     }
     $results.Add([ordered]@{ name = 'Native WebKit content screenshot captured'; status = 'PASS'; detail = $contentScreenshot })
+
+    # Verify real keyboard text input reaches a focused HTML input after the
+    # WinUI owner has been restored as the foreground/Mica window.
+    $inputPoint = [BlazeSmoke.NativePoint]::new($hostRect.Left + 190, $hostRect.Top + 45)
+    if (-not [BlazeSmoke.Native]::SetCursorPos($inputPoint.X, $inputPoint.Y)) {
+        throw 'Could not position the pointer over the HTML keyboard test input.'
+    }
+    [BlazeSmoke.Native]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)
+    [BlazeSmoke.Native]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)
+    Start-Sleep -Milliseconds 150
+    [BlazeSmoke.Native]::SendUnicodeText('BlazeKeyboardCheck')
+    $keyboardInputObserved = $false
+    for ($attempt = 0; $attempt -lt 40; $attempt++) {
+        $keyboardTree = (Invoke-WinAppChecked @('ui', 'inspect', '--interactive', '--json', '-w', [string]$mainWindow.hwnd)) -join [Environment]::NewLine
+        if ($keyboardTree.Contains('Blaze Keyboard: BlazeKeyboardCheck')) {
+            $keyboardInputObserved = $true
+            break
+        }
+        Start-Sleep -Milliseconds 100
+    }
+    if (-not $keyboardInputObserved) {
+        throw 'Unicode keyboard input did not reach the focused WebKit HTML input after WinUI foreground restoration.'
+    }
+    $results.Add([ordered]@{ name = 'Keyboard text input reaches WebKit while WinUI remains foreground'; status = 'PASS' })
 
     # Close pages while navigation is active to exercise teardown with outstanding work.
     for ($iteration = 1; $iteration -le 3; $iteration++) {
