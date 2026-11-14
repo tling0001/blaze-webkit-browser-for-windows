@@ -13,6 +13,7 @@ using WebKitBrowser.Diagnostics;
 using WebKitBrowser.Models;
 using WebKitBrowser.Services;
 using WebKitBrowser.ViewModels;
+using WebKitBrowser.Security;
 
 namespace WebKitBrowser;
 
@@ -1039,6 +1040,8 @@ public sealed partial class MainPage : Page
         AddSettingsTab(settingsTabs, "Privacy", "SettingsPrivacyTab", privacyPanel);
         AddSettingsTab(settingsTabs, "Appearance", "SettingsAppearanceTab", appearancePanel);
         AddSettingsTab(settingsTabs, "Advanced", "SettingsAdvancedTab", advancedPanel);
+        var passwordsPanel = CreatePasswordsPanel();
+        AddSettingsTab(settingsTabs, "Passwords", "SettingsPasswordsTab", passwordsPanel);
 
         settingsTabs.MinWidth = 0;
         settingsTabs.MaxWidth = 960;
