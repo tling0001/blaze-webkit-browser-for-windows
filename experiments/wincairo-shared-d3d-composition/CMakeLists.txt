@@ -9,3 +9,7 @@ add_executable(BlazeCompositionProbe CompositionProbe.cpp)
 target_compile_features(BlazeCompositionProbe PRIVATE cxx_std_20)
 target_compile_definitions(BlazeCompositionProbe PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE)
 target_link_libraries(BlazeCompositionProbe PRIVATE d3d11 dxgi dcomp ole32)
+
+add_executable(BlazeSurfaceProtocolTests SurfaceProtocolTests.cpp)
+target_compile_features(BlazeSurfaceProtocolTests PRIVATE cxx_std_20)
+target_include_directories(BlazeSurfaceProtocolTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
