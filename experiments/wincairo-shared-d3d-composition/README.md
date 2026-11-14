@@ -2,6 +2,18 @@
 
 Status: The production browser explicitly uses WinCairo's GPU-accelerated `WCScene` / TextureMapper presentation path with offscreen bitmap readback disabled. P1.5 ANGLE import/render plus DirectComposition GPU presentation also passed on the hosted Windows runner (Blaze 1.1.40 / Actions run 206). The test validates keyed-mutex ownership across the ANGLE producer, a second D3D11 device, and a DirectComposition swap-chain consumer, including a GPU-only copy before Present. It remains a diagnostic harness: live WebKit `WCScene` output transport into the WinUI composition tree is not implemented. The usable production renderer is the GPU-accelerated native HWND path.
 
+## Versioned output-surface protocol groundwork (1.1.44)
+
+SharedSurfaceProtocol.h now defines the fixed-width v1 descriptor intended for the browser-process ↔ WebKit GPU-process boundary:
+- Per-view identity and monotonically increasing resize generation.
+- Explicit BGRA8 format, adapter LUID, keyed-mutex synchronization kind, and a bounded two/three-slot ring of legacy DXGI shared-resource tokens.
+- Per-frame sequence IDs, slot index, generation, synchronization keys, and producer QPC timestamp.
+- Strict descriptor/message validation, including duplicate handles, unsupported dimensions/formats, stale generations, and invalid slot indices.
+
+BoundedFrameRing is a small protocol state machine: producer reservations fail immediately when all slots are busy, the presenter chooses the newest ready frame and drops older ready frames, and old-generation tickets cannot publish or complete after resize. A Windows CI target runs deterministic tests for these invariants on every browser build.
+
+This is protocol and scheduling groundwork only. It does not yet allocate the real D3D11 ring, transport handles through WebKit IPC, import the resources in WCScene, or display page frames in WinUI. No production path changes.
+
 ## Current pinned rendering path
 
 The pinned WebKit revision is `d641dd75af65b0469eff30bb76a97e01e02633fc`. Its `USE(GRAPHICS_LAYER_WC)` path is already GPU accelerated:
