@@ -6,6 +6,8 @@ Blaze is a native Windows desktop browser built with WinUI 3 and the upstream We
 
 Blaze embeds **WebKit**, not Chromium, Gecko/Firefox, Edge WebView2, Electron, or CEF. The WinUI 3 application hosts WebKit's public Windows WKView C API through a small native C++/Win32 component.
 
+**Live browser pages use WinCairo's GPU-accelerated `WCScene` / TextureMapper renderer.** The native host explicitly calls `WKViewSetUsesOffscreenRendering(false)`, selecting the normal GPU presentation path and disabling the alternative `ShareableBitmap` + `glReadPixels` CPU-readback path. This production renderer presents to the owned native HWND layered over the WinUI content. The separate ANGLE shared-texture/DirectComposition work is diagnostic groundwork; live `WCScene` frames are not yet transported into a WinUI composition swap chain.
+
 The upstream WinCairo port is an x64 development/testing port rather than a regularly released consumer runtime. Blaze pins an exact WebKit revision and builds it from source in GitHub Actions. Treat releases as testing builds until the engine build, clean-machine installation, security-update process, and end-to-end browser tests are verified.
 
 ## Technology
