@@ -173,6 +173,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'WinUI Gallery GridView quick-link pattern lookup failed.' }
           winapp find-ui "ContentDialog native dialog animations"
           if ($LASTEXITCODE -ne 0) { throw 'WinUI Gallery ContentDialog pattern lookup failed.' }
+          winapp find-ui "PasswordBox password entry with reveal button"
+          if ($LASTEXITCODE -ne 0) { throw 'WinUI Gallery PasswordBox pattern lookup failed.' }
+          winapp find-ui "InfoBar inline form validation status"
+          if ($LASTEXITCODE -ne 0) { throw 'WinUI Gallery InfoBar status pattern lookup failed.' }
 
       - name: Restore WinUI project
         shell: pwsh
@@ -224,6 +228,14 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'RadioButtons property verification failed.' }
           winapp find-api check-property TextBox Header Text PlaceholderText --json --project-dir .
           if ($LASTEXITCODE -ne 0) { throw 'TextBox settings-field property verification failed.' }
+          winapp find-api PasswordBox --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'PasswordBox API lookup failed.' }
+          winapp find-api check-property PasswordBox Header Password PlaceholderText IsPasswordRevealButtonEnabled --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'PasswordBox password-entry and reveal properties verification failed.' }
+          winapp find-api check-property InfoBar IsOpen IsClosable Severity Title Message --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'InfoBar password-manager status API verification failed.' }
+          winapp find-api check-property Border Background Padding CornerRadius Child --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'Border password-entry card API verification failed.' }
           winapp find-api check-property ItemsControl Items --json --project-dir .
           if ($LASTEXITCODE -ne 0) { throw 'RadioButtons item collection verification failed.' }
           winapp find-api check-property RadioButton Content --json --project-dir .
