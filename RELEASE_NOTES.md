@@ -1,5 +1,24 @@
 # Blaze release notes
 
+## [1.1.43] - 2026-11-13
+
+### Native password manager foundation
+- Add a native WinUI Passwords settings tab for saving, reviewing, revealing on explicit request, and deleting website credentials.
+- Store secrets in the current Windows user's Credential Locker instead of Blaze's JSON profile files.
+- Normalize saved website resources to HTTP(S) origins and replace duplicate username entries for the same origin.
+- Require confirmation before deleting a saved credential; keep passwords masked until the user explicitly reveals them.
+- Automatic save prompts and automatic form filling are not yet connected: those require a dedicated, origin-validated WebKit page-script bridge and remain disabled rather than relying on unsafe URL or prompt hacks.
+
+### GPU composition status
+- Keep the existing WinCairo GPU HWND renderer as the production fallback.
+- The shared-D3D-to-WinUI SwapChainPanel path is not enabled: the WinUI surface, cross-process output descriptor, WCScene ANGLE import, frame synchronization and device-loss recovery still need to land and pass live-page tests. The standalone ANGLE probe is not evidence of completed browser-frame transport.
+
+### Versioning
+- Align product, assembly, file, informational and package versions at 1.1.43.
+
+### Validation
+- Pending main-branch WinUI API discovery, Release compilation, installer integration, and password-manager UI/security smoke coverage.
+
 ## [1.1.42] - 2026-11-14
 
 ### GPU-accelerated WinCairo rendering
