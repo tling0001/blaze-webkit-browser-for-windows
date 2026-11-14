@@ -1,5 +1,18 @@
 # Blaze release notes
 
+## [1.1.48] - 2026-11-14
+
+### WebKit/WinUI focus lifetime
+- Track the input-thread attachment used to preserve keyboard focus between the owned WebKit child and WinUI owner.
+- Detach the input queues after the deferred foreground restore, and also detach during native view retirement if the view closes before the deferred message is handled.
+- Keep the address-bar/WinUI focus guard and preserve the owner as the foreground Mica window.
+
+### Versioning
+- Align product, assembly, file, informational and package versions at 1.1.48.
+
+### Validation
+- Windows CI compiles the native host, installs the EXE and runs the keyboard-focus and credential save/autofill smoke tests. The live WebKit shared-D3D composition pipeline remains experimental and is not enabled in production.
+
 ## [1.1.47] - 2026-11-14
 
 ### Native WebKit keyboard focus
