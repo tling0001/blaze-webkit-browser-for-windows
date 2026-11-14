@@ -21,5 +21,7 @@ EXPORTS
     WB_SetDownloadCallback
     WB_SetPermissionCallback
     WB_SetJavaScriptDialogCallback
+    WB_SetCredentialBridgeCallback
+    WB_EvaluateJavaScript
     WB_SetPopupCallbacks
     WB_ResolveJavaScriptDialog
