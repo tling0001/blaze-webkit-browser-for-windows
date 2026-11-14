@@ -10,6 +10,7 @@
 #include <WebKit/WKNavigationResponseRef.h>
 #include <WebKit/WKNotificationPermissionRequest.h>
 #include <WebKit/WKPage.h>
+#include <WebKit/WKFrame.h>
 #include <WebKit/WKPageConfigurationRef.h>
 #include <WebKit/WKPageNavigationClient.h>
 #include <WebKit/WKPagePrivate.h>
@@ -25,6 +26,7 @@
 #include <WebKit/WKWebsiteDataStoreRef.h>
 
 #include <algorithm>
+#include <objbase.h>
 #include <cmath>
 #include <commctrl.h>
 #include <mutex>
@@ -55,6 +57,9 @@ struct WB_VIEW {
     void* permissionUserData{};
     WB_JAVASCRIPT_DIALOG_CALLBACK javaScriptDialogCallback{};
     void* javaScriptDialogUserData{};
+    WB_CREDENTIAL_BRIDGE_CALLBACK credentialBridgeCallback{};
+    void* credentialBridgeUserData{};
+    std::wstring credentialBridgeNonce;
     WB_NEW_PAGE_CALLBACK newPageCallback{};
     WB_CLOSE_PAGE_CALLBACK closePageCallback{};
     void* popupUserData{};
@@ -401,7 +406,29 @@ void runJavaScriptConfirm(WKPageRef, WKStringRef messageValue, WKFrameRef, WKSec
     view->javaScriptDialogCallback(1, origin.c_str(), message.c_str(), L"", listener, view->javaScriptDialogUserData);
 }
 
-void runJavaScriptPrompt(WKPageRef, WKStringRef messageValue, WKStringRef defaultValue, WKFrameRef, WKSecurityOriginRef securityOrigin, WKPageRunJavaScriptPromptResultListenerRef listener, const void* clientInfo)
+bool tryHandleCredentialBridge(WB_VIEW* view, WKStringRef messageValue, WKStringRef defaultValue,
+    WKFrameRef frame, WKPageRunJavaScriptPromptResultListenerRef listener, const std::wstring& origin)
+{
+    if (!view || !view->credentialBridgeCallback || !frame || !WKFrameIsMainFrame(frame)
+        || view->credentialBridgeNonce.empty())
+        return false;
+
+    const auto message = fromWKString(messageValue);
+    const auto initialValue = fromWKString(defaultValue);
+    const auto expectedMessage = L"Blaze.CredentialBridge." + view->credentialBridgeNonce;
+    const auto expectedPrefix = view->credentialBridgeNonce + L"\n";
+    if (message != expectedMessage || initialValue.rfind(expectedPrefix, 0) != 0)
+        return false;
+
+    // Strip the per-view nonce before crossing the managed boundary. Never log
+    // the payload: a save event contains the submitted password in memory.
+    const auto payload = initialValue.substr(expectedPrefix.size());
+    WKRetain(reinterpret_cast<WKTypeRef>(listener));
+    view->credentialBridgeCallback(view, origin.c_str(), payload.c_str(), listener, view->credentialBridgeUserData);
+    return true;
+}
+
+void runJavaScriptPrompt(WKPageRef, WKStringRef messageValue, WKStringRef defaultValue, WKFrameRef frame, WKSecurityOriginRef securityOrigin, WKPageRunJavaScriptPromptResultListenerRef listener, const void* clientInfo)
 {
     auto* view = const_cast<WB_VIEW*>(static_cast<const WB_VIEW*>(clientInfo));
     auto originString = WKSecurityOriginCopyToString(securityOrigin);
@@ -409,12 +436,90 @@ void runJavaScriptPrompt(WKPageRef, WKStringRef messageValue, WKStringRef defaul
     if (originString) WKRelease(originString);
     auto message = fromWKString(messageValue);
     auto initialValue = fromWKString(defaultValue);
+    if (tryHandleCredentialBridge(view, messageValue, defaultValue, frame, listener, origin))
+        return;
     if (!view->javaScriptDialogCallback) {
         WKPageRunJavaScriptPromptResultListenerCall(listener, nullptr);
         return;
     }
     WKRetain(reinterpret_cast<WKTypeRef>(listener));
     view->javaScriptDialogCallback(2, origin.c_str(), message.c_str(), initialValue.c_str(), listener, view->javaScriptDialogUserData);
+}
+
+void injectCredentialBridge(WB_VIEW* view, WKPageRef page)
+{
+    if (!view || !page || view->credentialBridgeNonce.empty())
+        return;
+
+    std::wstring script = LR"JS((() => {
+        const nonce = "__BLAZE_NONCE__";
+        if (window !== window.top || window.__blazeCredentialBridgeV1)
+            return;
+        Object.defineProperty(window, "__blazeCredentialBridgeV1", { value: true, configurable: false });
+        const nativePrompt = window.prompt.bind(window);
+        const send = (type, form, passwordInput) => {
+            try {
+                const inputs = form ? Array.from(form.querySelectorAll("input"))
+                    .filter(input => !input.disabled && input.type !== "hidden") : [];
+                const password = passwordInput || inputs.find(input => input.type === "password");
+                if (!password || !password.value)
+                    return;
+                const usernameInput = inputs.find(input => input.autocomplete === "username")
+                    || inputs.find(input => input.type === "email")
+                    || inputs.filter(input => input.type === "text" || input.type === "tel")
+                        .find(input => !password || (input.compareDocumentPosition(password) & Node.DOCUMENT_POSITION_FOLLOWING));
+                const payload = {
+                    nonce,
+                    type,
+                    username: usernameInput ? usernameInput.value : "",
+                    password: type === "save" ? password.value : "",
+                    pageUrl: location.href,
+                    formAction: form ? form.action : ""
+                };
+                nativePrompt("Blaze.CredentialBridge." + nonce, nonce + "\n" + JSON.stringify(payload));
+            } catch (_) { }
+        };
+        const recentlySubmitted = new WeakSet();
+        document.addEventListener("focusin", event => {
+            if (!event.isTrusted)
+                return;
+            const target = event.target;
+            if (!(target instanceof HTMLInputElement) || target.type !== "password")
+                return;
+            send("fill", target.form, target);
+        }, true);
+        document.addEventListener("submit", event => {
+            if (!event.isTrusted)
+                return;
+            const form = event.target;
+            if (!(form instanceof HTMLFormElement) || recentlySubmitted.has(form))
+                return;
+            const password = form.querySelector('input[type="password"]:not(:disabled)');
+            if (!password || !password.value)
+                return;
+            recentlySubmitted.add(form);
+            setTimeout(() => recentlySubmitted.delete(form), 2000);
+            send("save", form, password);
+        }, true);
+    })();)JS";
+    const auto placeholder = script.find(L"__BLAZE_NONCE__");
+    if (placeholder == std::wstring::npos)
+        return;
+    script.replace(placeholder, 15, view->credentialBridgeNonce);
+    const auto utf8 = toUtf8(script.c_str());
+    if (utf8.empty())
+        return;
+    auto source = WKStringCreateWithUTF8CString(utf8.c_str());
+    if (!source)
+        return;
+    WKPageEvaluateJavaScriptInMainFrame(page, source, nullptr, nullptr);
+    WKRelease(source);
+}
+
+void didFinishDocumentLoad(WKPageRef page, WKNavigationRef, WKTypeRef, const void* clientInfo)
+{
+    auto* view = const_cast<WB_VIEW*>(static_cast<const WB_VIEW*>(clientInfo));
+    injectCredentialBridge(view, page);
 }
 
 void runBeforeUnloadConfirmPanel(WKPageRef, WKStringRef messageValue, WKFrameRef, WKPageRunBeforeUnloadConfirmPanelResultListenerRef listener, const void* clientInfo)
@@ -676,6 +781,12 @@ WB_VIEW_HANDLE createNativeView(HWND parent, int x, int y, int width, int height
         return nullptr;
     }
 
+    GUID credentialNonce{};
+    wchar_t credentialNonceText[40]{};
+    if (SUCCEEDED(CoCreateGuid(&credentialNonce))
+        && StringFromGUID2(credentialNonce, credentialNonceText, static_cast<int>(std::size(credentialNonceText))))
+        result->credentialBridgeNonce = credentialNonceText;
+
     result->view = nativeView;
     result->window = nativeWindow;
     SetWindowLongPtrW(hostWindow, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(nativeWindow));
@@ -692,6 +803,8 @@ WB_VIEW_HANDLE createNativeView(HWND parent, int x, int y, int width, int height
         result->permissionUserData = opener->permissionUserData;
         result->javaScriptDialogCallback = opener->javaScriptDialogCallback;
         result->javaScriptDialogUserData = opener->javaScriptDialogUserData;
+        result->credentialBridgeCallback = opener->credentialBridgeCallback;
+        result->credentialBridgeUserData = opener->credentialBridgeUserData;
         result->newPageCallback = opener->newPageCallback;
         result->closePageCallback = opener->closePageCallback;
         result->popupUserData = opener->popupUserData;
@@ -718,6 +831,7 @@ WB_VIEW_HANDLE createNativeView(HWND parent, int x, int y, int width, int height
     result->navigationClient.navigationActionDidBecomeDownload = navigationActionDidBecomeDownload;
     result->navigationClient.navigationResponseDidBecomeDownload = navigationResponseDidBecomeDownload;
     result->navigationClient.contextMenuDidCreateDownload = contextMenuDidCreateDownload;
+    result->navigationClient.didFinishDocumentLoad = didFinishDocumentLoad;
     WKPageSetPageNavigationClient(page, &result->navigationClient.base);
 
     result->uiClient.base.version = 13;
@@ -1015,6 +1129,28 @@ void WB_SetJavaScriptDialogCallback(WB_VIEW_HANDLE view, WB_JAVASCRIPT_DIALOG_CA
         return;
     view->javaScriptDialogCallback = callback;
     view->javaScriptDialogUserData = userData;
+}
+
+void WB_SetCredentialBridgeCallback(WB_VIEW_HANDLE view, WB_CREDENTIAL_BRIDGE_CALLBACK callback, void* userData)
+{
+    if (!view)
+        return;
+    view->credentialBridgeCallback = callback;
+    view->credentialBridgeUserData = userData;
+}
+
+void WB_EvaluateJavaScript(WB_VIEW_HANDLE view, const wchar_t* script)
+{
+    if (!view || !view->view || !script || !*script || wcsnlen_s(script, 262145) > 262144)
+        return;
+    const auto utf8 = toUtf8(script);
+    if (utf8.empty())
+        return;
+    auto source = WKStringCreateWithUTF8CString(utf8.c_str());
+    if (!source)
+        return;
+    WKPageEvaluateJavaScriptInMainFrame(WKViewGetPage(view->view), source, nullptr, nullptr);
+    WKRelease(source);
 }
 
 void WB_SetPopupCallbacks(WB_VIEW_HANDLE view, WB_NEW_PAGE_CALLBACK newPageCallback,
