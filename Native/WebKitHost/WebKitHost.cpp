@@ -513,16 +513,28 @@ LRESULT CALLBACK ownerWindowSubclass(HWND owner, UINT message, WPARAM wParam, LP
     const auto result = DefSubclassProc(owner, message, wParam, lParam);
 
     if (message == WM_BLAZE_RESTORE_OWNER_ACTIVATION) {
-        // WM_MOUSEACTIVATE has now returned MA_NOACTIVATE. Restore the real
-        // WinUI top-level activation asynchronously so the owned WebKit host
-        // cannot leave the title bar/Mica backdrop in its inactive state.
+        // Do not call SetActiveWindow(owner): that resets keyboard focus to
+        // WinUI and steals it from the WebKit child. Restore the foreground
+        // top-level HWND, then reapply WebKit focus only if it still owned
+        // focus when this deferred message arrived. If the user has already
+        // moved to the address bar or another WinUI control, preserve that.
         const auto focusedWindow = reinterpret_cast<HWND>(wParam);
-        SetActiveWindow(owner);
-        const BOOL foregroundRestored = SetForegroundWindow(owner);
+        const auto focusBeforeActivation = GetFocus();
+        const bool preserveWebKitFocus = view && !view->destroyPrepared
+            && view->window == focusedWindow && IsWindow(focusedWindow)
+            && IsWindowVisible(focusedWindow) && focusBeforeActivation == focusedWindow;
+        BOOL foregroundRestored = TRUE;
+        if (GetForegroundWindow() != owner)
+            foregroundRestored = SetForegroundWindow(owner);
+        if (preserveWebKitFocus && GetFocus() != focusedWindow)
+            SetFocus(focusedWindow);
+
         const auto foreground = GetForegroundWindow();
-        wchar_t diagnostic[192] {};
-        swprintf_s(diagnostic, L"[Blaze][WindowActivation] owner=0x%p foreground=0x%p focused=0x%p restored=%d\\n",
-            owner, foreground, focusedWindow, foregroundRestored);
+        const auto active = GetActiveWindow();
+        const auto focus = GetFocus();
+        wchar_t diagnostic[256] {};
+        swprintf_s(diagnostic, L"[Blaze][WindowActivation] owner=0x%p foreground=0x%p active=0x%p focus=0x%p webkit=0x%p preserve=%d restored=%d\\n",
+            owner, foreground, active, focus, focusedWindow, preserveWebKitFocus, foregroundRestored);
         OutputDebugStringW(diagnostic);
         return 0;
     }
