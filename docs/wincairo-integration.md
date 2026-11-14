@@ -63,3 +63,10 @@ Do not add an engine fallback. If WinCairo cannot be built or hosted, surface th
 - [WebKit Windows port build guide](https://docs.webkit.org/Ports/WindowsPort.html)
 - [WebKit Windows WKView header](https://github.com/WebKit/WebKit/blob/main/Source/WebKit/UIProcess/API/C/win/WKView.h)
 - [WebKit Windows MiniBrowser host implementation](https://github.com/WebKit/WebKit/blob/main/Tools/MiniBrowser/win/WebKitBrowserWindow.cpp)
+
+
+## Shared-surface protocol status
+
+The experimental directory now contains a versioned, fixed-width descriptor ABI and a deterministic bounded-ring state machine test. The descriptor deliberately carries a view identifier, resize generation, adapter LUID, BGRA8 format, keyed-mutex contract, and a bounded set of legacy DXGI resource tokens. Frame notifications carry monotonically increasing sequence IDs and generation identity. The ring drops stale completed frames rather than allowing UI presentation to accumulate latency.
+
+This is not yet wired into the C ABI or WebKit IPC. In particular, no shared resource handle is currently sent to a GPU process, no ANGLE surface is created from the descriptor, and no SwapChainPanel is attached. The current HWND path remains the only production presentation path.
