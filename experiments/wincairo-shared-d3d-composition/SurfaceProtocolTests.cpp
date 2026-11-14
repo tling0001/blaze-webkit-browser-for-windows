@@ -1,7 +1,10 @@
 #include "SharedSurfaceProtocol.h"
 
+#include <atomic>
 #include <cstdlib>
 #include <iostream>
+#include <thread>
+#include <vector>
 
 using namespace Blaze::Gpu;
 
@@ -34,6 +37,65 @@ SharedSurfaceDescriptor makeDescriptor()
     }};
     return value;
 }
+}
+
+void exerciseConcurrentRing()
+{
+    constexpr int producerCount = 4;
+    constexpr int framesPerProducer = 1500;
+    BoundedFrameRing ring(3);
+    require(ring.beginGeneration(1), "concurrent ring generation rejected");
+
+    std::atomic<int> activeProducers{ producerCount };
+    std::atomic<std::uint64_t> published{ 0 };
+    std::atomic<std::uint64_t> presented{ 0 };
+    std::atomic<std::uint64_t> dropped{ 0 };
+    std::atomic<bool> failed{ false };
+    std::vector<std::thread> producers;
+    producers.reserve(producerCount);
+
+    for (int producer = 0; producer < producerCount; ++producer) {
+        producers.emplace_back([&] {
+            for (int frame = 0; frame < framesPerProducer; ++frame) {
+                FrameTicket ticket{};
+                while (!ring.tryBeginRender(ticket))
+                    std::this_thread::yield();
+                if (!ring.publish(ticket)) {
+                    failed.store(true);
+                    break;
+                }
+                published.fetch_add(1);
+            }
+            activeProducers.fetch_sub(1);
+        });
+    }
+
+    std::thread presenter([&] {
+        while (activeProducers.load() != 0
+            || presented.load() + dropped.load() < published.load()) {
+            FrameTicket ticket{};
+            std::uint32_t droppedNow = 0;
+            if (!ring.tryBeginPresent(ticket, droppedNow)) {
+                std::this_thread::yield();
+                continue;
+            }
+            dropped.fetch_add(droppedNow);
+            if (ring.completePresent(ticket) != PresentResult::Presented)
+                failed.store(true);
+            else
+                presented.fetch_add(1);
+        }
+    });
+
+    for (auto& producer : producers)
+        producer.join();
+    presenter.join();
+    require(!failed.load(), "concurrent ring reported an invalid state transition");
+    require(published.load() == producerCount * framesPerProducer,
+            "concurrent producers did not publish every reserved frame");
+    require(presented.load() + dropped.load() == published.load(),
+            "presenter lost or double-counted a published frame");
+    require(ring.slotCount() == 3, "concurrent access corrupted ring configuration");
 }
 
 int main()
@@ -112,8 +174,10 @@ int main()
             && fourth.sequence > presented.sequence,
             "new generation did not preserve globally monotonic frame sequence");
 
-    std::cout << "PASS: versioned descriptor validation, bounded three-slot frame ring, "
+    exerciseConcurrentRing();
+
+    std::cout << "PASS: versioned descriptor validation, thread-safe bounded three-slot frame ring, "
                  "monotonic frame IDs, newest-frame selection, stale-frame dropping, "
-                 "resize generations, and stale-ticket rejection.\n";
+                 "resize generations, stale-ticket rejection, and concurrent producer/presenter stress.\n";
     return 0;
 }

@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <mutex>
 #include <type_traits>
 
 namespace Blaze::Gpu {
@@ -119,14 +120,17 @@ enum class PresentResult : std::uint8_t { Presented, Dropped, Invalid };
 
 class BoundedFrameRing {
 public:
-    explicit constexpr BoundedFrameRing(std::uint32_t slotCount) noexcept
+    explicit BoundedFrameRing(std::uint32_t slotCount) noexcept
         : m_slotCount(slotCount >= kMinimumRingSlots && slotCount <= kMaximumRingSlots ? slotCount : 0)
     {
     }
 
-    // Called by the producer side. A full ring drops work instead of blocking.
-    constexpr bool tryBeginRender(FrameTicket& ticket) noexcept
+    // State transitions are serialized across producer and presenter threads.
+    // Never hold this lock while waiting on a D3D fence/keyed mutex or presenting.
+    // A full ring drops work instead of blocking.
+    bool tryBeginRender(FrameTicket& ticket) noexcept
     {
+        std::lock_guard lock(m_mutex);
         if (!m_slotCount || m_generation == 0
             || m_nextSequence == std::numeric_limits<std::uint64_t>::max())
             return false;
@@ -143,8 +147,9 @@ public:
         return false;
     }
 
-    constexpr bool publish(const FrameTicket& ticket) noexcept
+    bool publish(const FrameTicket& ticket) noexcept
     {
+        std::lock_guard lock(m_mutex);
         auto* slot = find(ticket);
         if (!slot || slot->state != SlotState::Rendering)
             return false;
@@ -154,8 +159,9 @@ public:
 
     // Chooses the newest completed frame and releases older ready frames.
     // The UI thread only polls this state; it never waits for a producer fence.
-    constexpr bool tryBeginPresent(FrameTicket& ticket, std::uint32_t& dropped) noexcept
+    bool tryBeginPresent(FrameTicket& ticket, std::uint32_t& dropped) noexcept
     {
+        std::lock_guard lock(m_mutex);
         dropped = 0;
         Slot* newest = nullptr;
         std::uint32_t newestIndex = 0;
@@ -182,8 +188,9 @@ public:
         return true;
     }
 
-    constexpr PresentResult completePresent(const FrameTicket& ticket) noexcept
+    PresentResult completePresent(const FrameTicket& ticket) noexcept
     {
+        std::lock_guard lock(m_mutex);
         auto* slot = find(ticket);
         if (!slot || slot->state != SlotState::Presenting)
             return PresentResult::Invalid;
@@ -193,8 +200,9 @@ public:
 
     // A resize creates a new immutable generation. Tickets from the old
     // generation can no longer publish or complete against the replacement.
-    constexpr bool beginGeneration(std::uint64_t generation) noexcept
+    bool beginGeneration(std::uint64_t generation) noexcept
     {
+        std::lock_guard lock(m_mutex);
         if (!m_slotCount || !generation || generation <= m_generation)
             return false;
         m_generation = generation;
@@ -203,9 +211,9 @@ public:
         return true;
     }
 
-    constexpr std::uint64_t generation() const noexcept { return m_generation; }
-    constexpr std::uint64_t lastIssuedSequence() const noexcept { return m_nextSequence; }
-    constexpr std::uint32_t slotCount() const noexcept { return m_slotCount; }
+    std::uint64_t generation() const noexcept { std::lock_guard lock(m_mutex); return m_generation; }
+    std::uint64_t lastIssuedSequence() const noexcept { std::lock_guard lock(m_mutex); return m_nextSequence; }
+    std::uint32_t slotCount() const noexcept { std::lock_guard lock(m_mutex); return m_slotCount; }
 
 private:
     struct Slot {
@@ -224,6 +232,7 @@ private:
         return &slot;
     }
 
+    mutable std::mutex m_mutex;
     std::array<Slot, kMaximumRingSlots> m_slots{};
     std::uint32_t m_slotCount{};
     std::uint64_t m_generation{};

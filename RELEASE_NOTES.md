@@ -1,5 +1,15 @@
 # Blaze release notes
 
+## [1.1.50] - 2026-11-13
+
+### D3D frame-ring concurrency
+- Serialize bounded frame-ring state transitions so independent producer and presenter threads cannot race slot ownership, frame sequence allocation, resize generations, or presentation completion.
+- Keep all D3D waits and presentation calls outside the ring lock; the state machine remains non-blocking and drops stale ready frames when saturated.
+- Add a four-producer/one-presenter stress test that verifies every published frame is either presented or explicitly dropped.
+
+### Versioning
+- Align product, assembly, file, informational and package versions at 1.1.50.
+
 ## [1.1.49] - 2026-11-13
 
 ### D3D shared-surface protocol hardening
