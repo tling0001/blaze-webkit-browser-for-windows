@@ -28,9 +28,9 @@ SharedSurfaceDescriptor makeDescriptor()
     value.slotCount = 3;
     value.adapter = { 0x12345678, 1 };
     value.slots = {{
-        { 1001, 0, 1 },
-        { 1002, 0, 1 },
-        { 1003, 0, 1 }
+        { 1001, 0, 1, 2 },
+        { 1002, 0, 1, 2 },
+        { 1003, 0, 1, 2 }
     }};
     return value;
 }
@@ -81,7 +81,23 @@ int main()
     ready.slotIndex = presented.slotIndex;
     ready.producerReleaseKey = 1;
     ready.consumerReleaseKey = 2;
+    ready.producerQpc = 1234;
     require(isValid(ready, descriptor), "valid frame-ready message rejected");
+    auto invalidReady = ready;
+    invalidReady.producerReleaseKey = 99;
+    require(!isValid(invalidReady, descriptor), "unknown producer release key accepted");
+    invalidReady = ready;
+    invalidReady.consumerReleaseKey = 99;
+    require(!isValid(invalidReady, descriptor), "unknown consumer return key accepted");
+    invalidReady = ready;
+    invalidReady.reserved = 1;
+    require(!isValid(invalidReady, descriptor), "nonzero frame reserved field accepted");
+    invalidReady = ready;
+    invalidReady.producerQpc = 0;
+    require(!isValid(invalidReady, descriptor), "frame without producer timestamp accepted");
+    malformed = descriptor;
+    malformed.slots[0].consumerReturnKey = malformed.slots[0].consumerAcquireKey;
+    require(!isValid(malformed), "colliding keyed-mutex ownership keys accepted");
     ready.resizeGeneration++;
     require(!isValid(ready, descriptor), "stale-generation frame-ready message accepted");
 

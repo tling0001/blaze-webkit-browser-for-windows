@@ -1,5 +1,17 @@
 # Blaze release notes
 
+## [1.1.49] - 2026-11-13
+
+### D3D shared-surface protocol hardening
+- Advance the experimental shared-surface IPC contract to protocol version 2 and explicitly describe the consumer return key for each shared texture slot.
+- Validate producer release keys and consumer return keys against the selected slot instead of accepting any pair of different values.
+- Reject malformed reserved fields, missing producer QPC timestamps, and colliding keyed-mutex ownership keys.
+- Add fixed ABI size assertions and negative tests for invalid synchronization notifications.
+- Keep the live WebKit WCScene-to-WinUI composition path experimental; this change hardens its transport contract but does not enable or claim production GPU composition.
+
+### Versioning
+- Align product, assembly, file, informational and package versions at 1.1.49.
+
 ## [1.1.48] - 2026-11-14
 
 ### WebKit/WinUI focus lifetime

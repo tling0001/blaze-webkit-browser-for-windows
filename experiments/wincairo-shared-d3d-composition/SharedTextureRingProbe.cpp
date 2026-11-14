@@ -100,7 +100,7 @@ bool createRing(ID3D11Device* producer, ID3D11Device* consumer,
             || FAILED(slot.consumerTexture.As(&slot.consumerMutex)))
             return false;
 
-        descriptor.slots[i] = { slot.sharedToken, 0, 1 };
+        descriptor.slots[i] = { slot.sharedToken, 0, 1, 2 };
     }
     return isValid(descriptor);
 }

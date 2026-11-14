@@ -11,7 +11,7 @@
 
 namespace Blaze::Gpu {
 
-inline constexpr std::uint32_t kSurfaceProtocolVersion = 1;
+inline constexpr std::uint32_t kSurfaceProtocolVersion = 2;
 inline constexpr std::uint32_t kMinimumRingSlots = 2;
 inline constexpr std::uint32_t kMaximumRingSlots = 3;
 inline constexpr std::uint32_t kMaximumSurfaceDimension = 16384;
@@ -29,6 +29,8 @@ struct SharedTextureSlotDescriptor {
     std::uint64_t sharedResourceToken;
     std::uint64_t producerAcquireKey;
     std::uint64_t consumerAcquireKey;
+    // Key released by the consumer after presentation; the producer reacquires it.
+    std::uint64_t consumerReturnKey;
 };
 
 struct SharedSurfaceDescriptor {
@@ -70,12 +72,16 @@ constexpr bool isValid(const SharedSurfaceDescriptor& descriptor) noexcept
         || descriptor.pixelFormat != kPixelFormatBgra8Unorm
         || descriptor.synchronizationKind != kSyncKeyedMutex
         || descriptor.slotCount < kMinimumRingSlots
-        || descriptor.slotCount > kMaximumRingSlots)
+        || descriptor.slotCount > kMaximumRingSlots
+        || descriptor.reserved != 0)
         return false;
 
     for (std::uint32_t i = 0; i < descriptor.slotCount; ++i) {
         const auto& slot = descriptor.slots[i];
-        if (!slot.sharedResourceToken || slot.producerAcquireKey == slot.consumerAcquireKey)
+        if (!slot.sharedResourceToken
+            || slot.producerAcquireKey == slot.consumerAcquireKey
+            || slot.producerAcquireKey == slot.consumerReturnKey
+            || slot.consumerAcquireKey == slot.consumerReturnKey)
             return false;
         for (std::uint32_t j = 0; j < i; ++j) {
             if (slot.sharedResourceToken == descriptor.slots[j].sharedResourceToken)
@@ -94,7 +100,11 @@ constexpr bool isValid(const FrameReadyMessage& frame,
         && frame.resizeGeneration == descriptor.resizeGeneration
         && frame.frameSequence != 0
         && frame.slotIndex < descriptor.slotCount
-        && frame.producerReleaseKey != frame.consumerReleaseKey;
+        && frame.reserved == 0
+        && frame.producerQpc != 0
+        && (frame.producerReleaseKey == descriptor.slots[frame.slotIndex].producerAcquireKey
+            || frame.producerReleaseKey == descriptor.slots[frame.slotIndex].consumerAcquireKey)
+        && frame.consumerReleaseKey == descriptor.slots[frame.slotIndex].consumerReturnKey;
 }
 
 enum class SlotState : std::uint8_t { Free, Rendering, Ready, Presenting };
@@ -224,5 +234,7 @@ static_assert(std::is_standard_layout_v<SharedSurfaceDescriptor>);
 static_assert(std::is_trivially_copyable_v<SharedSurfaceDescriptor>);
 static_assert(std::is_standard_layout_v<FrameReadyMessage>);
 static_assert(std::is_trivially_copyable_v<FrameReadyMessage>);
+static_assert(sizeof(SharedSurfaceDescriptor) == 152, "Shared-surface IPC ABI changed; update the protocol version and consumers.");
+static_assert(sizeof(FrameReadyMessage) == 64, "Frame-ready IPC ABI changed; update the protocol version and consumers.");
 
 } // namespace Blaze::Gpu
