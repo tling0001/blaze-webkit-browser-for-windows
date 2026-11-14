@@ -1,6 +1,6 @@
 # WinCairo GPU-to-WinUI composition prototype
 
-Status: P1.5 ANGLE import/render plus DirectComposition GPU presentation pass on the hosted Windows runner. This is still a diagnostic harness: actual WebKit WCScene output transport and WinUI composition integration remain unimplemented. The 1.1.39 probe adds explicit keyed-mutex synchronization around the ANGLE surface and producer readback; its result is pending Actions.
+Status: P1.5 ANGLE import/render plus DirectComposition GPU presentation passed on the hosted Windows runner (Blaze 1.1.40 / Actions run 206). The test validates keyed-mutex ownership across the ANGLE producer, a second D3D11 device, and a DirectComposition swap-chain consumer, including a GPU-only copy before Present. It remains a diagnostic harness: actual WebKit WCScene output transport and WinUI composition integration are not implemented. The stable HWND renderer remains the only production renderer.
 
 ## Current pinned rendering path
 
