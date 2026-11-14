@@ -1211,6 +1211,7 @@ public sealed partial class MainPage : Page
                 var row = new Grid { ColumnSpacing = 12, RowSpacing = 8 };
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
                 row.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
                 row.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
                 var identity = new StackPanel { Spacing = 2 };
@@ -1301,7 +1302,7 @@ public sealed partial class MainPage : Page
                         status.IsOpen = true;
                     }
                 };
-                Grid.SetColumn(remove, 1);
+                Grid.SetColumn(remove, 2);
                 Grid.SetRowSpan(remove, 2);
                 row.Children.Add(remove);
                 card.Child = row;
