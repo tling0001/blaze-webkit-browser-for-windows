@@ -45,9 +45,16 @@ internal static class PasswordVaultService
         var normalizedOrigin = uri.GetLeftPart(UriPartial.Authority).TrimEnd('/');
         var resource = ResourcePrefix + normalizedOrigin;
         var vault = CreateVault();
-        foreach (var existing in vault.FindAllByResource(resource).Where(item =>
-            string.Equals(item.UserName, userName.Trim(), StringComparison.OrdinalIgnoreCase)).ToArray())
-            vault.Remove(existing);
+        try
+        {
+            foreach (var existing in vault.FindAllByResource(resource).Where(item =>
+                string.Equals(item.UserName, userName.Trim(), StringComparison.OrdinalIgnoreCase)).ToArray())
+                vault.Remove(existing);
+        }
+        catch (COMException exception) when ((uint)exception.HResult == 0x80070490)
+        {
+            // No matching resource exists yet; add the first credential below.
+        }
 
         vault.Add(new PasswordCredential(resource, userName.Trim(), password));
     }
