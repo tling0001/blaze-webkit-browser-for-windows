@@ -1121,6 +1121,215 @@ public sealed partial class MainPage : Page
         OpenInternalPage("blaze://settings", "Settings", root);
     }
 
+    private UIElement CreatePasswordsPanel()
+    {
+        var panel = new StackPanel { Spacing = 14, MinWidth = 420, Padding = new Thickness(12) };
+        panel.Children.Add(new TextBlock
+        {
+            Text = "Saved passwords",
+            Style = (Style)Application.Current.Resources["SubtitleTextBlockStyle"]
+        });
+        panel.Children.Add(new TextBlock
+        {
+            Text = "Blaze stores credentials in the Windows Credential Locker for your Windows user. Passwords are not written to browser history, settings JSON or other plain-text profile files.",
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"]
+        });
+
+        var origin = new TextBox { Header = "Website", PlaceholderText = "https://example.com" };
+        var userName = new TextBox { Header = "Username" };
+        var password = new PasswordBox { Header = "Password", IsPasswordRevealButtonEnabled = true };
+        AutomationProperties.SetAutomationId(origin, "PasswordWebsite");
+        AutomationProperties.SetAutomationId(userName, "PasswordUsername");
+        AutomationProperties.SetAutomationId(password, "PasswordValue");
+        AutomationProperties.SetName(origin, "Website address");
+        AutomationProperties.SetName(userName, "Website username");
+        AutomationProperties.SetName(password, "Website password");
+
+        var savePassword = new Button
+        {
+            Content = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 8,
+                Children =
+                {
+                    new FontIcon { Glyph = "\\uE74E", FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Segoe Fluent Icons") },
+                    new TextBlock { Text = "Save password" }
+                }
+            }
+        };
+        AutomationProperties.SetAutomationId(savePassword, "SaveWebsitePassword");
+        AutomationProperties.SetName(savePassword, "Save website password");
+
+        var entries = new StackPanel { Spacing = 10 };
+        var status = new InfoBar
+        {
+            IsOpen = false,
+            IsClosable = true,
+            Severity = InfoBarSeverity.Success,
+            Title = "Password saved"
+        };
+        AutomationProperties.SetAutomationId(status, "PasswordManagerStatus");
+
+        void RefreshEntries()
+        {
+            entries.Children.Clear();
+            IReadOnlyList<PasswordVaultService.SavedPassword> saved;
+            try
+            {
+                saved = PasswordVaultService.GetSavedPasswords();
+            }
+            catch (Exception exception)
+            {
+                status.Severity = InfoBarSeverity.Error;
+                status.Title = "Could not read saved passwords";
+                status.Message = exception.Message;
+                status.IsOpen = true;
+                return;
+            }
+
+            if (saved.Count == 0)
+            {
+                entries.Children.Add(new TextBlock
+                {
+                    Text = "No saved passwords yet. Add a website and sign-in above.",
+                    TextWrapping = TextWrapping.Wrap,
+                    Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"]
+                });
+                return;
+            }
+
+            foreach (var item in saved)
+            {
+                var card = new Border
+                {
+                    Padding = new Thickness(12),
+                    CornerRadius = new CornerRadius(8),
+                    Background = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["CardBackgroundFillColorDefaultBrush"]
+                };
+                var row = new Grid { ColumnSpacing = 12, RowSpacing = 8 };
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                row.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+                row.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+                var identity = new StackPanel { Spacing = 2 };
+                identity.Children.Add(new TextBlock { Text = item.Origin, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis });
+                identity.Children.Add(new TextBlock { Text = item.UserName, Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"], TextTrimming = TextTrimming.CharacterEllipsis });
+                row.Children.Add(identity);
+
+                var secret = new PasswordBox
+                {
+                    Header = "Password",
+                    IsPasswordRevealButtonEnabled = true,
+                    IsEnabled = false,
+                    MinWidth = 220
+                };
+                try
+                {
+                    secret.Password = PasswordVaultService.Retrieve(item);
+                    secret.IsEnabled = true;
+                }
+                catch
+                {
+                    secret.PlaceholderText = "Credential unavailable";
+                }
+                AutomationProperties.SetAutomationId(secret, "SavedPassword_" + SiteAutomationToken(item.Origin + item.UserName));
+                AutomationProperties.SetName(secret, $"Saved password for {item.UserName} at {item.Origin}");
+                Grid.SetRow(secret, 1);
+                row.Children.Add(secret);
+
+                var remove = new Button
+                {
+                    Content = new FontIcon { Glyph = "\\uE74D", FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Segoe Fluent Icons") },
+                    Width = 36,
+                    Height = 36,
+                    Padding = new Thickness(0)
+                };
+                AutomationProperties.SetName(remove, $"Delete password for {item.UserName} at {item.Origin}");
+                AutomationProperties.SetAutomationId(remove, "DeletePassword_" + SiteAutomationToken(item.Origin + item.UserName));
+                ToolTipService.SetToolTip(remove, "Delete saved password");
+                remove.Click += async (_, _) =>
+                {
+                    var confirm = new ContentDialog
+                    {
+                        Title = "Delete saved password?",
+                        Content = $"Remove the saved sign-in for {item.UserName} at {item.Origin} from Windows Credential Locker?",
+                        PrimaryButtonText = "Delete",
+                        CloseButtonText = "Cancel",
+                        DefaultButton = ContentDialogButton.Close,
+                        XamlRoot = XamlRoot
+                    };
+                    if (await ShowDialogAsync(confirm) != ContentDialogResult.Primary)
+                        return;
+                    try
+                    {
+                        PasswordVaultService.Delete(item);
+                        RefreshEntries();
+                        status.Severity = InfoBarSeverity.Success;
+                        status.Title = "Password deleted";
+                        status.Message = $"Removed the saved sign-in for {item.Origin}.";
+                        status.IsOpen = true;
+                    }
+                    catch (Exception exception)
+                    {
+                        status.Severity = InfoBarSeverity.Error;
+                        status.Title = "Could not delete password";
+                        status.Message = exception.Message;
+                        status.IsOpen = true;
+                    }
+                };
+                Grid.SetColumn(remove, 1);
+                Grid.SetRowSpan(remove, 2);
+                row.Children.Add(remove);
+                card.Child = row;
+                entries.Children.Add(card);
+            }
+        }
+
+        savePassword.Click += (_, _) =>
+        {
+            try
+            {
+                PasswordVaultService.Save(origin.Text, userName.Text, password.Password);
+                password.Password = string.Empty;
+                status.Severity = InfoBarSeverity.Success;
+                status.Title = "Password saved";
+                status.Message = "The sign-in is protected by Windows Credential Locker.";
+                status.IsOpen = true;
+                RefreshEntries();
+            }
+            catch (Exception exception)
+            {
+                status.Severity = InfoBarSeverity.Error;
+                status.Title = "Could not save password";
+                status.Message = exception.Message;
+                status.IsOpen = true;
+            }
+        };
+
+        panel.Children.Add(origin);
+        panel.Children.Add(userName);
+        panel.Children.Add(password);
+        panel.Children.Add(savePassword);
+        panel.Children.Add(status);
+        panel.Children.Add(new TextBlock
+        {
+            Text = "Your saved sign-ins",
+            FontSize = 16,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
+        });
+        panel.Children.Add(entries);
+        panel.Children.Add(new TextBlock
+        {
+            Text = "Automatic save prompts and automatic sign-in form filling are not enabled yet; they require a secure WebKit page-script bridge. You can manage and reveal saved credentials here in the meantime.",
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"]
+        });
+        RefreshEntries();
+        return panel;
+    }
+
     private static void AddSettingsTab(TabView tabs, string title, string automationId, UIElement content)
     {
         var item = new TabViewItem
