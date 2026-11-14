@@ -448,7 +448,7 @@ jobs:
   cleanup-branches:
     name: Remove obsolete development branches
     needs: [build]
-    if: ${{ needs.build.result == 'success' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+    if: ${{ always() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
