@@ -108,7 +108,7 @@ constexpr bool isValid(const FrameReadyMessage& frame,
         && frame.consumerReleaseKey == descriptor.slots[frame.slotIndex].consumerReturnKey;
 }
 
-enum class SlotState : std::uint8_t { Free, Rendering, Ready, Presenting };
+enum class SlotState : std::uint8_t { Free, Rendering, Ready, Dropping, Presenting };
 
 struct FrameTicket {
     std::uint64_t generation{};
@@ -157,12 +157,17 @@ public:
         return true;
     }
 
-    // Chooses the newest completed frame and releases older ready frames.
-    // The UI thread only polls this state; it never waits for a producer fence.
-    bool tryBeginPresent(FrameTicket& ticket, std::uint32_t& dropped) noexcept
+    // Chooses the newest completed frame. Older ready frames become Dropping,
+    // not Free: the consumer must perform their keyed-mutex return handoff before
+    // completeDrop releases those slots for producer reuse.
+    // The UI thread never waits on a producer fence while holding this lock.
+    bool tryBeginPresent(FrameTicket& ticket,
+                         std::array<FrameTicket, kMaximumRingSlots>& droppedTickets,
+                         std::uint32_t& dropped) noexcept
     {
         std::lock_guard lock(m_mutex);
         dropped = 0;
+        droppedTickets = {};
         Slot* newest = nullptr;
         std::uint32_t newestIndex = 0;
         for (std::uint32_t i = 0; i < m_slotCount; ++i) {
@@ -179,12 +184,22 @@ public:
         for (std::uint32_t i = 0; i < m_slotCount; ++i) {
             auto& slot = m_slots[i];
             if (i != newestIndex && slot.state == SlotState::Ready) {
-                slot.state = SlotState::Free;
-                ++dropped;
+                slot.state = SlotState::Dropping;
+                droppedTickets[dropped++] = { slot.generation, slot.sequence, i };
             }
         }
         newest->state = SlotState::Presenting;
         ticket = { newest->generation, newest->sequence, newestIndex };
+        return true;
+    }
+
+    bool completeDrop(const FrameTicket& ticket) noexcept
+    {
+        std::lock_guard lock(m_mutex);
+        auto* slot = find(ticket);
+        if (!slot || slot->state != SlotState::Dropping)
+            return false;
+        slot->state = SlotState::Free;
         return true;
     }
 

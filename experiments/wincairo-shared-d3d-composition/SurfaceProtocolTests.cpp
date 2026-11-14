@@ -74,12 +74,18 @@ void exerciseConcurrentRing()
         while (activeProducers.load() != 0
             || presented.load() + dropped.load() < published.load()) {
             FrameTicket ticket{};
+            std::array<FrameTicket, kMaximumRingSlots> droppedTickets{};
             std::uint32_t droppedNow = 0;
-            if (!ring.tryBeginPresent(ticket, droppedNow)) {
+            if (!ring.tryBeginPresent(ticket, droppedTickets, droppedNow)) {
                 std::this_thread::yield();
                 continue;
             }
-            dropped.fetch_add(droppedNow);
+            for (std::uint32_t index = 0; index < droppedNow; ++index) {
+                if (!ring.completeDrop(droppedTickets[index]))
+                    failed.store(true);
+                else
+                    dropped.fetch_add(1);
+            }
             if (ring.completePresent(ticket) != PresentResult::Presented)
                 failed.store(true);
             else
@@ -126,9 +132,15 @@ int main()
             "valid render publication failed");
 
     std::uint32_t dropped = 0;
-    require(ring.tryBeginPresent(presented, dropped), "completed frame not available");
+    std::array<FrameTicket, kMaximumRingSlots> droppedTickets{};
+    require(ring.tryBeginPresent(presented, droppedTickets, dropped), "completed frame not available");
     require(presented.sequence == third.sequence && dropped == 2,
-            "presenter did not select newest frame and drop stale ready frames");
+            "presenter did not select newest frame and mark stale frames for handoff");
+    require(droppedTickets[0].sequence == first.sequence && droppedTickets[1].sequence == second.sequence,
+            "stale-frame handoff tickets were not returned to the consumer");
+    require(ring.completeDrop(droppedTickets[0]) && ring.completeDrop(droppedTickets[1]),
+            "stale frames could not be released after their consumer handoff");
+    require(!ring.completeDrop(droppedTickets[0]), "double stale-frame completion was accepted");
     require(ring.completePresent(presented) == PresentResult::Presented,
             "present completion failed");
     require(ring.completePresent(presented) == PresentResult::Invalid,
@@ -177,7 +189,7 @@ int main()
     exerciseConcurrentRing();
 
     std::cout << "PASS: versioned descriptor validation, thread-safe bounded three-slot frame ring, "
-                 "monotonic frame IDs, newest-frame selection, stale-frame dropping, "
+                 "monotonic frame IDs, newest-frame selection, explicit stale-frame handoff, "
                  "resize generations, stale-ticket rejection, and concurrent producer/presenter stress.\n";
     return 0;
 }

@@ -158,9 +158,25 @@ bool exerciseGeneration(ID3D11Device* producer, ID3D11DeviceContext* producerCon
             return false;
 
         FrameTicket present{};
+        std::array<FrameTicket, kMaximumRingSlots> droppedTickets{};
         std::uint32_t dropped = 0;
-        if (!state.tryBeginPresent(present, dropped) || dropped != 0
-            || present.sequence != ticket.sequence || present.slotIndex != ticket.slotIndex)
+        if (!state.tryBeginPresent(present, droppedTickets, dropped))
+            return false;
+        // A dropped ready slot still owns its keyed mutex. Drain the ownership
+        // cycle before returning it to the producer; never recycle it by state
+        // bookkeeping alone.
+        for (std::uint32_t droppedIndex = 0; droppedIndex < dropped; ++droppedIndex) {
+            const auto& droppedTicket = droppedTickets[droppedIndex];
+            auto& droppedSlot = slots[droppedTicket.slotIndex];
+            const auto& keys = descriptor.slots[droppedTicket.slotIndex];
+            if (droppedSlot.consumerMutex->AcquireSync(keys.consumerAcquireKey, 10000) != S_OK
+                || droppedSlot.consumerMutex->ReleaseSync(keys.consumerReturnKey) != S_OK
+                || droppedSlot.producerMutex->AcquireSync(keys.consumerReturnKey, 10000) != S_OK
+                || droppedSlot.producerMutex->ReleaseSync(keys.producerAcquireKey) != S_OK
+                || !state.completeDrop(droppedTicket))
+                return false;
+        }
+        if (present.sequence != ticket.sequence || present.slotIndex != ticket.slotIndex)
             return false;
 
         if (slot.consumerMutex->AcquireSync(1, 10000) != S_OK) {

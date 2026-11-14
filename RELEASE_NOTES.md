@@ -1,5 +1,15 @@
 # Blaze release notes
 
+## [1.1.51] - 2026-11-13
+
+### D3D keyed-mutex frame retirement
+- Do not recycle stale ready textures by changing only their software slot state; mark them as pending drops and return their tickets to the consumer.
+- Require the consumer to complete the keyed-mutex ownership return before a dropped texture becomes available to the producer again.
+- Extend the native ring probe and concurrent stress test to account for explicit dropped-frame handoffs.
+
+### Versioning
+- Align product, assembly, file, informational and package versions at 1.1.51.
+
 ## [1.1.50] - 2026-11-13
 
 ### D3D frame-ring concurrency
