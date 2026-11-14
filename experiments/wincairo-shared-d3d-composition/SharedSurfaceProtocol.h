@@ -103,8 +103,7 @@ constexpr bool isValid(const FrameReadyMessage& frame,
         && frame.slotIndex < descriptor.slotCount
         && frame.reserved == 0
         && frame.producerQpc != 0
-        && (frame.producerReleaseKey == descriptor.slots[frame.slotIndex].producerAcquireKey
-            || frame.producerReleaseKey == descriptor.slots[frame.slotIndex].consumerAcquireKey)
+        && frame.producerReleaseKey == descriptor.slots[frame.slotIndex].consumerAcquireKey
         && frame.consumerReleaseKey == descriptor.slots[frame.slotIndex].consumerReturnKey;
 }
 
@@ -220,6 +219,13 @@ public:
         std::lock_guard lock(m_mutex);
         if (!m_slotCount || !generation || generation <= m_generation)
             return false;
+        // A generation change is a resource-retirement boundary, not a way to
+        // invalidate in-flight ownership. The caller must drain every producer,
+        // ready, dropping, and presenting slot before releasing old D3D handles.
+        for (std::uint32_t i = 0; i < m_slotCount; ++i) {
+            if (m_slots[i].state != SlotState::Free)
+                return false;
+        }
         m_generation = generation;
         for (auto& slot : m_slots)
             slot = {};

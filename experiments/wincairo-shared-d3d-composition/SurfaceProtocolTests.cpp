@@ -161,6 +161,9 @@ int main()
     invalidReady.producerReleaseKey = 99;
     require(!isValid(invalidReady, descriptor), "unknown producer release key accepted");
     invalidReady = ready;
+    invalidReady.producerReleaseKey = 0;
+    require(!isValid(invalidReady, descriptor), "producer acquire key accepted as a released frame key");
+    invalidReady = ready;
     invalidReady.consumerReleaseKey = 99;
     require(!isValid(invalidReady, descriptor), "unknown consumer return key accepted");
     invalidReady = ready;
@@ -177,7 +180,17 @@ int main()
 
     FrameTicket inFlight{};
     require(ring.tryBeginRender(inFlight), "render reservation before resize failed");
-    require(ring.beginGeneration(2), "new resize generation rejected");
+    require(!ring.beginGeneration(2), "resize retired a texture while its producer still owned it");
+    require(ring.publish(inFlight), "in-flight frame could not finish before resize");
+    FrameTicket resizeDrain{};
+    std::array<FrameTicket, kMaximumRingSlots> resizeDrops{};
+    std::uint32_t resizeDropCount = 0;
+    require(ring.tryBeginPresent(resizeDrain, resizeDrops, resizeDropCount)
+            && resizeDrain.sequence == inFlight.sequence && resizeDropCount == 0,
+            "in-flight frame could not be drained before resize");
+    require(ring.completePresent(resizeDrain) == PresentResult::Presented,
+            "frame drain did not release its slot before resize");
+    require(ring.beginGeneration(2), "new resize generation rejected after drain");
     require(!ring.publish(inFlight), "old-generation frame published after resize");
     require(ring.completePresent(inFlight) == PresentResult::Invalid,
             "old-generation ticket completed after resize");

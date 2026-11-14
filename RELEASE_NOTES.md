@@ -1,5 +1,16 @@
 # Blaze release notes
 
+## [1.1.52] - 2026-11-14
+
+### D3D generation retirement safety
+- Refuse to replace a shared-texture generation while any slot is rendering, ready, awaiting stale-frame handoff, or presenting. Callers must drain GPU ownership before releasing old resources.
+- Require frame-ready notifications to carry the exact consumer-acquire key released by the producer; reject the producer's initial acquire key.
+- Extend protocol tests to cover resize attempts during in-flight rendering and the required drain-before-recreate sequence.
+- Preserve the current WinCairo HWND GPU renderer; live WebKit-to-WinUI shared-surface presentation is still not implemented.
+
+### Versioning
+- Align product, assembly, file, informational and package versions at 1.1.52.
+
 ## [1.1.51] - 2026-11-13
 
 ### D3D keyed-mutex frame retirement
