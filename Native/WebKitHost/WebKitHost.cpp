@@ -436,16 +436,23 @@ WB_VIEW_HANDLE createNativeView(HWND parent, int x, int y, int width, int height
 constexpr wchar_t NativeSurfaceHostClass[] = L"Blaze.WebKit.NativeSurfaceHost";
 
 constexpr UINT_PTR NativeWebKitSubclassId = 0xB1A2E;
+constexpr UINT WM_BLAZE_RESTORE_OWNER_ACTIVATION = WM_APP + 0x3B1;
+
+void deferOwnerActivationRestore(HWND owner, HWND focusedWindow)
+{
+    if (owner && IsWindow(owner))
+        PostMessageW(owner, WM_BLAZE_RESTORE_OWNER_ACTIVATION,
+            reinterpret_cast<WPARAM>(focusedWindow), 0);
+}
+
 LRESULT CALLBACK nativeWebKitWindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam,
     UINT_PTR subclassId, DWORD_PTR ownerValue)
 {
     if (message == WM_MOUSEACTIVATE) {
-        // SetFocus is required for WebKit keyboard input. It activates the
-        // owned popup, so immediately restore the real WinUI owner as foreground.
+        // Give WebKit keyboard focus, but do not try to activate its owned
+        // top-level host while Windows is still processing WM_MOUSEACTIVATE.
         SetFocus(window);
-        const auto owner = reinterpret_cast<HWND>(ownerValue);
-        if (owner && IsWindow(owner))
-            SetForegroundWindow(owner);
+        deferOwnerActivationRestore(reinterpret_cast<HWND>(ownerValue), window);
         return MA_NOACTIVATE;
     }
     if (message == WM_NCDESTROY)
@@ -458,10 +465,10 @@ LRESULT CALLBACK nativeSurfaceHostProc(HWND window, UINT message, WPARAM wParam,
     if (message == WM_MOUSEACTIVATE) {
         const auto child = reinterpret_cast<HWND>(GetWindowLongPtrW(window, GWLP_USERDATA));
         const auto owner = GetWindow(window, GW_OWNER);
-        // Focus the WebKit child, then restore the WinUI owner as the active
-        // top-level window. This keeps page keyboard input and Mica together.
+        // Focus WebKit during mouse activation, then restore the WinUI owner
+        // on its own message queue after this activation transaction unwinds.
         if (child && IsWindow(child)) SetFocus(child);
-        if (owner && IsWindow(owner)) SetForegroundWindow(owner);
+        deferOwnerActivationRestore(owner, child);
         return MA_NOACTIVATE;
     }
     if (message == WM_NCDESTROY) SetWindowLongPtrW(window, GWLP_USERDATA, 0);
@@ -504,6 +511,21 @@ LRESULT CALLBACK ownerWindowSubclass(HWND owner, UINT message, WPARAM wParam, LP
 {
     auto* view = reinterpret_cast<WB_VIEW*>(referenceData);
     const auto result = DefSubclassProc(owner, message, wParam, lParam);
+
+    if (message == WM_BLAZE_RESTORE_OWNER_ACTIVATION) {
+        // WM_MOUSEACTIVATE has now returned MA_NOACTIVATE. Restore the real
+        // WinUI top-level activation asynchronously so the owned WebKit host
+        // cannot leave the title bar/Mica backdrop in its inactive state.
+        const auto focusedWindow = reinterpret_cast<HWND>(wParam);
+        SetActiveWindow(owner);
+        const BOOL foregroundRestored = SetForegroundWindow(owner);
+        const auto foreground = GetForegroundWindow();
+        wchar_t diagnostic[192] {};
+        swprintf_s(diagnostic, L"[Blaze][WindowActivation] owner=0x%p foreground=0x%p focused=0x%p restored=%d\\n",
+            owner, foreground, focusedWindow, foregroundRestored);
+        OutputDebugStringW(diagnostic);
+        return 0;
+    }
 
     // Owned popup hosts are top-level windows, so WinUI's DirectComposition
     // surface cannot cover them. Keep each host aligned as its owner moves
