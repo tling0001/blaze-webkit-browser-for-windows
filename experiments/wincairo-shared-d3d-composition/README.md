@@ -114,3 +114,17 @@ The pinned WebKit source `d641dd75af65b0469eff30bb76a97e01e02633fc` was inspecte
 - The existing offscreen mode is a CPU readback path and is not suitable as the requested zero-copy WinUI renderer.
 
 The next engine change must replace the HWND-bound scene surface with a renderable D3D11 shared-texture pbuffer, add explicit GPU-process/UI-process texture ownership and synchronization, and present the shared texture through a DirectComposition/WinUI surface. It must preserve the current HWND renderer as fallback and validate resize, DPI, device loss, and multiple tabs before activation.
+
+## Exact pinned WebKit IPC and context seam
+
+The pinned source was traced through the real scene-creation path:
+
+1. `Source/WebKit/WebProcess/GPU/graphics/wc/RemoteWCLayerTreeHostProxy.cpp` sends `GPUConnectionToWebProcess::CreateWCLayerTreeHost(identifier, m_page->nativeWindowHandle(), m_usesOffscreenRendering)`.
+2. `Source/WebKit/GPUProcess/GPUConnectionToWebProcess.messages.in` declares that IPC message; `GPUConnectionToWebProcess.cpp` dispatches it to `RemoteWCLayerTreeHost::create`.
+3. `RemoteWCLayerTreeHost.cpp` obtains a `WCSharedSceneContextHolder` keyed by the native HWND, constructs `WCSceneContext(nativeWindow)` on the graphics work queue, and initializes `WCScene`.
+4. `WCSceneContext.cpp` currently calls `WebCore::GLContext::create(PlatformDisplay::sharedDisplay(), reinterpret_cast<GLNativeWindowType>(nativeWindow))`; its `swapBuffers()` is just `m_glContext->swapBuffers()`.
+5. `WCScene.cpp` paints the TextureMapper layer tree. The normal path calls `m_context->swapBuffers()`. The separate `usesOffscreenRendering` path allocates `ShareableBitmap`, calls `glReadPixels`, and returns the bitmap handle in `UpdateInfo`.
+
+This confirms that the narrow source-level extension point is the `CreateWCLayerTreeHost` descriptor plus `WCSharedSceneContextHolder` / `WCSceneContext`, not the WinUI `MainPage` or the existing WebKit HWND subclass. The GPU-process renderer must receive a versioned per-window/per-view output-surface descriptor, create or import its ANGLE EGL surface from the shared D3D11 resource, and make `WCScene` render to that surface. Frame-ready sequence numbers and keyed-mutex/fence ownership must travel with the descriptor/updates; `swapBuffers()` must not fall back to `glReadPixels` or bitmap IPC.
+
+Before implementing the patch, resolve the context-sharing model explicitly: WebKit currently shares one `WCSceneContext` for all layer-tree hosts using the same HWND (including a provisional WebProcess during navigation). A replacement must preserve that lifecycle while preventing one tab/view from releasing or overwriting another view's surface. Resize generations, device loss, process restart, and GPU resource retirement must be represented in the protocol. The current diagnostic's passing ANGLE/DComp test is the prerequisite proof for the graphics primitives, not proof that this IPC/context work is complete.
