@@ -151,11 +151,7 @@ document.getElementById('credential-form').addEventListener('submit', event => {
                         $requestText += [System.Text.Encoding]::ASCII.GetString($requestBuffer, 0, $read)
                     } while (-not $requestText.Contains("`r`n`r`n"))
                     $body = [IO.File]::ReadAllBytes($htmlPath)
-                    $header = [System.Text.Encoding]::ASCII.GetBytes("HTTP/1.1 200 OK`r`nContent-Type: text/html; charset=utf-8`r
-Content-Length: $($body.Length)`r
-Cache-Control: no-store`r
-Connection: close`r
-`r`n")
+                    $header = [System.Text.Encoding]::ASCII.GetBytes("HTTP/1.1 200 OK`r`nContent-Type: text/html; charset=utf-8`r`nContent-Length: $($body.Length)`r`nCache-Control: no-store`r`nConnection: close`r`n`r`n")
                     $stream.Write($header, 0, $header.Length)
                     $stream.Write($body, 0, $body.Length)
                     $stream.Flush()
