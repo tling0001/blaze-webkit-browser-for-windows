@@ -645,6 +645,11 @@ WB_VIEW_HANDLE createNativeView(HWND parent, int x, int y, int width, int height
         return nullptr;
     }
 
+    // Keep production pages on WinCairo's normal WCScene/TextureMapper GPU
+    // presentation path. The offscreen mode is a ShareableBitmap + glReadPixels
+    // CPU-readback path and is intentionally disabled for the live browser.
+    WKViewSetUsesOffscreenRendering(nativeView, false);
+    OutputDebugStringW(L"[Blaze][Renderer] GPU-accelerated WinCairo WCScene presentation enabled; offscreen bitmap readback disabled.\\n");
     WKViewSetIsInWindow(nativeView, true);
     auto nativeWindow = WKViewGetWindow(nativeView);
     if (!nativeWindow || !IsWindow(nativeWindow)) {
