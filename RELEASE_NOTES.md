@@ -1,5 +1,19 @@
 # Blaze release notes
 
+## [1.1.44] - 2026-11-13
+
+### GPU shared-surface protocol groundwork
+- Add a fixed-width, versioned output-surface descriptor for the future browser-process/WebKit GPU-process boundary, including per-view identity, resize generations, BGRA8 format, adapter identity, bounded shared-resource slots, and keyed-mutex synchronization metadata.
+- Add a bounded frame-ring state machine with monotonic frame IDs, immediate backpressure, newest-frame presentation selection, stale-frame dropping, and rejection of tickets from replaced resize generations.
+- Add deterministic CI tests for descriptor validation, bounded queue behavior, stale-frame rejection, and resize-generation lifetime.
+- Keep the existing WinCairo HWND renderer unchanged. This protocol is not yet transported through WebKit IPC and does not yet render live page frames into a WinUI composition surface.
+
+### Versioning
+- Align product, assembly, file, informational and package versions at 1.1.44.
+
+### Validation
+- CI now builds and runs the standalone shared-surface protocol tests alongside the ANGLE/D3D diagnostic. Live WebKit frame transport and WinUI presentation remain unimplemented.
+
 ## [1.1.43] - 2026-11-13
 
 ### Native password manager foundation
