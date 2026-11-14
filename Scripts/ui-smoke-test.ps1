@@ -368,6 +368,26 @@ namespace BlazeSmoke {
         throw 'The settings-over-WebKit screenshot was not delivered.'
     }
     $results.Add([ordered]@{ name = 'WinUI settings page opened in its own browser tab'; status = 'PASS'; detail = $settingsScreenshot })
+
+    # Exercise the native password manager against an ephemeral test credential.
+    Invoke-WinAppChecked @('ui', 'invoke', 'SettingsPasswordsTab', '-w', [string]$mainWindow.hwnd) | Out-Null
+    Invoke-WinAppChecked @('ui', 'wait-for', 'PasswordWebsite', '-t', '3000', '-w', [string]$mainWindow.hwnd) | Out-Null
+    Invoke-WinAppChecked @('ui', 'set-value', 'PasswordWebsite', 'https://password-smoke.example', '-w', [string]$mainWindow.hwnd) | Out-Null
+    Invoke-WinAppChecked @('ui', 'set-value', 'PasswordUsername', 'blaze-smoke-user', '-w', [string]$mainWindow.hwnd) | Out-Null
+    Invoke-WinAppChecked @('ui', 'send-keys', 'BlazeSmokePassword-2026!', '--target', 'PasswordValue', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
+    Invoke-WinAppChecked @('ui', 'invoke', 'SaveWebsitePassword', '-w', [string]$mainWindow.hwnd) | Out-Null
+    $passwordTree = (Invoke-WinAppChecked @('ui', 'inspect', '--interactive', '--json', '-w', [string]$mainWindow.hwnd)) -join [Environment]::NewLine
+    $revealMatch = [regex]::Match($passwordTree, 'RevealPassword_[A-Fa-f0-9]+')
+    $deleteMatch = [regex]::Match($passwordTree, 'DeletePassword_[A-Fa-f0-9]+')
+    if (-not $revealMatch.Success -or -not $deleteMatch.Success) {
+        throw "The saved test credential did not appear in the password manager. UIA snapshot: $passwordTree"
+    }
+    Invoke-WinAppChecked @('ui', 'invoke', $revealMatch.Value, '-w', [string]$mainWindow.hwnd) | Out-Null
+    Invoke-WinAppChecked @('ui', 'invoke', $deleteMatch.Value, '-w', [string]$mainWindow.hwnd) | Out-Null
+    Invoke-WinAppChecked @('ui', 'wait-for', 'Primary', '-t', '3000', '-w', [string]$mainWindow.hwnd) | Out-Null
+    Invoke-WinAppChecked @('ui', 'invoke', 'Primary', '-w', [string]$mainWindow.hwnd) | Out-Null
+    Invoke-WinAppChecked @('ui', 'wait-for', $deleteMatch.Value, '--gone', '-t', '3000', '-w', [string]$mainWindow.hwnd) | Out-Null
+    $results.Add([ordered]@{ name = 'Windows Credential Locker password save, reveal and delete'; status = 'PASS' })
     Invoke-WinAppChecked @('ui', 'send-keys', 'ctrl+a', '--target', 'AddressBox', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
     Invoke-WinAppChecked @('ui', 'send-keys', $smokeUri, '--target', 'AddressBox', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
     Invoke-WinAppChecked @('ui', 'send-keys', 'enter', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
