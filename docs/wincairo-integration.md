@@ -65,8 +65,35 @@ Do not add an engine fallback. If WinCairo cannot be built or hosted, surface th
 - [WebKit Windows MiniBrowser host implementation](https://github.com/WebKit/WebKit/blob/main/Tools/MiniBrowser/win/WebKitBrowserWindow.cpp)
 
 
-## Shared-surface protocol status
+## Live WinCairo composition integration: source findings and remaining work
 
-The experimental directory now contains a versioned, fixed-width descriptor ABI and a deterministic bounded-ring state machine test. The descriptor deliberately carries a view identifier, resize generation, adapter LUID, BGRA8 format, keyed-mutex contract, and a bounded set of legacy DXGI resource tokens. Frame notifications carry monotonically increasing sequence IDs and generation identity. The ring drops stale completed frames rather than allowing UI presentation to accumulate latency.
+The pinned source has a concrete, narrow GPU-process call chain:
 
-This is not yet wired into the C ABI or WebKit IPC. In particular, no shared resource handle is currently sent to a GPU process, no ANGLE surface is created from the descriptor, and no SwapChainPanel is attached. The current HWND path remains the only production presentation path.
+1. 'DrawingAreaWC::updateRendering' builds 'WCUpdateInfo' and calls 'RemoteWCLayerTreeHostProxy::update'.
+2. 'RemoteWCLayerTreeHostProxy::ensureGPUProcessConnection' sends 'GPUConnectionToWebProcess::CreateWCLayerTreeHost(identifier, nativeWindowHandle, usesOffscreenRendering)'.
+3. 'GPUConnectionToWebProcess::createWCLayerTreeHost' creates 'RemoteWCLayerTreeHost' in the GPU process.
+4. 'RemoteWCLayerTreeHost' creates one shared 'WCSceneContext' per native window. 'WCSceneContext' currently calls 'GLContext::create(PlatformDisplay::sharedDisplay(), HWND)'.
+5. 'WCScene::update' applies the TextureMapper layer tree and paints it. The production path sets the viewport and swaps the HWND-backed GL context. The offscreen path renders into a pooled GL texture, calls 'glReadPixels' into 'ShareableBitmap', and sends a bitmap handle back. The existing 'remoteContextHostedIdentifier' branch also paints to a pooled GL texture, but that texture is for WebKit remote-frame hosting and is not the WinUI browser surface.
+
+That distinction matters: enabling WebKit's offscreen flag would reintroduce CPU readback, and reusing the remote-frame-hosted texture would not connect the browser's page to WinUI. Neither is an acceptable implementation of this feature.
+
+### Implemented experimental pieces
+
+- Versioned descriptor ABI: 'experiments/wincairo-shared-d3d-composition/SharedSurfaceProtocol.h'.
+- Bounded frame scheduler: two/three slots, monotonic frame IDs, resize generations, backpressure and stale-frame rejection.
+- Windows CI tests for descriptor/ring invariants.
+- D3D11 diagnostic that allocates three BGRA8 keyed-mutex textures, opens them on a second same-adapter device, performs repeated producer/consumer GPU copies, and recreates the ring at a new size.
+- Separate ANGLE EGL import/render and DirectComposition diagnostics.
+
+These validate device/driver capabilities and resource synchronization. They do not carry the actual page output.
+
+### Required production changes
+
+1. Add a real native output-surface owner to the browser host. It must create a bounded D3D11 shared-texture ring and a composition swap chain, expose resize generations and frame sequence IDs, and keep all handles alive until the GPU process acknowledges retirement.
+2. Extend the pinned WebKit UIProcess → WebProcess → GPUProcess contract. The descriptor must be sent to the correct page and forwarded through 'CreateWCLayerTreeHost', including after provisional/replacement WebProcesses. Resize and teardown need explicit generation/acknowledgement handling; never treat a raw legacy shared handle as an NT handle or close it with 'CloseHandle'.
+3. Add a GPU-process ANGLE import object that creates an EGL surface from each shared D3D11 texture using the verified ANGLE D3D texture-share-handle extension. It must verify adapter LUID/format/dimensions, coordinate keyed-mutex ownership, and recreate resources on device loss.
+4. Change 'WCSceneContext'/TextureMapper's final render target so 'WCScene::update' paints directly into the imported shared surface. Do not use 'ShareableBitmap', 'glReadPixels', or CPU bitmap IPC in this path.
+5. Add the WinUI 'SwapChainPanel' interop surface using the supported 'ISwapChainPanelNative' contract, then present only completed frames without blocking the UI thread. Keep the existing HWND path as fallback until the end-to-end page tests pass.
+6. Validate provisional navigation, replacement WebProcesses, resizing/DPI, multiple tabs, popups, dialogs, occlusion, keyed-mutex timeout, device removal, and frame latency/GPU utilization.
+
+The descriptor and diagnostics are deliberately not wired into production yet: no shared page-output handle is currently transported through WebKit IPC, no 'WCScene' EGL import is connected to the descriptor, and no WinUI 'SwapChainPanel' receives live page frames. The HWND renderer remains the only production path. Do not advertise or enable the composition renderer until the full pipeline and its tests pass.
