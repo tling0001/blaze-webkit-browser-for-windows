@@ -130,6 +130,10 @@ jobs:
           if (-not $protocolTests) { throw 'The shared-surface protocol test executable was not produced.' }
           & $protocolTests.FullName
           if ($LASTEXITCODE -ne 0) { throw 'The bounded shared-surface frame protocol tests failed.' }
+          $ringProbe = Get-ChildItem -LiteralPath 'CompositionProbeBuild' -Filter 'BlazeSharedTextureRingProbe.exe' -Recurse -File | Select-Object -First 1
+          if (-not $ringProbe) { throw 'The multi-frame shared-texture ring probe executable was not produced.' }
+          & $ringProbe.FullName
+          if ($LASTEXITCODE -ne 0) { throw 'The cross-device keyed-mutex texture-ring and resize probe failed.' }
           $probe = Get-ChildItem -LiteralPath 'CompositionProbeBuild' -Filter 'BlazeCompositionProbe.exe' -Recurse -File | Select-Object -First 1
           if (-not $probe) { throw 'The shared-D3D capability probe executable was not produced.' }
           $env:PATH = (Join-Path $PWD 'webkit-runtime') + ';' + $env:PATH
