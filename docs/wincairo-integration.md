@@ -87,6 +87,8 @@ That distinction matters: enabling WebKit's offscreen flag would reintroduce CPU
 
 These validate device/driver capabilities and resource synchronization. They do not carry the actual page output.
 
+The pinned WebKit revision also exposes 'GLContext::createOffscreen(PlatformDisplay&)' in its EGL backend. That gives the GPU-process patch a better route than trying to retarget an HWND-backed context: retain an offscreen ANGLE context, import each D3D shared handle with 'eglCreatePbufferFromClientBuffer(EGL_D3D_TEXTURE_2D_SHARE_HANDLE_ANGLE)', switch the same context to the imported pbuffer for TextureMapper painting, and use 'eglQuerySurfacePointerANGLE(EGL_DXGI_KEYED_MUTEX_ANGLE)' for nonblocking keyed-mutex ownership. The current standalone probe has already verified the import and render extensions, but the WebKit GLContext/TextureMapper handoff, descriptor IPC, and live WinUI consumer still need implementation and testing.
+
 ### Required production changes
 
 1. Add a real native output-surface owner to the browser host. It must create a bounded D3D11 shared-texture ring and a composition swap chain, expose resize generations and frame sequence IDs, and keep all handles alive until the GPU process acknowledges retirement.
