@@ -32,17 +32,30 @@ internal static class PasswordVaultService
         }
     }
 
-    public static void Save(string origin, string userName, string password)
+    public static string NormalizeOrigin(string origin)
     {
         if (!Uri.TryCreate(origin, UriKind.Absolute, out var uri)
             || (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp))
-            throw new ArgumentException("Enter a valid http or https website address.", nameof(origin));
+            throw new ArgumentException("Only http and https website origins can store credentials.", nameof(origin));
+        return uri.GetLeftPart(UriPartial.Authority).TrimEnd('/');
+    }
+
+    public static IReadOnlyList<SavedPassword> FindForOrigin(string origin)
+    {
+        var normalized = NormalizeOrigin(origin);
+        return GetSavedPasswords()
+            .Where(item => string.Equals(item.Origin, normalized, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+    }
+
+    public static void Save(string origin, string userName, string password)
+    {
         if (string.IsNullOrWhiteSpace(userName))
             throw new ArgumentException("Enter a username.", nameof(userName));
         if (string.IsNullOrEmpty(password))
             throw new ArgumentException("Enter a password.", nameof(password));
 
-        var normalizedOrigin = uri.GetLeftPart(UriPartial.Authority).TrimEnd('/');
+        var normalizedOrigin = NormalizeOrigin(origin);
         var resource = ResourcePrefix + normalizedOrigin;
         var vault = CreateVault();
         try
