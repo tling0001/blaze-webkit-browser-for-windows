@@ -107,7 +107,7 @@ bool createRing(ID3D11Device* producer, ID3D11Device* consumer,
 bool exerciseGeneration(ID3D11Device* producer, ID3D11DeviceContext* producerContext,
                         ID3D11Device* consumer, ID3D11DeviceContext* consumerContext,
                         std::uint32_t width, std::uint32_t height, std::uint64_t generation,
-                        std::uint64_t& frameSequence)
+                        Blaze::Gpu::BoundedFrameRing& state, std::uint64_t& frameSequence)
 {
     using namespace Blaze::Gpu;
     std::array<Slot, 3> slots{};
@@ -133,8 +133,7 @@ bool exerciseGeneration(ID3D11Device* producer, ID3D11DeviceContext* producerCon
             return false;
     }
 
-    BoundedFrameRing state(static_cast<std::uint32_t>(slots.size()));
-    if (!state.beginGeneration(generation))
+    if (state.slotCount() != slots.size() || !state.beginGeneration(generation))
         return false;
 
     for (std::uint32_t frame = 0; frame < 9; ++frame) {
@@ -206,13 +205,14 @@ int wmain()
         return 3;
 
     std::uint64_t sequence = 0;
+    Blaze::Gpu::BoundedFrameRing ring(3);
     if (!exerciseGeneration(producer.Get(), producerContext.Get(), consumer.Get(), consumerContext.Get(),
-                            640, 360, 1, sequence))
+                            640, 360, 1, ring, sequence))
         return 4;
     // Replace the whole ring on resize. The monotonically increasing generation
     // distinguishes the new resources from any late notifications on old ones.
     if (!exerciseGeneration(producer.Get(), producerContext.Get(), consumer.Get(), consumerContext.Get(),
-                            1280, 720, 2, sequence))
+                            1280, 720, 2, ring, sequence))
         return 5;
 
     std::wcout << L"PASS: bounded three-texture cross-device ring and resize-generation recreation; "
