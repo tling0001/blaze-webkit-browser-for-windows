@@ -1154,7 +1154,7 @@ public sealed partial class MainPage : Page
                 Spacing = 8,
                 Children =
                 {
-                    new FontIcon { Glyph = "\\uE74E", FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Segoe Fluent Icons") },
+                    new FontIcon { Glyph = "\uE74E", FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Segoe Fluent Icons") },
                     new TextBlock { Text = "Save password" }
                 }
             }
@@ -1223,25 +1223,47 @@ public sealed partial class MainPage : Page
                     Header = "Password",
                     IsPasswordRevealButtonEnabled = true,
                     IsEnabled = false,
+                    PlaceholderText = "Select Reveal to load this credential",
                     MinWidth = 220
                 };
-                try
-                {
-                    secret.Password = PasswordVaultService.Retrieve(item);
-                    secret.IsEnabled = true;
-                }
-                catch
-                {
-                    secret.PlaceholderText = "Credential unavailable";
-                }
                 AutomationProperties.SetAutomationId(secret, "SavedPassword_" + SiteAutomationToken(item.Origin + item.UserName));
                 AutomationProperties.SetName(secret, $"Saved password for {item.UserName} at {item.Origin}");
                 Grid.SetRow(secret, 1);
                 row.Children.Add(secret);
 
+                var reveal = new Button
+                {
+                    Content = new FontIcon { Glyph = "\uE890", FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Segoe Fluent Icons") },
+                    Width = 36,
+                    Height = 36,
+                    Padding = new Thickness(0)
+                };
+                AutomationProperties.SetName(reveal, $"Reveal password for {item.UserName} at {item.Origin}");
+                AutomationProperties.SetAutomationId(reveal, "RevealPassword_" + SiteAutomationToken(item.Origin + item.UserName));
+                ToolTipService.SetToolTip(reveal, "Reveal saved password");
+                reveal.Click += (_, _) =>
+                {
+                    try
+                    {
+                        secret.Password = PasswordVaultService.Retrieve(item);
+                        secret.IsEnabled = true;
+                        reveal.IsEnabled = false;
+                    }
+                    catch (Exception exception)
+                    {
+                        status.Severity = InfoBarSeverity.Error;
+                        status.Title = "Could not retrieve password";
+                        status.Message = exception.Message;
+                        status.IsOpen = true;
+                    }
+                };
+                Grid.SetColumn(reveal, 1);
+                Grid.SetRow(reveal, 1);
+                row.Children.Add(reveal);
+
                 var remove = new Button
                 {
-                    Content = new FontIcon { Glyph = "\\uE74D", FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Segoe Fluent Icons") },
+                    Content = new FontIcon { Glyph = "\uE74D", FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Segoe Fluent Icons") },
                     Width = 36,
                     Height = 36,
                     Padding = new Thickness(0)
