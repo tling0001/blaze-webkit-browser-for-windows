@@ -546,9 +546,21 @@ constexpr UINT WM_BLAZE_RESTORE_OWNER_ACTIVATION = WM_APP + 0x3B1;
 
 void deferOwnerActivationRestore(HWND owner, HWND focusedWindow)
 {
-    if (owner && IsWindow(owner))
-        PostMessageW(owner, WM_BLAZE_RESTORE_OWNER_ACTIVATION,
-            reinterpret_cast<WPARAM>(focusedWindow), 0);
+    if (!owner || !IsWindow(owner) || !focusedWindow || !IsWindow(focusedWindow))
+        return;
+    const auto ownerThread = GetWindowThreadProcessId(owner, nullptr);
+    const auto focusedThread = GetWindowThreadProcessId(focusedWindow, nullptr);
+    const bool attached = ownerThread && focusedThread && ownerThread != focusedThread
+        && AttachThreadInput(ownerThread, focusedThread, TRUE);
+    // Attach first so SetFocus updates the shared input queue. The owner-thread
+    // callback will restore foreground activation and detach only after it has
+    // had a chance to preserve the WebKit child as the focus HWND.
+    SetFocus(focusedWindow);
+    if (!PostMessageW(owner, WM_BLAZE_RESTORE_OWNER_ACTIVATION,
+        reinterpret_cast<WPARAM>(focusedWindow), attached ? static_cast<LPARAM>(focusedThread) : 0)) {
+        if (attached)
+            AttachThreadInput(ownerThread, focusedThread, FALSE);
+    }
 }
 
 LRESULT CALLBACK nativeWebKitWindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam,
@@ -557,7 +569,6 @@ LRESULT CALLBACK nativeWebKitWindowProc(HWND window, UINT message, WPARAM wParam
     if (message == WM_MOUSEACTIVATE) {
         // Give WebKit keyboard focus, but do not try to activate its owned
         // top-level host while Windows is still processing WM_MOUSEACTIVATE.
-        SetFocus(window);
         deferOwnerActivationRestore(reinterpret_cast<HWND>(ownerValue), window);
         return MA_NOACTIVATE;
     }
@@ -573,7 +584,6 @@ LRESULT CALLBACK nativeSurfaceHostProc(HWND window, UINT message, WPARAM wParam,
         const auto owner = GetWindow(window, GW_OWNER);
         // Focus WebKit during mouse activation, then restore the WinUI owner
         // on its own message queue after this activation transaction unwinds.
-        if (child && IsWindow(child)) SetFocus(child);
         deferOwnerActivationRestore(owner, child);
         return MA_NOACTIVATE;
     }
@@ -626,10 +636,7 @@ LRESULT CALLBACK ownerWindowSubclass(HWND owner, UINT message, WPARAM wParam, LP
         // moved to the address bar or another WinUI control, preserve that.
         const auto focusedWindow = reinterpret_cast<HWND>(wParam);
         const auto ownerThread = GetCurrentThreadId();
-        const auto focusedThread = focusedWindow && IsWindow(focusedWindow)
-            ? GetWindowThreadProcessId(focusedWindow, nullptr) : 0;
-        const bool attachedInputQueues = focusedThread && focusedThread != ownerThread
-            && AttachThreadInput(ownerThread, focusedThread, TRUE);
+        const auto attachedThread = static_cast<DWORD>(lParam);
         const auto focusBeforeActivation = GetFocus();
         const bool preserveWebKitFocus = view && !view->destroyPrepared
             && view->window == focusedWindow && IsWindow(focusedWindow)
@@ -639,15 +646,15 @@ LRESULT CALLBACK ownerWindowSubclass(HWND owner, UINT message, WPARAM wParam, LP
             foregroundRestored = SetForegroundWindow(owner);
         if (preserveWebKitFocus && GetFocus() != focusedWindow)
             SetFocus(focusedWindow);
-        if (attachedInputQueues)
-            AttachThreadInput(ownerThread, focusedThread, FALSE);
+        if (attachedThread)
+            AttachThreadInput(ownerThread, attachedThread, FALSE);
 
         const auto foreground = GetForegroundWindow();
         const auto active = GetActiveWindow();
         const auto focus = GetFocus();
         wchar_t diagnostic[256] {};
         swprintf_s(diagnostic, L"[Blaze][WindowActivation] owner=0x%p foreground=0x%p active=0x%p focus=0x%p webkit=0x%p preserve=%d restored=%d attached=%d ownerThread=%lu webkitThread=%lu\\n",
-            owner, foreground, active, focus, focusedWindow, preserveWebKitFocus, foregroundRestored, attachedInputQueues, ownerThread, focusedThread);
+            owner, foreground, active, focus, focusedWindow, preserveWebKitFocus, foregroundRestored, attachedThread != 0, ownerThread, attachedThread);
         OutputDebugStringW(diagnostic);
         return 0;
     }
