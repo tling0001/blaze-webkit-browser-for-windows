@@ -9,6 +9,7 @@ $env:WINAPP_UI_WORKFLOW_ID = $workflowId
 $dotnetRunner = $null
 $appProcess = $null
 $smokePage = $null
+$credentialServerJob = $null
 $results = [Collections.Generic.List[object]]::new()
 $ArtifactDirectory = [IO.Path]::GetFullPath($ArtifactDirectory)
 New-Item -ItemType Directory -Force -Path $ArtifactDirectory | Out-Null
@@ -98,17 +99,84 @@ try {
 <html><head><meta charset="utf-8"><title>Blaze WebKit Smoke</title></head>
 <body>
 <h1>Blaze WebKit Smoke</h1>
-<p>Native WinCairo popup host is active.</p>
+<p>Native WinCairo popup host and credential bridge test page.</p>
 <input id="keyboard-focus-target" aria-label="Keyboard focus test" type="text"
   style="position:fixed;left:24px;top:24px;width:340px;height:42px;font:18px sans-serif;">
+<form id="credential-form" autocomplete="on">
+  <input id="credential-username" aria-label="Credential username" type="text" autocomplete="username"
+    style="position:fixed;left:24px;top:100px;width:340px;height:40px;font:18px sans-serif;">
+  <input id="credential-password" aria-label="Credential password" type="password" autocomplete="current-password"
+    style="position:fixed;left:24px;top:150px;width:340px;height:40px;font:18px sans-serif;">
+  <button id="credential-submit" type="submit"
+    style="position:fixed;left:24px;top:205px;width:180px;height:38px;">Sign in</button>
+</form>
 <script>
 document.getElementById('keyboard-focus-target').addEventListener('input', event => {
   document.title = 'Blaze WebKit Smoke — Keyboard: ' + event.target.value;
 });
+document.addEventListener('input', () => {
+  const username = document.getElementById('credential-username').value;
+  const password = document.getElementById('credential-password').value;
+  if (username === 'blaze-auto-user' && password === 'BlazeAutoPassword-2026!')
+    document.title = 'Blaze Credential Autofill Observed';
+});
+document.getElementById('credential-form').addEventListener('submit', event => {
+  event.preventDefault();
+  document.title = 'Blaze Credential Form Submitted';
+});
 </script>
 </body></html>
 '@ | Set-Content -LiteralPath $smokePage -Encoding utf8
-    $smokeUri = ([Uri]$smokePage).AbsoluteUri
+
+    # Serve the test page over loopback HTTP so the password manager exercises
+    # its real HTTP(S)-origin rules without relying on an external network.
+    $portProbe = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+    $portProbe.Start()
+    $credentialPort = ([System.Net.IPEndPoint]$portProbe.LocalEndpoint).Port
+    $portProbe.Stop()
+    $credentialServerJob = Start-Job -ArgumentList $credentialPort, $smokePage -ScriptBlock {
+        param($port, $htmlPath)
+        $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, [int]$port)
+        $listener.Start()
+        try {
+            while ($true) {
+                $client = $listener.AcceptTcpClient()
+                try {
+                    $stream = $client.GetStream()
+                    $requestBuffer = New-Object byte[] 4096
+                    $requestText = ''
+                    do {
+                        $read = $stream.Read($requestBuffer, 0, $requestBuffer.Length)
+                        if ($read -le 0) { break }
+                        $requestText += [System.Text.Encoding]::ASCII.GetString($requestBuffer, 0, $read)
+                    } while (-not $requestText.Contains("`r`n`r`n"))
+                    $body = [IO.File]::ReadAllBytes($htmlPath)
+                    $header = [System.Text.Encoding]::ASCII.GetBytes("HTTP/1.1 200 OK`r`nContent-Type: text/html; charset=utf-8`r
+Content-Length: $($body.Length)`r
+Cache-Control: no-store`r
+Connection: close`r
+`r`n")
+                    $stream.Write($header, 0, $header.Length)
+                    $stream.Write($body, 0, $body.Length)
+                    $stream.Flush()
+                } finally {
+                    $client.Close()
+                }
+            }
+        } finally {
+            $listener.Stop()
+        }
+    }
+    $smokeUri = "http://127.0.0.1:$credentialPort/"
+    $serverReady = $false
+    for ($attempt = 0; $attempt -lt 40; $attempt++) {
+        if ($credentialServerJob.State -eq 'Running') { $serverReady = $true; break }
+        if ($credentialServerJob.State -in @('Failed', 'Stopped', 'Completed')) {
+            throw "Loopback credential test server failed to start: $((Receive-Job $credentialServerJob -Keep | Out-String))"
+        }
+        Start-Sleep -Milliseconds 100
+    }
+    if (-not $serverReady) { throw 'Loopback credential test server did not start.' }
     Invoke-WinAppChecked @('ui', 'send-keys', $smokeUri, '--target', 'AddressBox', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
     Invoke-WinAppChecked @('ui', 'send-keys', 'enter', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
     # Enter should submit navigation and move keyboard focus out of AutoSuggestBox.
@@ -396,10 +464,69 @@ namespace BlazeSmoke {
     $webViewTree = (Invoke-WinAppChecked @('ui', 'inspect', '--interactive', '--json', '-w', [string]$mainWindow.hwnd)) -join [Environment]::NewLine
     if (-not $webViewTree.Contains('Blaze WebKit Smoke')) { throw 'Changing the internal page URL did not restore a native WebKit tab.' }
     $results.Add([ordered]@{ name = 'Changing an internal page URL restores the WebKit view in that tab'; status = 'PASS' })
+
+    # Test automatic save and autofill through actual trusted mouse/keyboard
+    # input. The secret is never written to the browser diagnostic log or title.
+    function Invoke-CredentialPageClick([int]$x, [int]$y) {
+        if (-not [BlazeSmoke.Native]::SetCursorPos($x, $y)) { throw 'Could not position the pointer over a credential form field.' }
+        [BlazeSmoke.Native]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)
+        [BlazeSmoke.Native]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)
+        Start-Sleep -Milliseconds 120
+    }
+    Invoke-CredentialPageClick ($hostRect.Left + 190) ($hostRect.Top + 120)
+    [BlazeSmoke.Native]::SendUnicodeText('blaze-auto-user')
+    Invoke-CredentialPageClick ($hostRect.Left + 190) ($hostRect.Top + 170)
+    [BlazeSmoke.Native]::SendUnicodeText('BlazeAutoPassword-2026!')
+    Invoke-CredentialPageClick ($hostRect.Left + 90) ($hostRect.Top + 220)
+    Invoke-WinAppChecked @('ui', 'wait-for', 'CredentialSaveDialog', '-t', '5000', '-w', [string]$mainWindow.hwnd) | Out-Null
+    Invoke-WinAppChecked @('ui', 'wait-for', 'Primary', '-t', '3000', '-w', [string]$mainWindow.hwnd) | Out-Null
+    Invoke-WinAppChecked @('ui', 'invoke', 'Primary', '-w', [string]$mainWindow.hwnd) | Out-Null
+    $saveObserved = $false
+    for ($attempt = 0; $attempt -lt 40; $attempt++) {
+        $tree = (Invoke-WinAppChecked @('ui', 'inspect', '--interactive', '--json', '-w', [string]$mainWindow.hwnd)) -join [Environment]::NewLine
+        if ($tree.Contains('Blaze Credential Form Submitted')) { $saveObserved = $true; break }
+        Start-Sleep -Milliseconds 100
+    }
+    if (-not $saveObserved) { throw 'The trusted form submission did not resume after the native save-password confirmation.' }
+    $results.Add([ordered]@{ name = 'Trusted WebKit form submission prompts to save credentials'; status = 'PASS' })
+
+    Invoke-WinAppChecked @('ui', 'send-keys', 'ctrl+r', '--target', 'AddressBox', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
+    $pageReloaded = $false
+    for ($attempt = 0; $attempt -lt 60; $attempt++) {
+        $tree = (Invoke-WinAppChecked @('ui', 'inspect', '--interactive', '--json', '-w', [string]$mainWindow.hwnd)) -join [Environment]::NewLine
+        if ($tree.Contains('Blaze WebKit Smoke')) { $pageReloaded = $true; break }
+        Start-Sleep -Milliseconds 150
+    }
+    if (-not $pageReloaded) { throw 'The credential test page did not reload before the autofill check.' }
+    Invoke-CredentialPageClick ($hostRect.Left + 190) ($hostRect.Top + 170)
+    $autofillObserved = $false
+    for ($attempt = 0; $attempt -lt 60; $attempt++) {
+        $tree = (Invoke-WinAppChecked @('ui', 'inspect', '--interactive', '--json', '-w', [string]$mainWindow.hwnd)) -join [Environment]::NewLine
+        if ($tree.Contains('Blaze Credential Autofill Observed')) { $autofillObserved = $true; break }
+        Start-Sleep -Milliseconds 150
+    }
+    if (-not $autofillObserved) { throw 'Focusing the trusted password field did not fill the origin-matched saved credential.' }
+    $results.Add([ordered]@{ name = 'Trusted password-field focus automatically fills the saved sign-in'; status = 'PASS' })
+
+    # Remove the ephemeral loopback credential from Windows Credential Locker.
+    Invoke-WinAppChecked @('ui', 'invoke', 'SettingsButton', '-w', [string]$mainWindow.hwnd) | Out-Null
+    Invoke-WinAppChecked @('ui', 'wait-for', 'AddressBox', '--value', 'blaze://settings', '-t', '5000', '-w', [string]$mainWindow.hwnd) | Out-Null
+    Invoke-WinAppChecked @('ui', 'invoke', 'SettingsPasswordsTab', '-w', [string]$mainWindow.hwnd) | Out-Null
+    $autoPasswordTree = (Invoke-WinAppChecked @('ui', 'inspect', '--interactive', '--json', '-w', [string]$mainWindow.hwnd)) -join [Environment]::NewLine
+    $autoDeleteMatch = [regex]::Match($autoPasswordTree, 'DeletePassword_[A-Fa-f0-9]+')
+    if (-not $autoDeleteMatch.Success) { throw 'The automatically saved loopback credential was not present for cleanup.' }
+    Invoke-WinAppChecked @('ui', 'invoke', $autoDeleteMatch.Value, '-w', [string]$mainWindow.hwnd) | Out-Null
+    Invoke-WinAppChecked @('ui', 'wait-for', 'Primary', '-t', '3000', '-w', [string]$mainWindow.hwnd) | Out-Null
+    Invoke-WinAppChecked @('ui', 'invoke', 'Primary', '-w', [string]$mainWindow.hwnd) | Out-Null
+    Invoke-WinAppChecked @('ui', 'wait-for', $autoDeleteMatch.Value, '--gone', '-t', '3000', '-w', [string]$mainWindow.hwnd) | Out-Null
+    Invoke-WinAppChecked @('ui', 'send-keys', 'ctrl+w', '--target', 'AddressBox', '--via', 'send-input', '-w', [string]$mainWindow.hwnd) | Out-Null
+    Invoke-WinAppChecked @('ui', 'wait-for', 'AddressBox', '--value', $smokeUri, '-t', '5000', '-w', [string]$mainWindow.hwnd) | Out-Null
+    $results.Add([ordered]@{ name = 'Automatic credential smoke-test entry removed from Windows Credential Locker'; status = 'PASS' })
 } catch {
     $results.Add([ordered]@{ name = 'Launch smoke test'; status = 'FAIL'; detail = "$_" })
     Write-Warning $_
 } finally {
+    if ($credentialServerJob) { Stop-Job -Job $credentialServerJob -ErrorAction SilentlyContinue; Remove-Job -Job $credentialServerJob -Force -ErrorAction SilentlyContinue }
     if ($smokePage -and (Test-Path -LiteralPath $smokePage)) {
         Remove-Item -LiteralPath $smokePage -Force -ErrorAction SilentlyContinue
     }
