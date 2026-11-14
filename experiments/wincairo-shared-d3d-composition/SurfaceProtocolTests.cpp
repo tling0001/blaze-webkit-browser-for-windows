@@ -51,6 +51,8 @@ int main()
     malformed.width = kMaximumSurfaceDimension + 1;
     require(!isValid(malformed), "oversized surface accepted");
 
+    require(BoundedFrameRing(1).slotCount() == 0, "undersized frame ring accepted");
+    require(BoundedFrameRing(4).slotCount() == 0, "oversized frame ring accepted");
     BoundedFrameRing ring(3);
     require(ring.beginGeneration(1), "initial generation rejected");
     FrameTicket first{}, second{}, third{}, fourth{}, presented{};
