@@ -126,6 +126,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Configuring the shared-D3D capability probe failed.' }
           cmake --build CompositionProbeBuild --config Release
           if ($LASTEXITCODE -ne 0) { throw 'Building the shared-D3D capability probe failed.' }
+          $protocolTests = Get-ChildItem -LiteralPath 'CompositionProbeBuild' -Filter 'BlazeSurfaceProtocolTests.exe' -Recurse -File | Select-Object -First 1
+          if (-not $protocolTests) { throw 'The shared-surface protocol test executable was not produced.' }
+          & $protocolTests.FullName
+          if ($LASTEXITCODE -ne 0) { throw 'The bounded shared-surface frame protocol tests failed.' }
           $probe = Get-ChildItem -LiteralPath 'CompositionProbeBuild' -Filter 'BlazeCompositionProbe.exe' -Recurse -File | Select-Object -First 1
           if (-not $probe) { throw 'The shared-D3D capability probe executable was not produced.' }
           $env:PATH = (Join-Path $PWD 'webkit-runtime') + ';' + $env:PATH
