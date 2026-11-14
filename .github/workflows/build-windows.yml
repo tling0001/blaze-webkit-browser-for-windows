@@ -131,14 +131,19 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          if (-not (Get-Command winapp -ErrorAction SilentlyContinue)) {
-            winget install --id Microsoft.WinAppCli --exact --silent --accept-package-agreements --accept-source-agreements
-            if ($LASTEXITCODE -ne 0) { throw 'WinApp CLI installation failed.' }
-          }
-          $env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User')
-          $command = Get-Command winapp -ErrorAction Stop
-          Add-Content -LiteralPath $env:GITHUB_PATH -Value (Split-Path $command.Source)
-          winapp --version
+          $version = '0.8.0'
+          $expectedHash = '67a8e1d39421a5ef5309c7017327c6a70ea6215a0e56e47ec22a7e9ec3b914e6'
+          $archive = Join-Path $env:RUNNER_TEMP 'winappcli-x64.zip'
+          $installRoot = Join-Path $env:RUNNER_TEMP 'winappcli'
+          Invoke-WebRequest -Uri "https://github.com/microsoft/WinAppCli/releases/download/v$version/winappcli-x64.zip" -OutFile $archive
+          $actualHash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actualHash -ne $expectedHash) { throw "WinApp CLI $version archive hash mismatch: $actualHash" }
+          if (Test-Path -LiteralPath $installRoot) { Remove-Item -LiteralPath $installRoot -Recurse -Force }
+          Expand-Archive -LiteralPath $archive -DestinationPath $installRoot -Force
+          $executable = Get-ChildItem -LiteralPath $installRoot -Filter 'winapp.exe' -Recurse -File | Select-Object -First 1
+          if (-not $executable) { throw 'The verified WinApp CLI archive did not contain winapp.exe.' }
+          Add-Content -LiteralPath $env:GITHUB_PATH -Value (Split-Path $executable.FullName)
+          & $executable.FullName --version
 
       - name: Discover WinUI tab and input patterns
         shell: pwsh
