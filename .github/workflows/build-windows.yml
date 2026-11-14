@@ -185,6 +185,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'WinUI Gallery PasswordBox pattern lookup failed.' }
           winapp find-ui "InfoBar inline form validation status"
           if ($LASTEXITCODE -ne 0) { throw 'WinUI Gallery InfoBar status pattern lookup failed.' }
+          winapp find-ui "SwapChainPanel Direct3D composition surface"
+          if ($LASTEXITCODE -ne 0) { throw 'WinUI Gallery SwapChainPanel composition pattern lookup failed.' }
 
       - name: Restore WinUI project
         shell: pwsh
@@ -250,6 +252,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'RadioButton option content verification failed.' }
           winapp find-api check-property ContentDialog XamlRoot DefaultButton --json --project-dir .
           if ($LASTEXITCODE -ne 0) { throw 'ContentDialog property verification failed.' }
+          winapp find-api SwapChainPanel --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'SwapChainPanel API lookup failed against restored WinUI references.' }
           winapp find-api members AppWindow --filter Resize --json --project-dir .
           if ($LASTEXITCODE -ne 0) { throw 'AppWindow Resize API verification failed.' }
           winapp find-api members Application --filter UnhandledException --json --project-dir .
