@@ -174,7 +174,16 @@ namespace BlazeSmoke {
             public uint Time;
             public UIntPtr ExtraInfo;
         }
+        [StructLayout(LayoutKind.Sequential)] private struct MouseInput {
+            public int Dx;
+            public int Dy;
+            public uint MouseData;
+            public uint Flags;
+            public uint Time;
+            public UIntPtr ExtraInfo;
+        }
         [StructLayout(LayoutKind.Explicit)] private struct InputUnion {
+            [FieldOffset(0)] public MouseInput Mouse;
             [FieldOffset(0)] public KeyboardInput Keyboard;
         }
         [StructLayout(LayoutKind.Sequential)] private struct Input {
