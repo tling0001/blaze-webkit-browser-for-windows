@@ -625,6 +625,11 @@ LRESULT CALLBACK ownerWindowSubclass(HWND owner, UINT message, WPARAM wParam, LP
         // focus when this deferred message arrived. If the user has already
         // moved to the address bar or another WinUI control, preserve that.
         const auto focusedWindow = reinterpret_cast<HWND>(wParam);
+        const auto ownerThread = GetCurrentThreadId();
+        const auto focusedThread = focusedWindow && IsWindow(focusedWindow)
+            ? GetWindowThreadProcessId(focusedWindow, nullptr) : 0;
+        const bool attachedInputQueues = focusedThread && focusedThread != ownerThread
+            && AttachThreadInput(ownerThread, focusedThread, TRUE);
         const auto focusBeforeActivation = GetFocus();
         const bool preserveWebKitFocus = view && !view->destroyPrepared
             && view->window == focusedWindow && IsWindow(focusedWindow)
@@ -634,13 +639,15 @@ LRESULT CALLBACK ownerWindowSubclass(HWND owner, UINT message, WPARAM wParam, LP
             foregroundRestored = SetForegroundWindow(owner);
         if (preserveWebKitFocus && GetFocus() != focusedWindow)
             SetFocus(focusedWindow);
+        if (attachedInputQueues)
+            AttachThreadInput(ownerThread, focusedThread, FALSE);
 
         const auto foreground = GetForegroundWindow();
         const auto active = GetActiveWindow();
         const auto focus = GetFocus();
         wchar_t diagnostic[256] {};
-        swprintf_s(diagnostic, L"[Blaze][WindowActivation] owner=0x%p foreground=0x%p active=0x%p focus=0x%p webkit=0x%p preserve=%d restored=%d\\n",
-            owner, foreground, active, focus, focusedWindow, preserveWebKitFocus, foregroundRestored);
+        swprintf_s(diagnostic, L"[Blaze][WindowActivation] owner=0x%p foreground=0x%p active=0x%p focus=0x%p webkit=0x%p preserve=%d restored=%d attached=%d ownerThread=%lu webkitThread=%lu\\n",
+            owner, foreground, active, focus, focusedWindow, preserveWebKitFocus, foregroundRestored, attachedInputQueues, ownerThread, focusedThread);
         OutputDebugStringW(diagnostic);
         return 0;
     }
