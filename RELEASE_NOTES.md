@@ -1,5 +1,28 @@
 # Blaze release notes
 
+## [1.1.42] - 2026-11-14
+
+### GPU-accelerated WinCairo rendering
+- Explicitly keep live WKViews on the normal WinCairo `WCScene` / TextureMapper GPU presentation path by calling `WKViewSetUsesOffscreenRendering(false)`.
+- Disable the separate offscreen `ShareableBitmap` / `glReadPixels` CPU-readback path for production browser pages.
+- Emit a renderer diagnostic when a live page is created. The current production renderer remains the native WinCairo GPU surface; shared-D3D texture transport into a WinUI composition surface remains a separate future integration, not something this release claims to have completed.
+
+### Keyboard and window activation
+- Restore the WinUI owner as foreground without calling `SetActiveWindow`, which was stealing keyboard focus from WebKit.
+- Preserve WebKit child focus after foreground restoration only when the child still owns focus; do not override a user's newer focus on the address bar or another WinUI control.
+- Add a real Unicode typing smoke test against an HTML input after a WebKit click and WinUI/Mica activation restoration.
+
+### Workflow and release controls
+- Add a manual Actions checkbox, `publish_release_on_smoke_failure`, to explicitly permit publishing the installer when the browser smoke test fails.
+- The override is limited to manual workflow dispatch and only applies when the ANGLE GPU capability probe and installer artifact upload both succeed. Other build/package failures still block publication.
+- Keep ordinary push builds strict: a failed smoke test continues to fail the build and does not publish a release unless the explicit manual override was selected.
+
+### Versioning
+- Align product, assembly, file, informational and package versions at 1.1.42.
+
+### Validation
+- Pending main-branch Release build, installer integration, Win32 focus/keyboard typing test, and ANGLE GPU capability probe.
+
 ## [1.1.41] - 2026-11-14
 
 ### Win32 window activation and Mica
