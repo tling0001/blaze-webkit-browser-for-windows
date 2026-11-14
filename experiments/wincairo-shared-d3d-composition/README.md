@@ -1,6 +1,6 @@
 # WinCairo GPU-to-WinUI composition prototype
 
-Status: P1.5 ANGLE import/render plus DirectComposition GPU presentation passed on the hosted Windows runner (Blaze 1.1.40 / Actions run 206). The test validates keyed-mutex ownership across the ANGLE producer, a second D3D11 device, and a DirectComposition swap-chain consumer, including a GPU-only copy before Present. It remains a diagnostic harness: actual WebKit WCScene output transport and WinUI composition integration are not implemented. The stable HWND renderer remains the only production renderer.
+Status: The production browser explicitly uses WinCairo's GPU-accelerated `WCScene` / TextureMapper presentation path with offscreen bitmap readback disabled. P1.5 ANGLE import/render plus DirectComposition GPU presentation also passed on the hosted Windows runner (Blaze 1.1.40 / Actions run 206). The test validates keyed-mutex ownership across the ANGLE producer, a second D3D11 device, and a DirectComposition swap-chain consumer, including a GPU-only copy before Present. It remains a diagnostic harness: live WebKit `WCScene` output transport into the WinUI composition tree is not implemented. The usable production renderer is the GPU-accelerated native HWND path.
 
 ## Current pinned rendering path
 
