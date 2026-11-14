@@ -1,5 +1,18 @@
 # Blaze release notes
 
+## [1.1.53] - 2026-11-13
+
+### Native D3D shared-surface resource owner
+- Add an opt-in native-host C ABI that creates a per-view, three-slot BGRA8 D3D11 shared-texture ring on the primary DXGI adapter.
+- Retain the producer D3D device, textures, render-target views and keyed mutexes for the complete resource lifetime; expose a validated copy of the fixed-width protocol descriptor, including adapter LUID and legacy shared-resource tokens.
+- Link the native host against D3D11/DXGI and include the shared-surface protocol ABI in its build.
+- Require callers to retire the GPU-process consumer and wait for generation acknowledgement before destroying the resource owner.
+- Keep this resource-owner API experimental and unused by live tabs until WebKit descriptor IPC, GPU-process ANGLE import, TextureMapper rendering and WinUI SwapChainPanel presentation are connected.
+
+### Versioning
+- Align product, assembly, file, informational and package versions at 1.1.53.
+
+
 ## [1.1.52] - 2026-11-14
 
 ### D3D generation retirement safety

@@ -17,11 +17,11 @@ find_library(WEBKIT_LIBRARY NAMES WebKit2
         "${WEBKIT_ROOT}/WebKitBuild/Release/bin64"
   REQUIRED)
 
-add_library(WebKitHost SHARED WebKitHost.cpp WebKitHost.def)
+add_library(WebKitHost SHARED WebKitHost.cpp D3DSharedSurface.cpp WebKitHost.def)
 target_compile_features(WebKitHost PRIVATE cxx_std_20)
 target_compile_definitions(WebKitHost PRIVATE WEBKITHOST_EXPORTS WIN32_LEAN_AND_MEAN NOMINMAX)
-target_include_directories(WebKitHost PRIVATE "${WEBKIT_INCLUDE_DIR}")
-target_link_libraries(WebKitHost PRIVATE "${WEBKIT_LIBRARY}" user32 shell32 ole32 comctl32)
+target_include_directories(WebKitHost PRIVATE "${WEBKIT_INCLUDE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/../../experiments/wincairo-shared-d3d-composition")
+target_link_libraries(WebKitHost PRIVATE "${WEBKIT_LIBRARY}" user32 shell32 ole32 comctl32 d3d11 dxgi)
 set_target_properties(WebKitHost PROPERTIES
   OUTPUT_NAME "WebKitHost"
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"

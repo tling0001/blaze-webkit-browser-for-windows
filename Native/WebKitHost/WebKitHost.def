@@ -1,5 +1,8 @@
 LIBRARY WebKitHost
 EXPORTS
+    WB_GpuSurfaceCreate
+    WB_GpuSurfaceGetDescriptor
+    WB_GpuSurfaceDestroy
     WB_Create
     WB_Destroy
     WB_SetBounds

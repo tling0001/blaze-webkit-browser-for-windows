@@ -7,8 +7,12 @@
 #define WB_API extern "C" __declspec(dllimport)
 #endif
 
+#include "SharedSurfaceProtocol.h"
+
 struct WB_VIEW;
 using WB_VIEW_HANDLE = WB_VIEW*;
+struct WB_GPU_SURFACE;
+using WB_GPU_SURFACE_HANDLE = WB_GPU_SURFACE*;
 
 using WB_DOWNLOAD_CALLBACK = void (__cdecl*)(const wchar_t* filePath, int status, long long bytesWritten, long long totalBytesExpected, void* userData);
 using WB_PERMISSION_CALLBACK = int (__cdecl*)(const wchar_t* origin, int permissionType, void* userData);
@@ -16,6 +20,12 @@ using WB_JAVASCRIPT_DIALOG_CALLBACK = void (__cdecl*)(int dialogType, const wcha
 using WB_CREDENTIAL_BRIDGE_CALLBACK = void (__cdecl*)(WB_VIEW_HANDLE view, const wchar_t* origin, const wchar_t* payload, const void* listener, void* userData);
 using WB_NEW_PAGE_CALLBACK = int (__cdecl*)(WB_VIEW_HANDLE view, void* userData);
 using WB_CLOSE_PAGE_CALLBACK = void (__cdecl*)(WB_VIEW_HANDLE view, void* userData);
+
+// Host-owned D3D11 shared-texture ring. The returned legacy shared-resource
+// tokens remain valid only while this surface object is alive; never CloseHandle them.
+WB_API WB_GPU_SURFACE_HANDLE WB_GpuSurfaceCreate(std::uint64_t viewIdentifier, std::uint32_t width, std::uint32_t height, std::uint64_t generation);
+WB_API BOOL WB_GpuSurfaceGetDescriptor(WB_GPU_SURFACE_HANDLE surface, Blaze::Gpu::SharedSurfaceDescriptor* descriptor);
+WB_API void WB_GpuSurfaceDestroy(WB_GPU_SURFACE_HANDLE surface);
 
 WB_API WB_VIEW_HANDLE WB_Create(HWND parent, int x, int y, int width, int height, const wchar_t* initialUrl);
 WB_API void WB_PrepareDestroy(WB_VIEW_HANDLE view);
