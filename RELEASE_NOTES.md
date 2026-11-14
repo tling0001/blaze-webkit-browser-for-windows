@@ -6,6 +6,7 @@
 - Add a fixed-width, versioned output-surface descriptor for the future browser-process/WebKit GPU-process boundary, including per-view identity, resize generations, BGRA8 format, adapter identity, bounded shared-resource slots, and keyed-mutex synchronization metadata.
 - Add a bounded frame-ring state machine with monotonic frame IDs, immediate backpressure, newest-frame presentation selection, stale-frame dropping, and rejection of tickets from replaced resize generations.
 - Add deterministic CI tests for descriptor validation, bounded queue behavior, stale-frame rejection, and resize-generation lifetime.
+- Add a D3D11 three-texture keyed-mutex ring probe that opens shared resources on a second same-adapter device, exercises repeated GPU-only producer/consumer handoffs, and recreates the ring across a resize generation while preserving monotonic frame IDs.
 - Keep the existing WinCairo HWND renderer unchanged. This protocol is not yet transported through WebKit IPC and does not yet render live page frames into a WinUI composition surface.
 
 ### Versioning
