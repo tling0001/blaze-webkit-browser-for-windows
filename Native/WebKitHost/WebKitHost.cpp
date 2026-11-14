@@ -32,6 +32,7 @@
 #include <mutex>
 #include <cwchar>
 #include <filesystem>
+#include <iterator>
 #include <new>
 #include <string>
 #include <system_error>
@@ -462,7 +463,7 @@ void injectCredentialBridge(WB_VIEW* view, WKPageRef page)
                 const inputs = form ? Array.from(form.querySelectorAll("input"))
                     .filter(input => !input.disabled && input.type !== "hidden") : [];
                 const password = passwordInput || inputs.find(input => input.type === "password");
-                if (!password || !password.value)
+                if (!password || (type === "save" && !password.value) || (type === "fill" && password.value))
                     return;
                 const usernameInput = inputs.find(input => input.autocomplete === "username")
                     || inputs.find(input => input.type === "email")
