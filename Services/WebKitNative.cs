@@ -98,6 +98,15 @@ internal static class WebKitNative
     [DllImport(Library, EntryPoint = "WB_SetJavaScriptDialogCallback", CallingConvention = CallingConvention.Cdecl)]
     internal static extern void SetJavaScriptDialogCallback(IntPtr view, JavaScriptDialogCallback callback, IntPtr userData);
 
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl, CharSet = CharSet.Unicode)]
+    internal delegate void CredentialBridgeCallback(IntPtr view, [MarshalAs(UnmanagedType.LPWStr)] string origin, [MarshalAs(UnmanagedType.LPWStr)] string payload, IntPtr listener, IntPtr userData);
+
+    [DllImport(Library, EntryPoint = "WB_SetCredentialBridgeCallback", CallingConvention = CallingConvention.Cdecl)]
+    internal static extern void SetCredentialBridgeCallback(IntPtr view, CredentialBridgeCallback callback, IntPtr userData);
+
+    [DllImport(Library, EntryPoint = "WB_EvaluateJavaScript", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Unicode)]
+    internal static extern void EvaluateJavaScript(IntPtr view, string script);
+
     [DllImport(Library, EntryPoint = "WB_SetPopupCallbacks", CallingConvention = CallingConvention.Cdecl)]
     internal static extern void SetPopupCallbacks(IntPtr view, NewPageCallback newPageCallback, ClosePageCallback closePageCallback, IntPtr userData);
 
