@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Text.Json;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
@@ -36,6 +37,7 @@ public sealed partial class MainPage : Page
     private static readonly WebKitNative.DownloadCallback DownloadCallbackHandler = OnNativeDownload;
     private static readonly WebKitNative.PermissionCallback PermissionCallbackHandler = OnNativePermission;
     private static readonly WebKitNative.JavaScriptDialogCallback JavaScriptDialogCallbackHandler = OnNativeJavaScriptDialog;
+    private static readonly WebKitNative.CredentialBridgeCallback CredentialBridgeCallbackHandler = OnNativeCredentialBridge;
     private static readonly WebKitNative.NewPageCallback NewPageCallbackHandler = OnNativeNewPage;
     private static readonly WebKitNative.ClosePageCallback ClosePageCallbackHandler = OnNativePageClose;
     private const string SafariWindowsUserAgent =
@@ -1399,6 +1401,140 @@ public sealed partial class MainPage : Page
         }
     }
 
+    private async Task HandleCredentialBridgeAsync(IntPtr nativeView, string origin, string payload, IntPtr listener)
+    {
+        try
+        {
+            if (_isPageUnloading || nativeView == IntPtr.Zero || string.IsNullOrWhiteSpace(payload) || payload.Length > 32768)
+                return;
+            var normalizedOrigin = PasswordVaultService.NormalizeOrigin(origin);
+            using var document = JsonDocument.Parse(payload);
+            var root = document.RootElement;
+            if (!root.TryGetProperty("type", out var typeElement) || typeElement.ValueKind != JsonValueKind.String)
+                return;
+            var type = typeElement.GetString();
+            var currentUrl = WebKitNative.GetCurrentUrl(nativeView);
+            if (!Uri.TryCreate(currentUrl, UriKind.Absolute, out var currentUri)
+                || !string.Equals(PasswordVaultService.NormalizeOrigin(currentUri.GetLeftPart(UriPartial.Authority)), normalizedOrigin, StringComparison.OrdinalIgnoreCase))
+                return;
+
+            if (type == "fill")
+            {
+                var matches = PasswordVaultService.FindForOrigin(normalizedOrigin);
+                if (matches.Count == 0)
+                    return;
+
+                PasswordVaultService.SavedPassword selected = matches[0];
+                if (matches.Count > 1)
+                {
+                    var chooser = new ComboBox
+                    {
+                        Header = "Choose a saved sign-in",
+                        MinWidth = 320,
+                        HorizontalAlignment = HorizontalAlignment.Stretch
+                    };
+                    foreach (var match in matches)
+                        chooser.Items.Add($"{match.UserName}");
+                    chooser.SelectedIndex = 0;
+                    var content = new StackPanel { Spacing = 10 };
+                    content.Children.Add(new TextBlock { Text = $"Choose an account to fill on {normalizedOrigin}.", TextWrapping = TextWrapping.Wrap });
+                    content.Children.Add(chooser);
+                    var dialog = new ContentDialog
+                    {
+                        Title = "Fill saved password?",
+                        Content = content,
+                        PrimaryButtonText = "Fill",
+                        CloseButtonText = "Cancel",
+                        DefaultButton = ContentDialogButton.Primary,
+                        XamlRoot = XamlRoot
+                    };
+                    AutomationProperties.SetAutomationId(dialog, "PasswordAutofillDialog");
+                    AutomationProperties.SetAutomationId(chooser, "PasswordAutofillAccount");
+                    if (await ShowDialogAsync(dialog) != ContentDialogResult.Primary)
+                        return;
+                    var index = Math.Clamp(chooser.SelectedIndex, 0, matches.Count - 1);
+                    selected = matches[index];
+                }
+
+                var secret = PasswordVaultService.Retrieve(selected);
+                var usernameJson = JsonSerializer.Serialize(selected.UserName);
+                var passwordJson = JsonSerializer.Serialize(secret);
+                var script = $@"(() => {{
+                    const inputs = Array.from(document.querySelectorAll('input:not([disabled]):not([type=""hidden""])'));
+                    const password = inputs.find(input => input.type === 'password');
+                    if (!password) return;
+                    const username = inputs.find(input => input.autocomplete === 'username')
+                        || inputs.find(input => input.type === 'email')
+                        || inputs.filter(input => input.type === 'text' || input.type === 'tel')
+                            .find(input => input.compareDocumentPosition(password) & Node.DOCUMENT_POSITION_FOLLOWING);
+                    const setValue = (element, value) => {{
+                        if (!element) return;
+                        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+                        setter.call(element, value);
+                        element.dispatchEvent(new InputEvent('input', {{ bubbles: true, inputType: 'insertText', data: value }}));
+                        element.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                    }};
+                    setValue(username, {usernameJson});
+                    setValue(password, {passwordJson});
+                }})();";
+                WebKitNative.ResolveJavaScriptDialog(listener, 2, false, null);
+                listener = IntPtr.Zero;
+                WebKitNative.EvaluateJavaScript(nativeView, script);
+                return;
+            }
+
+            if (type == "save")
+            {
+                var userName = root.TryGetProperty("username", out var usernameElement) && usernameElement.ValueKind == JsonValueKind.String
+                    ? usernameElement.GetString()?.Trim() ?? string.Empty : string.Empty;
+                var password = root.TryGetProperty("password", out var passwordElement) && passwordElement.ValueKind == JsonValueKind.String
+                    ? passwordElement.GetString() ?? string.Empty : string.Empty;
+                if (string.IsNullOrWhiteSpace(userName) || string.IsNullOrEmpty(password)
+                    || userName.Length > 1024 || password.Length > 4096)
+                    return;
+
+                var content = new StackPanel { Spacing = 8 };
+                content.Children.Add(new TextBlock { Text = $"Save this sign-in for {normalizedOrigin}?", TextWrapping = TextWrapping.Wrap });
+                var usernameBox = new TextBox { Header = "Username", Text = userName };
+                AutomationProperties.SetAutomationId(usernameBox, "CredentialSaveUsername");
+                content.Children.Add(usernameBox);
+                var dialog = new ContentDialog
+                {
+                    Title = "Save password",
+                    Content = content,
+                    PrimaryButtonText = "Save",
+                    CloseButtonText = "Not now",
+                    DefaultButton = ContentDialogButton.Primary,
+                    XamlRoot = XamlRoot
+                };
+                AutomationProperties.SetAutomationId(dialog, "CredentialSaveDialog");
+                if (await ShowDialogAsync(dialog) == ContentDialogResult.Primary)
+                {
+                    PasswordVaultService.Save(normalizedOrigin, usernameBox.Text, password);
+                    ViewModel.StatusMessage = $"Saved sign-in for {normalizedOrigin} in Windows Credential Locker.";
+                }
+            }
+        }
+        catch (Exception exception)
+        {
+            if (!_isPageUnloading)
+                ViewModel.StatusMessage = $"Password manager: {exception.Message}";
+        }
+        finally
+        {
+            if (listener != IntPtr.Zero)
+                WebKitNative.ResolveJavaScriptDialog(listener, 2, false, null);
+        }
+    }
+
+    private static void OnNativeCredentialBridge(IntPtr nativeView, string origin, string payload, IntPtr listener, IntPtr userData)
+    {
+        if (GCHandle.FromIntPtr(userData).Target is MainPage page
+            && App.DispatcherQueue.TryEnqueue(() => _ = page.HandleCredentialBridgeAsync(nativeView, origin, payload, listener)))
+            return;
+        WebKitNative.ResolveJavaScriptDialog(listener, 2, false, null);
+    }
+
     private async Task HandleJavaScriptDialogAsync(int dialogType, string origin, string message, string defaultValue, IntPtr listener)
     {
         var kind = dialogType switch
@@ -1698,6 +1834,7 @@ public sealed partial class MainPage : Page
         WebKitNative.SetDownloadCallback(tab.NativeHandle, DownloadCallbackHandler, callbackHandle);
         WebKitNative.SetPermissionCallback(tab.NativeHandle, PermissionCallbackHandler, callbackHandle);
         WebKitNative.SetJavaScriptDialogCallback(tab.NativeHandle, JavaScriptDialogCallbackHandler, callbackHandle);
+        WebKitNative.SetCredentialBridgeCallback(tab.NativeHandle, CredentialBridgeCallbackHandler, callbackHandle);
         WebKitNative.SetPopupCallbacks(tab.NativeHandle, NewPageCallbackHandler, ClosePageCallbackHandler, callbackHandle);
         WebKitNative.SetUserAgent(tab.NativeHandle, SafariWindowsUserAgent);
     }
