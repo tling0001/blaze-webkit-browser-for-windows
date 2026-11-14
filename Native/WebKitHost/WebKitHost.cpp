@@ -66,6 +66,8 @@ struct WB_VIEW {
     void* popupUserData{};
     HWND parentWindow{};
     HWND hostWindow{};
+    volatile LONG attachedInputThread{};
+    volatile LONG attachedInputOwnerThread{};
     int x{};
     int y{};
     int width{};
@@ -544,22 +546,29 @@ constexpr wchar_t NativeSurfaceHostClass[] = L"Blaze.WebKit.NativeSurfaceHost";
 constexpr UINT_PTR NativeWebKitSubclassId = 0xB1A2E;
 constexpr UINT WM_BLAZE_RESTORE_OWNER_ACTIVATION = WM_APP + 0x3B1;
 
-void deferOwnerActivationRestore(HWND owner, HWND focusedWindow)
+void deferOwnerActivationRestore(WB_VIEW* view, HWND owner, HWND focusedWindow)
 {
-    if (!owner || !IsWindow(owner) || !focusedWindow || !IsWindow(focusedWindow))
+    if (!view || !owner || !IsWindow(owner) || !focusedWindow || !IsWindow(focusedWindow))
         return;
     const auto ownerThread = GetWindowThreadProcessId(owner, nullptr);
     const auto focusedThread = GetWindowThreadProcessId(focusedWindow, nullptr);
     const bool attached = ownerThread && focusedThread && ownerThread != focusedThread
         && AttachThreadInput(ownerThread, focusedThread, TRUE);
+    if (attached) {
+        InterlockedExchange(&view->attachedInputOwnerThread, static_cast<LONG>(ownerThread));
+        InterlockedExchange(&view->attachedInputThread, static_cast<LONG>(focusedThread));
+    }
     // Attach first so SetFocus updates the shared input queue. The owner-thread
-    // callback will restore foreground activation and detach only after it has
-    // had a chance to preserve the WebKit child as the focus HWND.
+    // callback restores foreground activation and detaches after preserving
+    // WebKit focus, or WB_PrepareDestroy detaches if the view closes first.
     SetFocus(focusedWindow);
     if (!PostMessageW(owner, WM_BLAZE_RESTORE_OWNER_ACTIVATION,
         reinterpret_cast<WPARAM>(focusedWindow), attached ? static_cast<LPARAM>(focusedThread) : 0)) {
-        if (attached)
+        if (attached) {
             AttachThreadInput(ownerThread, focusedThread, FALSE);
+            InterlockedExchange(&view->attachedInputOwnerThread, 0);
+            InterlockedExchange(&view->attachedInputThread, 0);
+        }
     }
 }
 
@@ -569,7 +578,8 @@ LRESULT CALLBACK nativeWebKitWindowProc(HWND window, UINT message, WPARAM wParam
     if (message == WM_MOUSEACTIVATE) {
         // Give WebKit keyboard focus, but do not try to activate its owned
         // top-level host while Windows is still processing WM_MOUSEACTIVATE.
-        deferOwnerActivationRestore(reinterpret_cast<HWND>(ownerValue), window);
+        auto* view = reinterpret_cast<WB_VIEW*>(ownerValue);
+        deferOwnerActivationRestore(view, view ? view->parentWindow : nullptr, window);
         return MA_NOACTIVATE;
     }
     if (message == WM_NCDESTROY)
@@ -580,11 +590,11 @@ LRESULT CALLBACK nativeWebKitWindowProc(HWND window, UINT message, WPARAM wParam
 LRESULT CALLBACK nativeSurfaceHostProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 {
     if (message == WM_MOUSEACTIVATE) {
-        const auto child = reinterpret_cast<HWND>(GetWindowLongPtrW(window, GWLP_USERDATA));
-        const auto owner = GetWindow(window, GW_OWNER);
+        auto* view = reinterpret_cast<WB_VIEW*>(GetWindowLongPtrW(window, GWLP_USERDATA));
+        const auto owner = view ? view->parentWindow : GetWindow(window, GW_OWNER);
         // Focus WebKit during mouse activation, then restore the WinUI owner
         // on its own message queue after this activation transaction unwinds.
-        deferOwnerActivationRestore(owner, child);
+        deferOwnerActivationRestore(view, owner, view ? view->window : nullptr);
         return MA_NOACTIVATE;
     }
     if (message == WM_NCDESTROY) SetWindowLongPtrW(window, GWLP_USERDATA, 0);
@@ -646,8 +656,13 @@ LRESULT CALLBACK ownerWindowSubclass(HWND owner, UINT message, WPARAM wParam, LP
             foregroundRestored = SetForegroundWindow(owner);
         if (preserveWebKitFocus && GetFocus() != focusedWindow)
             SetFocus(focusedWindow);
-        if (attachedThread)
+        if (attachedThread) {
             AttachThreadInput(ownerThread, attachedThread, FALSE);
+            if (view) {
+                InterlockedExchange(&view->attachedInputOwnerThread, 0);
+                InterlockedExchange(&view->attachedInputThread, 0);
+            }
+        }
 
         const auto foreground = GetForegroundWindow();
         const auto active = GetActiveWindow();
@@ -787,8 +802,12 @@ WB_VIEW_HANDLE createNativeView(HWND parent, int x, int y, int width, int height
         return nullptr;
     }
 
+    result->view = nativeView;
+    result->window = nativeWindow;
+    result->parentWindow = parent;
+    result->hostWindow = hostWindow;
     if (!SetWindowSubclass(nativeWindow, nativeWebKitWindowProc, NativeWebKitSubclassId,
-            reinterpret_cast<DWORD_PTR>(parent))) {
+            reinterpret_cast<DWORD_PTR>(result))) {
         WKViewSetIsInWindow(nativeView, false);
         WKRelease(nativeView);
         delete result;
@@ -802,11 +821,7 @@ WB_VIEW_HANDLE createNativeView(HWND parent, int x, int y, int width, int height
         && StringFromGUID2(credentialNonce, credentialNonceText, static_cast<int>(std::size(credentialNonceText))))
         result->credentialBridgeNonce = credentialNonceText;
 
-    result->view = nativeView;
-    result->window = nativeWindow;
-    SetWindowLongPtrW(hostWindow, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(nativeWindow));
-    result->parentWindow = parent;
-    result->hostWindow = hostWindow;
+    SetWindowLongPtrW(hostWindow, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(result));
     result->x = showImmediately ? x : 0;
     result->y = showImmediately ? y : 0;
     result->width = showImmediately ? width : 0;
@@ -922,6 +937,10 @@ void WB_PrepareDestroy(WB_VIEW_HANDLE view)
         return;
     view->destroyPrepared = true;
     OutputDebugStringW(L"[Blaze][WebKitLifetime] WB_PrepareDestroy: begin native retirement.\\n");
+    const auto attachedThread = static_cast<DWORD>(InterlockedExchange(&view->attachedInputThread, 0));
+    const auto attachedOwnerThread = static_cast<DWORD>(InterlockedExchange(&view->attachedInputOwnerThread, 0));
+    if (attachedThread && attachedOwnerThread)
+        AttachThreadInput(attachedOwnerThread, attachedThread, FALSE);
     if (view->ownerSubclassInstalled && view->parentWindow && IsWindow(view->parentWindow)) {
         RemoveWindowSubclass(view->parentWindow, ownerWindowSubclass, ownerSubclassId(view));
         view->ownerSubclassInstalled = false;
