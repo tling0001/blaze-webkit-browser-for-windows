@@ -181,8 +181,14 @@ namespace BlazeSmoke {
     }
     [BlazeSmoke.Native]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)
     [BlazeSmoke.Native]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)
-    Start-Sleep -Milliseconds 200
-    $foreground = [BlazeSmoke.Native]::GetForegroundWindow()
+    # WM_MOUSEACTIVATE returns before the owner-thread restoration message
+    # is dispatched. Poll briefly rather than sampling during that transaction.
+    $foreground = [IntPtr]::Zero
+    for ($attempt = 0; $attempt -lt 20; $attempt++) {
+        $foreground = [BlazeSmoke.Native]::GetForegroundWindow()
+        if ($foreground -eq $mainHwnd) { break }
+        Start-Sleep -Milliseconds 100
+    }
     if ($foreground -ne $mainHwnd) {
         $className = [System.Text.StringBuilder]::new(256)
         $windowTitle = [System.Text.StringBuilder]::new(256)
