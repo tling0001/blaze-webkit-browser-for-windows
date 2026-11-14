@@ -8,6 +8,7 @@
 #include <array>
 #include <cstdint>
 #include <iostream>
+#include <iterator>
 #include <vector>
 
 using Microsoft::WRL::ComPtr;
