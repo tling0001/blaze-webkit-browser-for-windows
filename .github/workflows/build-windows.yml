@@ -444,3 +444,27 @@ jobs:
             gh release create "$VERSION" --title "$VERSION" --notes-file release-notes.md --target "$TARGET_SHA"
           fi
           gh release upload "$VERSION" "${assets[@]}" --clobber
+
+  cleanup-branches:
+    name: Remove obsolete development branches
+    needs: [build]
+    if: ${{ needs.build.result == 'success' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Delete every branch except main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t branches < <(gh api --paginate "repos/${GITHUB_REPOSITORY}/branches?per_page=100" --jq '.[].name')
+          for branch in "${branches[@]}"; do
+            if [[ "$branch" == "main" ]]; then
+              continue
+            fi
+            echo "Deleting obsolete branch: $branch"
+            gh api --method DELETE "repos/${GITHUB_REPOSITORY}/git/refs/heads/$branch"
+          done
+          echo "Branch cleanup complete; main was preserved."
