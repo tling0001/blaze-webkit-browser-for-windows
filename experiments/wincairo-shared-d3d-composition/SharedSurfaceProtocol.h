@@ -110,7 +110,7 @@ enum class PresentResult : std::uint8_t { Presented, Dropped, Invalid };
 class BoundedFrameRing {
 public:
     explicit constexpr BoundedFrameRing(std::uint32_t slotCount) noexcept
-        : m_slotCount(slotCount <= kMaximumRingSlots ? slotCount : 0)
+        : m_slotCount(slotCount >= kMinimumRingSlots && slotCount <= kMaximumRingSlots ? slotCount : 0)
     {
     }
 
