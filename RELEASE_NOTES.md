@@ -1,5 +1,20 @@
 # Blaze release notes
 
+## [1.1.45] - 2026-11-13
+
+### Password manager integration
+- Connect WebKit main-frame document-load events to a per-view nonce-scoped credential event bridge.
+- Detect trusted user focus on password fields and trusted form submissions; restrict bridge handling to the main frame and HTTP(S) origin.
+- Add native WinUI account selection for multiple saved credentials, origin-matched autofill, and an explicit save-password confirmation.
+- Keep credentials in Windows Credential Locker; do not write password values to browser profile JSON or diagnostics logs.
+- Preserve normal website JavaScript prompts when they do not match the private per-view bridge.
+
+### Versioning
+- Align product, assembly, file, informational and package versions at 1.1.45.
+
+### Validation
+- The Windows workflow compiles the native WebKit host and WinUI application and runs browser UI smoke tests. Automatic credential flows are now implemented but remain subject to the new end-to-end smoke coverage; the production GPU renderer remains the HWND fallback until the WebKit shared-surface integration is complete.
+
 ## [1.1.44] - 2026-11-13
 
 ### GPU shared-surface protocol groundwork
