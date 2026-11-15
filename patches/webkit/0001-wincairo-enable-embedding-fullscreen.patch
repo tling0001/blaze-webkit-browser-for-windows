@@ -70,3 +70,16 @@ diff --git a/Source/WebKit/UIProcess/win/PageClientImpl.cpp b/Source/WebKit/UIPr
 -    notImplemented();
      completionHandler();
  }
+
+diff --git a/Source/WebKit/UIProcess/win/PageClientImpl.h b/Source/WebKit/UIProcess/win/PageClientImpl.h
+--- a/Source/WebKit/UIProcess/win/PageClientImpl.h
++++ b/Source/WebKit/UIProcess/win/PageClientImpl.h
+@@ -201,3 +201,7 @@
+     // Members of PageClientImpl class
+     DefaultUndoController m_undoController;
+ 
++#if ENABLE(FULLSCREEN_API)
++    bool m_isFullScreen { false };
++#endif
++
+     WebView& m_view;

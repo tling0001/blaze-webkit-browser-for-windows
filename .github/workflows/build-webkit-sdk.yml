@@ -114,7 +114,7 @@ jobs:
           path: |
             ${{ runner.temp }}/webkit/WebKitBuild/Release
             ${{ runner.temp }}/webkit/WebKitLibraries/win
-          key: wincairo-x64-d641dd75af65b0469eff30bb76a97e01e02633fc-7d5f3c6241729acbbb7774f54bf687429aaf6492-9a80b82f283a1d69ffdc64e32536627ae738a65b-blaze-wincairo-fullscreen-v1-windows-latest-release-runtime-no-tests-v4
+          key: wincairo-x64-d641dd75af65b0469eff30bb76a97e01e02633fc-7d5f3c6241729acbbb7774f54bf687429aaf6492-9a80b82f283a1d69ffdc64e32536627ae738a65b-blaze-wincairo-fullscreen-v2-windows-latest-release-runtime-no-tests-v4
           restore-keys: |
             wincairo-x64-d641dd75af65b0469eff30bb76a97e01e02633fc-7d5f3c6241729acbbb7774f54bf687429aaf6492-9a80b82f283a1d69ffdc64e32536627ae738a65b-windows-latest-release-runtime-no-tests-v3
 
@@ -187,7 +187,7 @@ jobs:
           path: |
             ${{ runner.temp }}/webkit/WebKitBuild/Release
             ${{ runner.temp }}/webkit/WebKitLibraries/win
-          key: wincairo-x64-d641dd75af65b0469eff30bb76a97e01e02633fc-7d5f3c6241729acbbb7774f54bf687429aaf6492-9a80b82f283a1d69ffdc64e32536627ae738a65b-blaze-wincairo-fullscreen-v1-windows-latest-release-runtime-no-tests-v4
+          key: wincairo-x64-d641dd75af65b0469eff30bb76a97e01e02633fc-7d5f3c6241729acbbb7774f54bf687429aaf6492-9a80b82f283a1d69ffdc64e32536627ae738a65b-blaze-wincairo-fullscreen-v2-windows-latest-release-runtime-no-tests-v4
 
       - name: Print WebKit build diagnostics
         if: failure() && steps.sdk.outputs.exists != 'true'

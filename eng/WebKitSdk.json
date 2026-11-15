@@ -11,5 +11,5 @@
   "webkitRequirementsBaseline": "9a80b82f283a1d69ffdc64e32536627ae738a65b",
   "vcpkgTriplet": "x64-windows-webkit",
   "toolchain": "Visual Studio x64 + clang-cl; Release; Ninja",
-  "patchSet": "blaze-wincairo-fullscreen-v1"
+  "patchSet": "blaze-wincairo-fullscreen-v2"
 }
