@@ -33,3 +33,8 @@ steps. The existing HWND renderer remains the live browser renderer.
 ## Fullscreen handoff
 
 The pinned WinCairo fullscreen manager reports enter/exit transitions to the owning browser window. The native host routes that message only to the matching per-tab host, and WinUI switches its AppWindow presenter and hides/restores browser chrome. This host-to-owner callback is renderer-neutral, so the same layout transition can support the future SwapChainPanel-backed D3D renderer. D3D is not live until descriptor/frame IPC and GPU-process TextureMapper output are implemented.
+
+
+## WebKit D3D descriptor IPC
+
+The native host can bind a D3D shared-surface ring to a WKView. The pinned WebKit patch series forwards the fixed descriptor through the WebPage and DrawingAreaWC path into the GPU-process RemoteWCLayerTreeHost, where it is validated and retained for the next import/rendering stage. This is descriptor transport only: GPU-process ANGLE import, WCScene rendering into the ring and actual WinUI composition presentation remain subsequent milestones.

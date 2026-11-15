@@ -1,5 +1,22 @@
 # Blaze release notes
 
+## [1.1.57] - 2026-11-15
+
+### D3D shared-surface IPC
+- Add a pinned WinCairo WKView API for a validated shared-surface descriptor.
+- Transport the fixed 152-byte descriptor from the native host through UIProcess, WebProcess DrawingAreaWC and RemoteWCLayerTreeHost IPC into the GPU process.
+- Validate descriptor size, ABI size and protocol version at both WebKit process boundaries.
+- Allocate a per-view D3D11 texture ring and forward its descriptor as an experimental bootstrap; retain HWND rendering as the production renderer until GPU-process texture import, TextureMapper output and SwapChainPanel presentation are proven.
+- Keep the per-view shared texture ring tied to native view lifetime; failures are non-fatal and preserve the HWND renderer.
+
+### Fullscreen and focus
+- Complete the WinCairo fullscreen-to-WinUI callback path and per-tab owner-window filtering.
+- Preserve the browser's windowed bounds and maximized state across fullscreen transitions.
+
+### Versioning
+- Align product, assembly, file, informational and package versions at 1.1.57.
+
+
 ## [1.1.56] - 2026-11-15
 
 ### WinCairo fullscreen support

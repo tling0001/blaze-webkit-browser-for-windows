@@ -1247,6 +1247,17 @@ void WB_SetFullscreenCallback(WB_VIEW_HANDLE view, WB_FULLSCREEN_CALLBACK callba
     view->fullscreenUserData = userData;
 }
 
+BOOL WB_GpuSurfaceBindToWebKitView(WB_VIEW_HANDLE view, WB_GPU_SURFACE_HANDLE surface)
+{
+    if (!view || !view->view || view->destroyPrepared || !surface)
+        return FALSE;
+    Blaze::Gpu::SharedSurfaceDescriptor descriptor{};
+    if (!WB_GpuSurfaceGetDescriptor(surface, &descriptor))
+        return FALSE;
+    WKViewSetSharedSurfaceDescriptor(view->view, reinterpret_cast<const uint8_t*>(&descriptor), static_cast<uint32_t>(sizeof(descriptor)));
+    return TRUE;
+}
+
 void WB_ResolveJavaScriptDialog(const void* listener, int dialogType, BOOL accepted, const wchar_t* response)
 {
     if (!listener)

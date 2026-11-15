@@ -27,6 +27,7 @@ using WB_FULLSCREEN_CALLBACK = void (__cdecl*)(WB_VIEW_HANDLE view, BOOL isFulls
 // tokens remain valid only while this surface object is alive; never CloseHandle them.
 WB_API WB_GPU_SURFACE_HANDLE WB_GpuSurfaceCreate(std::uint64_t viewIdentifier, std::uint32_t width, std::uint32_t height, std::uint64_t generation);
 WB_API BOOL WB_GpuSurfaceGetDescriptor(WB_GPU_SURFACE_HANDLE surface, Blaze::Gpu::SharedSurfaceDescriptor* descriptor);
+WB_API BOOL WB_GpuSurfaceBindToWebKitView(WB_VIEW_HANDLE view, WB_GPU_SURFACE_HANDLE surface);
 WB_API HRESULT WB_GpuSurfaceAttachSwapChainPanel(WB_GPU_SURFACE_HANDLE surface, IUnknown* panel);
 WB_API HRESULT WB_GpuSurfacePresent(WB_GPU_SURFACE_HANDLE surface, const Blaze::Gpu::FrameReadyMessage* frame);
 WB_API HRESULT WB_GpuSurfaceDetachSwapChainPanel(WB_GPU_SURFACE_HANDLE surface);

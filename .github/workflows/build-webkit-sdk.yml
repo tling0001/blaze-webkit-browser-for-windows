@@ -93,17 +93,23 @@ jobs:
           "WEBKIT_SOURCE_ROOT=$sourceRoot" >> $env:GITHUB_ENV
           Write-Host "WebKit source and all generated build paths will use the physical path $sourceRoot"
 
-      - name: Apply Blaze WinCairo fullscreen patch set
+      - name: Apply Blaze WinCairo and D3D IPC patch set
         if: steps.sdk.outputs.exists != 'true'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $patch = Join-Path $env:GITHUB_WORKSPACE 'blaze\patches\webkit\0001-wincairo-enable-embedding-fullscreen.patch'
-          if (-not (Test-Path -LiteralPath $patch -PathType Leaf)) { throw "Missing pinned WebKit patch: $patch" }
-          git -C $env:WEBKIT_SOURCE_ROOT apply --check $patch
-          if ($LASTEXITCODE -ne 0) { throw 'The Blaze WinCairo fullscreen patch does not apply cleanly to the pinned source.' }
-          git -C $env:WEBKIT_SOURCE_ROOT apply $patch
-          if ($LASTEXITCODE -ne 0) { throw 'Applying the Blaze WinCairo fullscreen patch failed.' }
+          $patchRoot = Join-Path $env:GITHUB_WORKSPACE 'blaze\patches\webkit'
+          $patches = @(Get-ChildItem -LiteralPath $patchRoot -Filter '*.patch' -File | Sort-Object Name)
+          if ($patches.Count -lt 2) { throw "Expected the ordered WebKit patch series in $patchRoot." }
+          foreach ($patch in $patches) {
+            git -C $env:WEBKIT_SOURCE_ROOT apply --check $patch.FullName
+            if ($LASTEXITCODE -ne 0) { throw "Patch does not apply cleanly: $($patch.Name)" }
+          }
+          foreach ($patch in $patches) {
+            git -C $env:WEBKIT_SOURCE_ROOT apply $patch.FullName
+            if ($LASTEXITCODE -ne 0) { throw "Applying patch failed: $($patch.Name)" }
+            Write-Host "Applied $($patch.Name)"
+          }
           Write-Host "Applied patch set $((Get-Content -LiteralPath 'blaze\eng\WebKitSdk.json' -Raw | ConvertFrom-Json).patchSet)"
 
       - name: Restore pinned WebKit build cache
@@ -114,7 +120,7 @@ jobs:
           path: |
             ${{ runner.temp }}/webkit/WebKitBuild/Release
             ${{ runner.temp }}/webkit/WebKitLibraries/win
-          key: wincairo-x64-d641dd75af65b0469eff30bb76a97e01e02633fc-7d5f3c6241729acbbb7774f54bf687429aaf6492-9a80b82f283a1d69ffdc64e32536627ae738a65b-blaze-wincairo-fullscreen-v2-windows-latest-release-runtime-no-tests-v4
+          key: wincairo-x64-d641dd75af65b0469eff30bb76a97e01e02633fc-7d5f3c6241729acbbb7774f54bf687429aaf6492-9a80b82f283a1d69ffdc64e32536627ae738a65b-blaze-wincairo-fullscreen-d3d-ipc-v1-windows-latest-release-runtime-no-tests-v5
           restore-keys: |
             wincairo-x64-d641dd75af65b0469eff30bb76a97e01e02633fc-7d5f3c6241729acbbb7774f54bf687429aaf6492-9a80b82f283a1d69ffdc64e32536627ae738a65b-windows-latest-release-runtime-no-tests-v3
 
@@ -187,7 +193,7 @@ jobs:
           path: |
             ${{ runner.temp }}/webkit/WebKitBuild/Release
             ${{ runner.temp }}/webkit/WebKitLibraries/win
-          key: wincairo-x64-d641dd75af65b0469eff30bb76a97e01e02633fc-7d5f3c6241729acbbb7774f54bf687429aaf6492-9a80b82f283a1d69ffdc64e32536627ae738a65b-blaze-wincairo-fullscreen-v2-windows-latest-release-runtime-no-tests-v4
+          key: wincairo-x64-d641dd75af65b0469eff30bb76a97e01e02633fc-7d5f3c6241729acbbb7774f54bf687429aaf6492-9a80b82f283a1d69ffdc64e32536627ae738a65b-blaze-wincairo-fullscreen-d3d-ipc-v1-windows-latest-release-runtime-no-tests-v5
 
       - name: Print WebKit build diagnostics
         if: failure() && steps.sdk.outputs.exists != 'true'

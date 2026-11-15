@@ -62,6 +62,8 @@ public sealed partial class MainPage : Page
     private bool _internalPageOpen;
     private bool _addressSubmissionQueued;
     private bool _isBrowserFullscreen;
+    private readonly Dictionary<IntPtr, GpuCompositionSurface> _gpuSurfaces = new();
+    private static long _nextGpuSurfaceIdentifier;
     private GCHandle _nativeCallbackHandle;
 
     private sealed record TabHeaderVisuals(TextBlock Title, Image Favicon, FontIcon Fallback);
@@ -1855,6 +1857,7 @@ public sealed partial class MainPage : Page
         WebKitNative.SetPopupCallbacks(tab.NativeHandle, NewPageCallbackHandler, ClosePageCallbackHandler, callbackHandle);
         WebKitNative.SetFullscreenCallback(tab.NativeHandle, FullscreenCallbackHandler, callbackHandle);
         WebKitNative.SetUserAgent(tab.NativeHandle, SafariWindowsUserAgent);
+        TryCreateGpuSurface(tab.NativeHandle);
     }
 
     private void DestroyNativeView(BrowserTab tab)
@@ -1900,6 +1903,7 @@ public sealed partial class MainPage : Page
         try
         {
             CrashLogger.Log($"Beginning shutdown-only native WebKit release for retired view 0x{nativeHandle:X}.");
+            DisposeGpuSurface(nativeHandle);
             WebKitNative.Destroy(nativeHandle);
             CrashLogger.Log($"Finalized retained native WebKit view 0x{nativeHandle:X} during page shutdown.");
         }
@@ -1909,10 +1913,11 @@ public sealed partial class MainPage : Page
         }
     }
 
-    private static void DestroyNativeViewHandleImmediately(IntPtr nativeHandle)
+    private void DestroyNativeViewHandleImmediately(IntPtr nativeHandle)
     {
         if (nativeHandle == IntPtr.Zero)
             return;
+        DisposeGpuSurface(nativeHandle);
         try
         {
             WebKitNative.PrepareDestroy(nativeHandle);
@@ -1926,6 +1931,36 @@ public sealed partial class MainPage : Page
 
     private static bool IsInternalBrowserUrl(string? url) =>
         url?.StartsWith("blaze://", StringComparison.OrdinalIgnoreCase) == true;
+
+    private void TryCreateGpuSurface(IntPtr nativeView)
+    {
+        if (nativeView == IntPtr.Zero || _gpuSurfaces.ContainsKey(nativeView))
+            return;
+        GpuCompositionSurface? surface = null;
+        try
+        {
+            var (_, _, width, height) = GetBrowserSurfaceBounds();
+            var identifier = unchecked((ulong)Interlocked.Increment(ref _nextGpuSurfaceIdentifier));
+            surface = new GpuCompositionSurface(identifier, (uint)Math.Max(1, width), (uint)Math.Max(1, height), 1);
+            surface.BindToWebKitView(nativeView);
+            _gpuSurfaces.Add(nativeView, surface);
+            CrashLogger.Log($"Created D3D11 shared-texture ring for WebKit view 0x{nativeView:X}; descriptor forwarded through WebPage and GPU-process IPC. HWND remains the active renderer until GPU TextureMapper import/presentation is validated.");
+        }
+        catch (Exception exception)
+        {
+            surface?.Dispose();
+            CrashLogger.LogException("Experimental D3D11 shared-surface bootstrap failed; continuing with the production HWND renderer.", exception);
+        }
+    }
+
+    private void DisposeGpuSurface(IntPtr nativeView)
+    {
+        if (_gpuSurfaces.Remove(nativeView, out var surface))
+        {
+            try { surface.Dispose(); }
+            catch (Exception exception) { CrashLogger.LogException("D3D11 shared-surface disposal failed.", exception); }
+        }
+    }
 
     private void SetBrowserFullscreen(bool fullscreen)
     {

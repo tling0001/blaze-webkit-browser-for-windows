@@ -196,6 +196,9 @@ internal sealed class GpuCompositionSurface : IDisposable
     [DllImport(Library, EntryPoint = "WB_GpuSurfaceGetDescriptor", CallingConvention = CallingConvention.Cdecl)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetDescriptorNative(IntPtr surface, IntPtr descriptor);
+    [DllImport(Library, EntryPoint = "WB_GpuSurfaceBindToWebKitView", CallingConvention = CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool BindToWebKitViewNative(IntPtr view, IntPtr surface);
     [DllImport(Library, EntryPoint = "WB_GpuSurfaceAttachSwapChainPanel", CallingConvention = CallingConvention.Cdecl)]
     private static extern int AttachNative(IntPtr surface, IntPtr panelUnknown);
     [DllImport(Library, EntryPoint = "WB_GpuSurfacePresent", CallingConvention = CallingConvention.Cdecl)]
@@ -226,6 +229,13 @@ internal sealed class GpuCompositionSurface : IDisposable
             return Marshal.PtrToStructure<SharedSurfaceDescriptor>(buffer);
         }
         finally { Marshal.FreeHGlobal(buffer); }
+    }
+
+    internal void BindToWebKitView(IntPtr nativeView)
+    {
+        ObjectDisposedException.ThrowIf(_handle == IntPtr.Zero, this);
+        if (nativeView == IntPtr.Zero || !BindToWebKitViewNative(nativeView, _handle))
+            throw new InvalidOperationException("The shared D3D11 surface descriptor could not be forwarded to the WebKit GPU process.");
     }
 
     internal void Attach(Microsoft.UI.Xaml.Controls.SwapChainPanel panel)
