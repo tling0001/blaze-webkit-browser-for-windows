@@ -1860,8 +1860,8 @@ public sealed partial class MainPage : Page
         WebKitNative.SetPopupCallbacks(tab.NativeHandle, NewPageCallbackHandler, ClosePageCallbackHandler, callbackHandle);
         WebKitNative.SetFullscreenCallback(tab.NativeHandle, FullscreenCallbackHandler, callbackHandle);
         WebKitNative.SetUserAgent(tab.NativeHandle, SafariWindowsUserAgent);
-        TryCreateGpuSurface(tab.NativeHandle);
-        App.DispatcherQueue.TryEnqueue(ResizeGpuSurfacesForFullscreen);
+        _ = TryCreateGpuSurfaceAsync(tab.NativeHandle);
+        App.DispatcherQueue.TryEnqueue(() => { _ = ResizeGpuSurfacesForFullscreenAsync(); });
     }
 
     private void DestroyNativeView(BrowserTab tab)
@@ -1936,7 +1936,7 @@ public sealed partial class MainPage : Page
     private static bool IsInternalBrowserUrl(string? url) =>
         url?.StartsWith("blaze://", StringComparison.OrdinalIgnoreCase) == true;
 
-    private void TryCreateGpuSurface(IntPtr nativeView)
+    private async Task TryCreateGpuSurfaceAsync(IntPtr nativeView)
     {
         if (nativeView == IntPtr.Zero || _gpuSurfaces.ContainsKey(nativeView) || _pendingGpuSurfaceRequests.ContainsKey(nativeView))
             return;
@@ -1945,46 +1945,32 @@ public sealed partial class MainPage : Page
         var identifier = Interlocked.Increment(ref _nextGpuSurfaceIdentifier);
         var requestId = identifier;
         _pendingGpuSurfaceRequests[nativeView] = requestId;
-        _ = Task.Run(() => new GpuCompositionSurface(unchecked((ulong)identifier), (uint)Math.Max(1, width), (uint)Math.Max(1, height), 1))
-            .ContinueWith(task =>
+        GpuCompositionSurface? surface = null;
+        try
+        {
+            surface = await Task.Run(() => new GpuCompositionSurface(
+                unchecked((ulong)identifier), (uint)Math.Max(1, width), (uint)Math.Max(1, height), 1));
+            if (!_pendingGpuSurfaceRequests.TryGetValue(nativeView, out var currentRequest) ||
+                currentRequest != requestId || _isPageUnloading)
             {
-                var queued = App.DispatcherQueue.TryEnqueue(() =>
-                {
-                    if (!_pendingGpuSurfaceRequests.TryGetValue(nativeView, out var currentRequest) ||
-                        currentRequest != requestId || _isPageUnloading)
-                    {
-                        if (task.Status == TaskStatus.RanToCompletion)
-                            task.Result.Dispose();
-                        return;
-                    }
+                surface.Dispose();
+                return;
+            }
 
-                    _pendingGpuSurfaceRequests.Remove(nativeView);
-                    if (task.IsFaulted)
-                    {
-                        CrashLogger.LogException("Experimental D3D11 shared-surface bootstrap failed; continuing with the production HWND renderer.",
-                            task.Exception?.GetBaseException() ?? new InvalidOperationException("D3D11 surface creation failed without an exception."));
-                        return;
-                    }
-                    if (task.Status != TaskStatus.RanToCompletion)
-                        return;
-
-                    var surface = task.Result;
-                    try
-                    {
-                        surface.BindToWebKitView(nativeView);
-                        _gpuSurfaces.Add(nativeView, surface);
-                        CrashLogger.Log($"Created D3D11 shared-texture ring for WebKit view 0x{nativeView:X}; descriptor submitted through WebPage and GPU-process IPC. HWND remains the active renderer until GPU TextureMapper import/presentation is validated.");
-                        App.DispatcherQueue.TryEnqueue(ResizeGpuSurfacesForFullscreen);
-                    }
-                    catch (Exception exception)
-                    {
-                        surface.Dispose();
-                        CrashLogger.LogException("Experimental D3D11 descriptor submission failed; continuing with the production HWND renderer.", exception);
-                    }
-                });
-                if (!queued && task.Status == TaskStatus.RanToCompletion)
-                    task.Result.Dispose();
-            }, TaskScheduler.Default);
+            _pendingGpuSurfaceRequests.Remove(nativeView);
+            surface.BindToWebKitView(nativeView);
+            _gpuSurfaces.Add(nativeView, surface);
+            surface = null;
+            CrashLogger.Log($"Created D3D11 shared-texture ring for WebKit view 0x{nativeView:X}; descriptor submitted through WebPage and GPU-process IPC. HWND remains the active renderer until GPU TextureMapper import/presentation is validated.");
+            _ = ResizeGpuSurfacesForFullscreenAsync();
+        }
+        catch (Exception exception)
+        {
+            if (_pendingGpuSurfaceRequests.TryGetValue(nativeView, out var currentRequest) && currentRequest == requestId)
+                _pendingGpuSurfaceRequests.Remove(nativeView);
+            surface?.Dispose();
+            CrashLogger.LogException("Experimental D3D11 shared-surface bootstrap failed; continuing with the production HWND renderer.", exception);
+        }
     }
 
     private void DisposeGpuSurface(IntPtr nativeView)
@@ -1997,7 +1983,7 @@ public sealed partial class MainPage : Page
         }
     }
 
-    private async void ResizeGpuSurfacesForFullscreen()
+    private async Task ResizeGpuSurfacesForFullscreenAsync()
     {
         if (_gpuSurfaces.Count == 0 || _isPageUnloading)
             return;
@@ -2025,7 +2011,7 @@ public sealed partial class MainPage : Page
         if (App.Window is MainWindow window)
             window.SetBrowserFullscreen(fullscreen);
         LayoutNativeViews();
-        App.DispatcherQueue.TryEnqueue(ResizeGpuSurfacesForFullscreen);
+        App.DispatcherQueue.TryEnqueue(() => { _ = ResizeGpuSurfacesForFullscreenAsync(); });
     }
 
     private void LayoutNativeViews()

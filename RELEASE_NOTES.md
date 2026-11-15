@@ -1,5 +1,15 @@
 # Blaze release notes
 
+## [1.1.64] - 2026-11-15
+
+### D3D async lifecycle review
+- Use Task-based per-view surface creation and fullscreen resizing; keep all WKView descriptor submissions on the WinUI dispatcher.
+- Remove continuation Result access and protect pending native-view creations against stale handles, tab teardown and page unload.
+- Keep HWND rendering as the fallback when the experimental D3D path cannot initialize.
+
+### Versioning
+- Align product, assembly, file, informational and package versions at 1.1.64.
+
 ## [1.1.63] - 2026-11-15
 
 ### D3D responsiveness and lifecycle
