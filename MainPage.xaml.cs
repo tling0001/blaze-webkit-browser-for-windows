@@ -1858,6 +1858,7 @@ public sealed partial class MainPage : Page
         WebKitNative.SetFullscreenCallback(tab.NativeHandle, FullscreenCallbackHandler, callbackHandle);
         WebKitNative.SetUserAgent(tab.NativeHandle, SafariWindowsUserAgent);
         TryCreateGpuSurface(tab.NativeHandle);
+        App.DispatcherQueue.TryEnqueue(ResizeGpuSurfacesForFullscreen);
     }
 
     private void DestroyNativeView(BrowserTab tab)
@@ -1944,7 +1945,7 @@ public sealed partial class MainPage : Page
             surface = new GpuCompositionSurface(identifier, (uint)Math.Max(1, width), (uint)Math.Max(1, height), 1);
             surface.BindToWebKitView(nativeView);
             _gpuSurfaces.Add(nativeView, surface);
-            CrashLogger.Log($"Created D3D11 shared-texture ring for WebKit view 0x{nativeView:X}; descriptor forwarded through WebPage and GPU-process IPC. HWND remains the active renderer until GPU TextureMapper import/presentation is validated.");
+            CrashLogger.Log($"Created D3D11 shared-texture ring for WebKit view 0x{nativeView:X}; descriptor submitted through WebPage and GPU-process IPC. HWND remains the active renderer until GPU TextureMapper import/presentation is validated.");
         }
         catch (Exception exception)
         {

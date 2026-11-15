@@ -1,5 +1,15 @@
 # Blaze release notes
 
+## [1.1.59] - 2026-11-15
+
+### Build and D3D descriptor hardening
+- Correct the fullscreen WebKit patch hunk metadata so the pinned source patch applies cleanly.
+- Submit an initial viewport-sized D3D descriptor after the native view is laid out, then refresh the shared-texture generation on fullscreen transitions.
+- Keep descriptor submission non-fatal and retain HWND rendering until GPU import and presentation are complete.
+
+### Versioning
+- Align product, assembly, file, informational and package versions at 1.1.59.
+
 ## [1.1.58] - 2026-11-15
 
 ### D3D fullscreen groundwork
