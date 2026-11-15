@@ -1941,13 +1941,13 @@ public sealed partial class MainPage : Page
         if (nativeView == IntPtr.Zero || _gpuSurfaces.ContainsKey(nativeView) || _pendingGpuSurfaceRequests.ContainsKey(nativeView))
             return;
 
-        var (_, _, width, height) = GetBrowserSurfaceBounds();
         var identifier = Interlocked.Increment(ref _nextGpuSurfaceIdentifier);
         var requestId = identifier;
         _pendingGpuSurfaceRequests[nativeView] = requestId;
         GpuCompositionSurface? surface = null;
         try
         {
+            var (_, _, width, height) = GetBrowserSurfaceBounds();
             surface = await Task.Run(() => new GpuCompositionSurface(
                 unchecked((ulong)identifier), (uint)Math.Max(1, width), (uint)Math.Max(1, height), 1));
             if (!_pendingGpuSurfaceRequests.TryGetValue(nativeView, out var currentRequest) ||
@@ -1987,16 +1987,23 @@ public sealed partial class MainPage : Page
     {
         if (_gpuSurfaces.Count == 0 || _isPageUnloading)
             return;
-        var (_, _, width, height) = GetBrowserSurfaceBounds();
-        var pixelWidth = (uint)Math.Max(1, width);
-        var pixelHeight = (uint)Math.Max(1, height);
-        foreach (var pair in _gpuSurfaces.ToArray())
+        try
         {
-            if (_isPageUnloading)
-                return;
-            try { await pair.Value.ResizeAndBindAsync(pair.Key, pixelWidth, pixelHeight); }
-            catch (ObjectDisposedException) { }
-            catch (Exception exception) { CrashLogger.LogException("D3D11 fullscreen surface resize failed; HWND rendering remains active.", exception); }
+            var (_, _, width, height) = GetBrowserSurfaceBounds();
+            var pixelWidth = (uint)Math.Max(1, width);
+            var pixelHeight = (uint)Math.Max(1, height);
+            foreach (var pair in _gpuSurfaces.ToArray())
+            {
+                if (_isPageUnloading)
+                    return;
+                try { await pair.Value.ResizeAndBindAsync(pair.Key, pixelWidth, pixelHeight); }
+                catch (ObjectDisposedException) { }
+                catch (Exception exception) { CrashLogger.LogException("D3D11 fullscreen surface resize failed; HWND rendering remains active.", exception); }
+            }
+        }
+        catch (Exception exception)
+        {
+            CrashLogger.LogException("Could not determine the browser viewport size for the D3D fullscreen surface.", exception);
         }
     }
 

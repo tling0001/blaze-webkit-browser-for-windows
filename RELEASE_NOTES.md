@@ -1,5 +1,14 @@
 # Blaze release notes
 
+## [1.1.65] - 2026-11-15
+
+### D3D async error handling
+- Keep viewport measurement and asynchronous D3D bootstrap failures inside the non-fatal fallback boundary.
+- Catch fullscreen viewport measurement failures so an experimental descriptor resize cannot create an unobserved dispatcher task exception.
+
+### Versioning
+- Align product, assembly, file, informational and package versions at 1.1.65.
+
 ## [1.1.64] - 2026-11-15
 
 ### D3D async lifecycle review
