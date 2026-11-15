@@ -1,5 +1,6 @@
 #pragma once
 #include <Windows.h>
+#include <unknwn.h>
 
 #ifdef WEBKITHOST_EXPORTS
 #define WB_API extern "C" __declspec(dllexport)

@@ -1,5 +1,16 @@
 # Blaze release notes
 
+## [1.1.55] - 2026-11-15
+
+### Native D3D composition build correction
+- Include the Windows COM interface declarations explicitly in the native host ABI header so the SwapChainPanel attachment API compiles independently of include order.
+- Preserve the 1.1.54 composition presenter and keyboard focus changes.
+
+### Versioning
+- Align product, assembly, file, informational and package versions at 1.1.55.
+
+
+
 ## [1.1.54] - 2026-11-15
 
 ### WinUI composition presentation and native keyboard focus
