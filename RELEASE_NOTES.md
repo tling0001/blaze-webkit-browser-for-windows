@@ -1,5 +1,21 @@
 # Blaze release notes
 
+## [1.1.56] - 2026-11-15
+
+### WinCairo fullscreen support
+- Implement the pinned WinCairo fullscreen manager callbacks instead of rejecting every fullscreen request.
+- Route fullscreen transitions from each WebKit owned host HWND to its matching WinUI tab, hide browser chrome, enter the WinUI FullScreen presenter, and restore the previous window bounds/presentation state on exit.
+- Keep fullscreen state per WebKit view and filter owner-window messages by the initiating host so multiple tabs cannot toggle one another's state.
+
+### D3D composition groundwork
+- Add managed, ABI-size-checked marshaling for the 152-byte shared-surface descriptor, including adapter LUID and all three shared texture slot/key tuples.
+- Expose the descriptor from the existing D3D surface wrapper so the upcoming WebKit GPU-process IPC layer can consume the exact native resource handles.
+- Keep the live renderer on HWND until WebKit's per-view descriptor/frame IPC and GPU-process TextureMapper target are connected; do not claim live D3D rendering yet.
+
+### Versioning
+- Align product, assembly, file, informational and package versions at 1.1.56.
+
+
 ## [1.1.55] - 2026-11-15
 
 ### Native D3D composition build correction

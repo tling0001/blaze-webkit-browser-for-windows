@@ -89,6 +89,9 @@ internal static class WebKitNative
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     internal delegate void ClosePageCallback(IntPtr view, IntPtr userData);
 
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    internal delegate void FullscreenCallback(IntPtr view, [MarshalAs(UnmanagedType.Bool)] bool isFullscreen, IntPtr userData);
+
     [DllImport(Library, EntryPoint = "WB_SetDownloadCallback", CallingConvention = CallingConvention.Cdecl)]
     internal static extern void SetDownloadCallback(IntPtr view, DownloadCallback callback, IntPtr userData);
 
@@ -109,6 +112,9 @@ internal static class WebKitNative
 
     [DllImport(Library, EntryPoint = "WB_SetPopupCallbacks", CallingConvention = CallingConvention.Cdecl)]
     internal static extern void SetPopupCallbacks(IntPtr view, NewPageCallback newPageCallback, ClosePageCallback closePageCallback, IntPtr userData);
+
+    [DllImport(Library, EntryPoint = "WB_SetFullscreenCallback", CallingConvention = CallingConvention.Cdecl)]
+    internal static extern void SetFullscreenCallback(IntPtr view, FullscreenCallback callback, IntPtr userData);
 
     [DllImport(Library, EntryPoint = "WB_ResolveJavaScriptDialog", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Unicode)]
     internal static extern void ResolveJavaScriptDialog(IntPtr listener, int dialogType, [MarshalAs(UnmanagedType.Bool)] bool accepted, string? response);
@@ -134,6 +140,40 @@ internal static class WebKitNative
 internal sealed class GpuCompositionSurface : IDisposable
 {
     [StructLayout(LayoutKind.Sequential)]
+    internal struct AdapterLuid
+    {
+        public uint LowPart;
+        public int HighPart;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct SharedTextureSlotDescriptor
+    {
+        public ulong SharedResourceToken;
+        public ulong ProducerAcquireKey;
+        public ulong ConsumerAcquireKey;
+        public ulong ConsumerReturnKey;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct SharedSurfaceDescriptor
+    {
+        public uint StructSize;
+        public uint ProtocolVersion;
+        public ulong ViewIdentifier;
+        public ulong ResizeGeneration;
+        public uint Width;
+        public uint Height;
+        public uint PixelFormat;
+        public uint SynchronizationKind;
+        public uint SlotCount;
+        public uint Reserved;
+        public AdapterLuid Adapter;
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 3)]
+        public SharedTextureSlotDescriptor[] Slots;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
     internal struct FrameReadyMessage
     {
         public uint StructSize;
@@ -153,6 +193,9 @@ internal sealed class GpuCompositionSurface : IDisposable
 
     [DllImport(Library, EntryPoint = "WB_GpuSurfaceCreate", CallingConvention = CallingConvention.Cdecl)]
     private static extern IntPtr CreateNative(ulong viewIdentifier, uint width, uint height, ulong generation);
+    [DllImport(Library, EntryPoint = "WB_GpuSurfaceGetDescriptor", CallingConvention = CallingConvention.Cdecl)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetDescriptorNative(IntPtr surface, IntPtr descriptor);
     [DllImport(Library, EntryPoint = "WB_GpuSurfaceAttachSwapChainPanel", CallingConvention = CallingConvention.Cdecl)]
     private static extern int AttachNative(IntPtr surface, IntPtr panelUnknown);
     [DllImport(Library, EntryPoint = "WB_GpuSurfacePresent", CallingConvention = CallingConvention.Cdecl)]
@@ -167,6 +210,22 @@ internal sealed class GpuCompositionSurface : IDisposable
         _handle = CreateNative(viewIdentifier, width, height, generation);
         if (_handle == IntPtr.Zero)
             throw new InvalidOperationException("The native D3D11 shared-texture ring could not be created.");
+    }
+
+    internal SharedSurfaceDescriptor GetDescriptor()
+    {
+        ObjectDisposedException.ThrowIf(_handle == IntPtr.Zero, this);
+        var size = Marshal.SizeOf<SharedSurfaceDescriptor>();
+        if (size != 152)
+            throw new InvalidOperationException($"Shared-surface ABI size mismatch: expected 152 bytes, got {size}.");
+        var buffer = Marshal.AllocHGlobal(size);
+        try
+        {
+            if (!GetDescriptorNative(_handle, buffer))
+                throw new InvalidOperationException("The native D3D11 shared-surface descriptor is invalid.");
+            return Marshal.PtrToStructure<SharedSurfaceDescriptor>(buffer);
+        }
+        finally { Marshal.FreeHGlobal(buffer); }
     }
 
     internal void Attach(Microsoft.UI.Xaml.Controls.SwapChainPanel panel)

@@ -201,6 +201,12 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          winapp find-api AppWindow --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'AppWindow API lookup failed.' }
+          winapp find-api members AppWindow --filter SetPresenter --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'AppWindow fullscreen presenter API verification failed.' }
+          winapp find-api AppWindowPresenterKind --json --project-dir .
+          if ($LASTEXITCODE -ne 0) { throw 'AppWindow presenter kind verification failed.' }
           winapp find-api TabView --json --project-dir .
           if ($LASTEXITCODE -ne 0) { throw 'TabView API lookup failed.' }
           winapp find-api check-property TabView IsAddTabButtonVisible CanReorderTabs --json --project-dir .

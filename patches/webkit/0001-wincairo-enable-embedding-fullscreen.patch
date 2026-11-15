@@ -1,0 +1,72 @@
+diff --git a/Source/WebKit/UIProcess/win/PageClientImpl.cpp b/Source/WebKit/UIProcess/win/PageClientImpl.cpp
+--- a/Source/WebKit/UIProcess/win/PageClientImpl.cpp
++++ b/Source/WebKit/UIProcess/win/PageClientImpl.cpp
+@@ -40,6 +40,7 @@
+ #include <WebCore/NotImplemented.h>
+ #include <WebCore/PasteboardCustomData.h>
+ #include <WebCore/PlatformPasteboard.h>
++#include <windows.h>
+ 
+ #if USE(GRAPHICS_LAYER_WC)
+ #include "DrawingAreaProxyWC.h"
+@@ -309,34 +310,52 @@
+ void PageClientImpl::closeFullScreenManager()
+ {
+-    notImplemented();
++    if (m_isFullScreen)
++        exitFullScreen([] { });
+ }
+ 
+ bool PageClientImpl::isFullScreen()
+ {
+-    notImplemented();
+-    return false;
++    return m_isFullScreen;
+ }
+ 
+ void PageClientImpl::enterFullScreen(FloatSize, CompletionHandler<void(bool)>&& completionHandler)
+ {
+-    notImplemented();
+-    completionHandler(false);
++    if (m_isFullScreen)
++        return completionHandler(false);
++
++    HWND viewWindow = viewWidget();
++    HWND hostWindow = viewWindow ? GetAncestor(viewWindow, GA_ROOT) : nullptr;
++    HWND ownerWindow = hostWindow ? GetWindow(hostWindow, GW_OWNER) : nullptr;
++    if (!hostWindow || !ownerWindow || !IsWindow(hostWindow) || !IsWindow(ownerWindow))
++        return completionHandler(false);
++    if (!PostMessageW(ownerWindow, WM_APP + 0x3B3,
++        reinterpret_cast<WPARAM>(hostWindow), TRUE))
++        return completionHandler(false);
++
++    m_isFullScreen = true;
++    completionHandler(true);
+ }
+ 
+ void PageClientImpl::exitFullScreen(CompletionHandler<void()>&& completionHandler)
+ {
+-    notImplemented();
++    if (!m_isFullScreen)
++        return completionHandler();
++
++    m_isFullScreen = false;
++    HWND viewWindow = viewWidget();
++    HWND hostWindow = viewWindow ? GetAncestor(viewWindow, GA_ROOT) : nullptr;
++    HWND ownerWindow = hostWindow ? GetWindow(hostWindow, GW_OWNER) : nullptr;
++    if (hostWindow && ownerWindow && IsWindow(hostWindow) && IsWindow(ownerWindow))
++        PostMessageW(ownerWindow, WM_APP + 0x3B3, reinterpret_cast<WPARAM>(hostWindow), FALSE);
+     completionHandler();
+ }
+ 
+ void PageClientImpl::beganEnterFullScreen(const IntRect& /* initialFrame */, const IntRect& /* finalFrame */, CompletionHandler<void(bool)>&& completionHandler)
+ {
+-    notImplemented();
+     completionHandler(true);
+ }
+ 
+ void PageClientImpl::beganExitFullScreen(const IntRect& /* initialFrame */, const IntRect& /* finalFrame */, CompletionHandler<void()>&& completionHandler)
+ {
+-    notImplemented();
+     completionHandler();
+ }

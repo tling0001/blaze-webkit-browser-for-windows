@@ -64,6 +64,9 @@ struct WB_VIEW {
     WB_NEW_PAGE_CALLBACK newPageCallback{};
     WB_CLOSE_PAGE_CALLBACK closePageCallback{};
     void* popupUserData{};
+    WB_FULLSCREEN_CALLBACK fullscreenCallback{};
+    void* fullscreenUserData{};
+    bool isFullscreen{};
     HWND parentWindow{};
     HWND hostWindow{};
     volatile LONG attachedInputThread{};
@@ -546,6 +549,7 @@ constexpr wchar_t NativeSurfaceHostClass[] = L"Blaze.WebKit.NativeSurfaceHost";
 constexpr UINT_PTR NativeWebKitSubclassId = 0xB1A2E;
 constexpr UINT WM_BLAZE_RESTORE_OWNER_ACTIVATION = WM_APP + 0x3B1;
 constexpr UINT WM_BLAZE_DETACH_OWNER_INPUT = WM_APP + 0x3B2;
+constexpr UINT WM_BLAZE_FULLSCREEN_STATE = WM_APP + 0x3B3;
 
 void detachOwnerInputQueue(WB_VIEW* view)
 {
@@ -666,13 +670,26 @@ LRESULT CALLBACK ownerWindowSubclass(HWND owner, UINT message, WPARAM wParam, LP
         return 0;
     }
 
+    if (message == WM_BLAZE_FULLSCREEN_STATE) {
+        const auto hostWindow = reinterpret_cast<HWND>(wParam);
+        // Each tab installs a subclass on the same owner HWND. Only the tab
+        // whose owned host initiated the transition may update browser chrome.
+        if (view && !view->destroyPrepared && view->hostWindow == hostWindow && view->fullscreenCallback) {
+            view->isFullscreen = lParam != 0;
+            view->fullscreenCallback(view, view->isFullscreen ? TRUE : FALSE, view->fullscreenUserData);
+        }
+        return 0;
+    }
+
     if (message == WM_BLAZE_RESTORE_OWNER_ACTIVATION) {
+        const auto focusedWindow = reinterpret_cast<HWND>(wParam);
+        if (!view || view->window != focusedWindow)
+            return result;
         // Do not call SetActiveWindow(owner): that resets keyboard focus to
         // WinUI and steals it from the WebKit child. Restore the foreground
         // top-level HWND, then reapply WebKit focus only if it still owned
         // focus when this deferred message arrived. If the user has already
         // moved to the address bar or another WinUI control, preserve that.
-        const auto focusedWindow = reinterpret_cast<HWND>(wParam);
         const auto ownerThread = GetCurrentThreadId();
         const auto attachedThread = static_cast<DWORD>(lParam);
         const auto focusBeforeActivation = GetFocus();
@@ -960,6 +977,9 @@ void WB_PrepareDestroy(WB_VIEW_HANDLE view)
 {
     if (!view || view->destroyPrepared)
         return;
+    if (view->isFullscreen && view->fullscreenCallback)
+        view->fullscreenCallback(view, FALSE, view->fullscreenUserData);
+    view->isFullscreen = false;
     view->destroyPrepared = true;
     OutputDebugStringW(L"[Blaze][WebKitLifetime] WB_PrepareDestroy: begin native retirement.\\n");
     detachOwnerInputQueue(view);
@@ -1217,6 +1237,14 @@ void WB_SetPopupCallbacks(WB_VIEW_HANDLE view, WB_NEW_PAGE_CALLBACK newPageCallb
     view->newPageCallback = newPageCallback;
     view->closePageCallback = closePageCallback;
     view->popupUserData = userData;
+}
+
+void WB_SetFullscreenCallback(WB_VIEW_HANDLE view, WB_FULLSCREEN_CALLBACK callback, void* userData)
+{
+    if (!view)
+        return;
+    view->fullscreenCallback = callback;
+    view->fullscreenUserData = userData;
 }
 
 void WB_ResolveJavaScriptDialog(const void* listener, int dialogType, BOOL accepted, const wchar_t* response)

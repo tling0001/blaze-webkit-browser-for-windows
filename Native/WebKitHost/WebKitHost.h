@@ -21,6 +21,7 @@ using WB_JAVASCRIPT_DIALOG_CALLBACK = void (__cdecl*)(int dialogType, const wcha
 using WB_CREDENTIAL_BRIDGE_CALLBACK = void (__cdecl*)(WB_VIEW_HANDLE view, const wchar_t* origin, const wchar_t* payload, const void* listener, void* userData);
 using WB_NEW_PAGE_CALLBACK = int (__cdecl*)(WB_VIEW_HANDLE view, void* userData);
 using WB_CLOSE_PAGE_CALLBACK = void (__cdecl*)(WB_VIEW_HANDLE view, void* userData);
+using WB_FULLSCREEN_CALLBACK = void (__cdecl*)(WB_VIEW_HANDLE view, BOOL isFullscreen, void* userData);
 
 // Host-owned D3D11 shared-texture ring. The returned legacy shared-resource
 // tokens remain valid only while this surface object is alive; never CloseHandle them.
@@ -57,6 +58,7 @@ WB_API void WB_SetJavaScriptDialogCallback(WB_VIEW_HANDLE view, WB_JAVASCRIPT_DI
 WB_API void WB_SetCredentialBridgeCallback(WB_VIEW_HANDLE view, WB_CREDENTIAL_BRIDGE_CALLBACK callback, void* userData);
 WB_API void WB_EvaluateJavaScript(WB_VIEW_HANDLE view, const wchar_t* script);
 WB_API void WB_SetPopupCallbacks(WB_VIEW_HANDLE view, WB_NEW_PAGE_CALLBACK newPageCallback, WB_CLOSE_PAGE_CALLBACK closePageCallback, void* userData);
+WB_API void WB_SetFullscreenCallback(WB_VIEW_HANDLE view, WB_FULLSCREEN_CALLBACK callback, void* userData);
 // The WebKit result-listener references are const-qualified opaque pointers.
 // Preserve that qualification across the native callback and managed bridge.
 WB_API void WB_ResolveJavaScriptDialog(const void* listener, int dialogType, BOOL accepted, const wchar_t* response);

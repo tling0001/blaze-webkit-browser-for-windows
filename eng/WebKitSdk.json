@@ -1,6 +1,6 @@
 {
   "sdkFormatVersion": 1,
-  "releaseTag": "webkit-d641dd75af65-wincairo-x64-v1",
+  "releaseTag": "webkit-d641dd75af65-wincairo-x64-v2",
   "webkitRepository": "WebKit/WebKit",
   "webkitCommit": "d641dd75af65b0469eff30bb76a97e01e02633fc",
   "port": "WinCairo",
@@ -10,5 +10,6 @@
   "webkitRequirementsRepository": "WebKitForWindows/WebKitRequirements",
   "webkitRequirementsBaseline": "9a80b82f283a1d69ffdc64e32536627ae738a65b",
   "vcpkgTriplet": "x64-windows-webkit",
-  "toolchain": "Visual Studio x64 + clang-cl; Release; Ninja"
+  "toolchain": "Visual Studio x64 + clang-cl; Release; Ninja",
+  "patchSet": "blaze-wincairo-fullscreen-v1"
 }

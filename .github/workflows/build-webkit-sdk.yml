@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/build-webkit-sdk.yml'
+      - 'patches/webkit/**'
       - 'eng/WebKitSdk.json'
   workflow_dispatch:
 
@@ -92,6 +93,19 @@ jobs:
           "WEBKIT_SOURCE_ROOT=$sourceRoot" >> $env:GITHUB_ENV
           Write-Host "WebKit source and all generated build paths will use the physical path $sourceRoot"
 
+      - name: Apply Blaze WinCairo fullscreen patch set
+        if: steps.sdk.outputs.exists != 'true'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $patch = Join-Path $env:GITHUB_WORKSPACE 'blaze\patches\webkit\0001-wincairo-enable-embedding-fullscreen.patch'
+          if (-not (Test-Path -LiteralPath $patch -PathType Leaf)) { throw "Missing pinned WebKit patch: $patch" }
+          git -C $env:WEBKIT_SOURCE_ROOT apply --check $patch
+          if ($LASTEXITCODE -ne 0) { throw 'The Blaze WinCairo fullscreen patch does not apply cleanly to the pinned source.' }
+          git -C $env:WEBKIT_SOURCE_ROOT apply $patch
+          if ($LASTEXITCODE -ne 0) { throw 'Applying the Blaze WinCairo fullscreen patch failed.' }
+          Write-Host "Applied patch set $((Get-Content -LiteralPath 'blaze\eng\WebKitSdk.json' -Raw | ConvertFrom-Json).patchSet)"
+
       - name: Restore pinned WebKit build cache
         if: steps.sdk.outputs.exists != 'true'
         id: webkit-cache
@@ -100,10 +114,12 @@ jobs:
           path: |
             ${{ runner.temp }}/webkit/WebKitBuild/Release
             ${{ runner.temp }}/webkit/WebKitLibraries/win
-          key: wincairo-x64-d641dd75af65b0469eff30bb76a97e01e02633fc-7d5f3c6241729acbbb7774f54bf687429aaf6492-9a80b82f283a1d69ffdc64e32536627ae738a65b-windows-latest-release-runtime-no-tests-v3
+          key: wincairo-x64-d641dd75af65b0469eff30bb76a97e01e02633fc-7d5f3c6241729acbbb7774f54bf687429aaf6492-9a80b82f283a1d69ffdc64e32536627ae738a65b-blaze-wincairo-fullscreen-v1-windows-latest-release-runtime-no-tests-v4
+          restore-keys: |
+            wincairo-x64-d641dd75af65b0469eff30bb76a97e01e02633fc-7d5f3c6241729acbbb7774f54bf687429aaf6492-9a80b82f283a1d69ffdc64e32536627ae738a65b-windows-latest-release-runtime-no-tests-v3
 
       - name: Install WinCairo build dependencies
-        if: steps.sdk.outputs.exists != 'true' && steps.webkit-cache.outputs.cache-hit != 'true'
+        if: steps.sdk.outputs.exists != 'true'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -111,7 +127,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Installing WebKit Windows-port dependencies failed.' }
 
       - name: Configure WebKit command environment
-        if: steps.sdk.outputs.exists != 'true' && steps.webkit-cache.outputs.cache-hit != 'true'
+        if: steps.sdk.outputs.exists != 'true'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -137,8 +153,8 @@ jobs:
           "WEBKIT_XAMPP=$($xampp.FullName)" >> $env:GITHUB_ENV
           "WEBKIT_NINJA=$ninjaPath" >> $env:GITHUB_ENV
 
-      - name: Build WebKit on a short same-volume path
-        if: steps.sdk.outputs.exists != 'true' && steps.webkit-cache.outputs.cache-hit != 'true'
+      - name: Build patched WebKit incrementally on a short same-volume path
+        if: steps.sdk.outputs.exists != 'true'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -159,11 +175,11 @@ jobs:
           $extraPath = $env:WEBKIT_XAMPP + '\perl\bin;' + $env:WEBKIT_XAMPP + '\apache\bin;' + $pythonDir + ';' + $pythonDir + '\Scripts;' + $ninjaDir
           $command = 'cd /d "' + $sourceRoot + '" && call "' + $vcvars + '" && set "PATH=' + $extraPath + ';%PATH%" && set "CC=clang-cl" && set "CXX=clang-cl" && where.exe ninja && ninja --version && perl Tools\Scripts\build-webkit --release'
           $command = $command.TrimEnd() + ' --cmakeargs="-DENABLE_API_TESTS=OFF -DENABLE_LAYOUT_TESTS=OFF -DENABLE_WEBDRIVER=OFF -DENABLE_MINIBROWSER=OFF"'
-          Write-Host 'Building the production WebKit runtime in Release mode; optional API/layout tests, WebDriver and MiniBrowser targets are disabled.'
+          Write-Host 'Building the patched production WebKit runtime in Release mode; cached targets are incrementally rebuilt; optional API/layout tests, WebDriver and MiniBrowser targets are disabled.'
           cmd.exe /d /s /c $command
           if ($LASTEXITCODE -ne 0) { throw "Pinned WebKit WinCairo build failed (exit $LASTEXITCODE)." }
 
-      - name: Save successful pinned WebKit build cache
+      - name: Save successful patched WebKit build cache
         if: steps.sdk.outputs.exists != 'true' && steps.webkit-cache.outputs.cache-hit != 'true'
         continue-on-error: true
         uses: actions/cache/save@v4
@@ -171,7 +187,7 @@ jobs:
           path: |
             ${{ runner.temp }}/webkit/WebKitBuild/Release
             ${{ runner.temp }}/webkit/WebKitLibraries/win
-          key: wincairo-x64-d641dd75af65b0469eff30bb76a97e01e02633fc-7d5f3c6241729acbbb7774f54bf687429aaf6492-9a80b82f283a1d69ffdc64e32536627ae738a65b-windows-latest-release-runtime-no-tests-v3
+          key: wincairo-x64-d641dd75af65b0469eff30bb76a97e01e02633fc-7d5f3c6241729acbbb7774f54bf687429aaf6492-9a80b82f283a1d69ffdc64e32536627ae738a65b-blaze-wincairo-fullscreen-v1-windows-latest-release-runtime-no-tests-v4
 
       - name: Print WebKit build diagnostics
         if: failure() && steps.sdk.outputs.exists != 'true'
@@ -305,6 +321,7 @@ jobs:
             releaseTag = $spec.releaseTag
             webkitRepository = $spec.webkitRepository
             webkitCommit = $spec.webkitCommit
+            patchSet = $spec.patchSet
             port = $spec.port
             architecture = $spec.architecture
             configuration = $spec.configuration
@@ -344,6 +361,7 @@ jobs:
           WebKit WinCairo SDK release $($spec.releaseTag)
 
           WebKit source: $($spec.webkitRepository)@$($spec.webkitCommit)
+          Blaze patch set: $($spec.patchSet)
           Architecture: x64
           Configuration: Release
           vcpkg baseline: $($spec.vcpkgBuiltinBaseline)

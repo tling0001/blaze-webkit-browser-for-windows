@@ -40,6 +40,7 @@ public sealed partial class MainPage : Page
     private static readonly WebKitNative.CredentialBridgeCallback CredentialBridgeCallbackHandler = OnNativeCredentialBridge;
     private static readonly WebKitNative.NewPageCallback NewPageCallbackHandler = OnNativeNewPage;
     private static readonly WebKitNative.ClosePageCallback ClosePageCallbackHandler = OnNativePageClose;
+    private static readonly WebKitNative.FullscreenCallback FullscreenCallbackHandler = OnNativeFullscreen;
     private const string SafariWindowsUserAgent =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.2 Safari/605.1.15";
 
@@ -60,6 +61,7 @@ public sealed partial class MainPage : Page
     private bool _isAddressEditing;
     private bool _internalPageOpen;
     private bool _addressSubmissionQueued;
+    private bool _isBrowserFullscreen;
     private GCHandle _nativeCallbackHandle;
 
     private sealed record TabHeaderVisuals(TextBlock Title, Image Favicon, FontIcon Fallback);
@@ -248,6 +250,8 @@ public sealed partial class MainPage : Page
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
+        if (_isBrowserFullscreen)
+            SetBrowserFullscreen(false);
         _isPageUnloading = true;
         _internalPageRoots.Clear();
         _stateTimer?.Stop();
@@ -1624,6 +1628,19 @@ public sealed partial class MainPage : Page
         }
     }
 
+    private static void OnNativeFullscreen(IntPtr nativeHandle, bool isFullscreen, IntPtr userData)
+    {
+        try
+        {
+            if (GCHandle.FromIntPtr(userData).Target is MainPage page)
+                App.DispatcherQueue.TryEnqueue(() => page.SetBrowserFullscreen(isFullscreen));
+        }
+        catch
+        {
+            // The owning page may already be shutting down.
+        }
+    }
+
     private static void OnNativePageClose(IntPtr nativeHandle, IntPtr userData)
     {
         try
@@ -1836,6 +1853,7 @@ public sealed partial class MainPage : Page
         WebKitNative.SetJavaScriptDialogCallback(tab.NativeHandle, JavaScriptDialogCallbackHandler, callbackHandle);
         WebKitNative.SetCredentialBridgeCallback(tab.NativeHandle, CredentialBridgeCallbackHandler, callbackHandle);
         WebKitNative.SetPopupCallbacks(tab.NativeHandle, NewPageCallbackHandler, ClosePageCallbackHandler, callbackHandle);
+        WebKitNative.SetFullscreenCallback(tab.NativeHandle, FullscreenCallbackHandler, callbackHandle);
         WebKitNative.SetUserAgent(tab.NativeHandle, SafariWindowsUserAgent);
     }
 
@@ -1908,6 +1926,19 @@ public sealed partial class MainPage : Page
 
     private static bool IsInternalBrowserUrl(string? url) =>
         url?.StartsWith("blaze://", StringComparison.OrdinalIgnoreCase) == true;
+
+    private void SetBrowserFullscreen(bool fullscreen)
+    {
+        if (_isBrowserFullscreen == fullscreen || (_isPageUnloading && fullscreen))
+            return;
+        _isBrowserFullscreen = fullscreen;
+        TabStrip.Visibility = fullscreen ? Visibility.Collapsed : Visibility.Visible;
+        Toolbar.Visibility = fullscreen ? Visibility.Collapsed : Visibility.Visible;
+        LayoutRoot.RowDefinitions[2].Height = fullscreen ? new GridLength(0) : new GridLength(2);
+        if (App.Window is MainWindow window)
+            window.SetBrowserFullscreen(fullscreen);
+        LayoutNativeViews();
+    }
 
     private void LayoutNativeViews()
     {

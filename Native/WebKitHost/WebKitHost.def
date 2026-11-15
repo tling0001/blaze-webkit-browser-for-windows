@@ -27,4 +27,5 @@ EXPORTS
     WB_SetCredentialBridgeCallback
     WB_EvaluateJavaScript
     WB_SetPopupCallbacks
+    WB_SetFullscreenCallback
     WB_ResolveJavaScriptDialog
