@@ -1,5 +1,14 @@
 # Blaze release notes
 
+## [1.1.60] - 2026-11-15
+
+### Fullscreen verification
+- Extend the Release UI smoke test to exercise real requestFullscreen() and exitFullscreen() calls from trusted page clicks.
+- Assert that fullscreen hides the address toolbar, expands the WinUI window to the monitor bounds, and restores the exact prior windowed bounds and chrome on exit.
+
+### Versioning
+- Align product, assembly, file, informational and package versions at 1.1.60.
+
 ## [1.1.59] - 2026-11-15
 
 ### Build and D3D descriptor hardening

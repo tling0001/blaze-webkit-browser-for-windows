@@ -110,6 +110,8 @@ try {
   <button id="credential-submit" type="submit"
     style="position:fixed;left:24px;top:205px;width:180px;height:38px;">Sign in</button>
 </form>
+<button id="fullscreen-enter" type="button" style="position:fixed;left:420px;top:24px;width:180px;height:40px;">Enter fullscreen</button>
+<button id="fullscreen-exit" type="button" style="position:fixed;left:420px;top:72px;width:180px;height:38px;">Exit fullscreen</button>
 <script>
 document.getElementById('keyboard-focus-target').addEventListener('input', event => {
   document.title = 'Blaze WebKit Smoke — Keyboard: ' + event.target.value;
@@ -123,6 +125,17 @@ document.addEventListener('input', () => {
 document.getElementById('credential-form').addEventListener('submit', event => {
   event.preventDefault();
   document.title = 'Blaze Credential Form Submitted';
+});
+document.addEventListener('fullscreenchange', () => {
+  document.title = document.fullscreenElement ? 'Blaze WebKit Fullscreen Entered' : 'Blaze WebKit Fullscreen Exited';
+});
+document.getElementById('fullscreen-enter').addEventListener('click', async () => {
+  try { await document.documentElement.requestFullscreen(); }
+  catch { document.title = 'Blaze WebKit Fullscreen Request Failed'; }
+});
+document.getElementById('fullscreen-exit').addEventListener('click', async () => {
+  try { await document.exitFullscreen(); }
+  catch { document.title = 'Blaze WebKit Fullscreen Exit Failed'; }
 });
 </script>
 </body></html>
@@ -219,8 +232,12 @@ namespace BlazeSmoke {
     public struct NativePoint { public int X; public int Y; public NativePoint(int x, int y) { X = x; Y = y; } }
     [StructLayout(LayoutKind.Sequential)]
     public struct NativeRect { public int Left; public int Top; public int Right; public int Bottom; }
+    [StructLayout(LayoutKind.Sequential)]
+    public struct NativeMonitorInfo { public uint Size; public NativeRect Monitor; public NativeRect Work; public uint Flags; }
     public static class Native {
         [DllImport("user32.dll", SetLastError = true)] public static extern bool GetWindowRect(IntPtr hwnd, out NativeRect rect);
+        [DllImport("user32.dll")] public static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint flags);
+        [DllImport("user32.dll", SetLastError = true)] public static extern bool GetMonitorInfo(IntPtr monitor, ref NativeMonitorInfo info);
         [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(NativePoint point);
         [DllImport("user32.dll")] public static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
         [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hwnd);
@@ -348,6 +365,77 @@ namespace BlazeSmoke {
         throw 'Unicode keyboard input did not reach the focused WebKit HTML input after WinUI foreground restoration.'
     }
     $results.Add([ordered]@{ name = 'Keyboard text input reaches WebKit while WinUI remains foreground'; status = 'PASS' })
+
+    # Exercise the real WebKit Fullscreen API and verify that the WinUI owner
+    # enters the monitor bounds, hides browser chrome, and restores its window.
+    $windowedRect = New-Object BlazeSmoke.NativeRect
+    if (-not [BlazeSmoke.Native]::GetWindowRect($mainHwnd, [ref]$windowedRect)) {
+        throw 'Could not capture the browser window bounds before fullscreen.'
+    }
+    $monitorHandle = [BlazeSmoke.Native]::MonitorFromWindow($mainHwnd, 2) # MONITOR_DEFAULTTONEAREST
+    if ($monitorHandle -eq [IntPtr]::Zero) { throw 'Could not identify the browser window monitor.' }
+    $monitorInfo = New-Object BlazeSmoke.NativeMonitorInfo
+    $monitorInfo.Size = [uint32][Runtime.InteropServices.Marshal]::SizeOf([type][BlazeSmoke.NativeMonitorInfo])
+    if (-not [BlazeSmoke.Native]::GetMonitorInfo($monitorHandle, [ref]$monitorInfo)) {
+        throw 'GetMonitorInfo failed for the browser window monitor.'
+    }
+    function Invoke-FullscreenPageClick([int]$x, [int]$y) {
+        if (-not [BlazeSmoke.Native]::SetCursorPos($x, $y)) { throw 'Could not position the pointer over a fullscreen test button.' }
+        [BlazeSmoke.Native]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)
+        [BlazeSmoke.Native]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)
+        Start-Sleep -Milliseconds 150
+    }
+    Invoke-FullscreenPageClick ($hostRect.Left + 510) ($hostRect.Top + 44)
+    $fullscreenEntered = $false
+    for ($attempt = 0; $attempt -lt 50; $attempt++) {
+        $tree = (Invoke-WinAppChecked @('ui', 'inspect', '--interactive', '--json', '-w', [string]$mainWindow.hwnd)) -join [Environment]::NewLine
+        if ($tree.Contains('Blaze WebKit Fullscreen Entered')) { $fullscreenEntered = $true; break }
+        if ($tree.Contains('Blaze WebKit Fullscreen Request Failed')) { throw 'The WebKit Fullscreen API rejected the trusted click.' }
+        Start-Sleep -Milliseconds 100
+    }
+    if (-not $fullscreenEntered) { throw 'The WebKit Fullscreen API did not enter fullscreen after a trusted click.' }
+    Invoke-WinAppChecked @('ui', 'wait-for', 'AddressBox', '--gone', '-t', '5000', '-w', [string]$mainWindow.hwnd) | Out-Null
+    $fullscreenRect = New-Object BlazeSmoke.NativeRect
+    if (-not [BlazeSmoke.Native]::GetWindowRect($mainHwnd, [ref]$fullscreenRect)) {
+        throw 'Could not read the WinUI window bounds after entering fullscreen.'
+    }
+    $monitorRect = $monitorInfo.Monitor
+    if ([Math]::Abs($fullscreenRect.Left - $monitorRect.Left) -gt 3 -or
+        [Math]::Abs($fullscreenRect.Top - $monitorRect.Top) -gt 3 -or
+        [Math]::Abs($fullscreenRect.Right - $monitorRect.Right) -gt 3 -or
+        [Math]::Abs($fullscreenRect.Bottom - $monitorRect.Bottom) -gt 3) {
+        throw ("WinUI did not cover the monitor in fullscreen. Window=({0},{1},{2},{3}) Monitor=({4},{5},{6},{7})" -f $fullscreenRect.Left,$fullscreenRect.Top,$fullscreenRect.Right,$fullscreenRect.Bottom,$monitorRect.Left,$monitorRect.Top,$monitorRect.Right,$monitorRect.Bottom)
+    }
+    $fullscreenHostRect = New-Object BlazeSmoke.NativeRect
+    if (-not [BlazeSmoke.Native]::GetWindowRect($hostHandle, [ref]$fullscreenHostRect)) {
+        throw 'Could not read the WebKit host bounds while fullscreen.'
+    }
+    Invoke-FullscreenPageClick ($fullscreenHostRect.Left + 510) ($fullscreenHostRect.Top + 91)
+    $fullscreenExited = $false
+    for ($attempt = 0; $attempt -lt 50; $attempt++) {
+        $tree = (Invoke-WinAppChecked @('ui', 'inspect', '--interactive', '--json', '-w', [string]$mainWindow.hwnd)) -join [Environment]::NewLine
+        if ($tree.Contains('Blaze WebKit Fullscreen Exited')) { $fullscreenExited = $true; break }
+        if ($tree.Contains('Blaze WebKit Fullscreen Exit Failed')) { throw 'The WebKit Fullscreen API rejected the trusted exit click.' }
+        Start-Sleep -Milliseconds 100
+    }
+    if (-not $fullscreenExited) { throw 'The WebKit Fullscreen API did not exit fullscreen after the trusted click.' }
+    Invoke-WinAppChecked @('ui', 'wait-for', 'AddressBox', '-t', '5000', '-w', [string]$mainWindow.hwnd) | Out-Null
+    $restoredRect = New-Object BlazeSmoke.NativeRect
+    if (-not [BlazeSmoke.Native]::GetWindowRect($mainHwnd, [ref]$restoredRect)) {
+        throw 'Could not read the WinUI window bounds after exiting fullscreen.'
+    }
+    if ([Math]::Abs($restoredRect.Left - $windowedRect.Left) -gt 10 -or
+        [Math]::Abs($restoredRect.Top - $windowedRect.Top) -gt 10 -or
+        [Math]::Abs($restoredRect.Right - $windowedRect.Right) -gt 10 -or
+        [Math]::Abs($restoredRect.Bottom - $windowedRect.Bottom) -gt 10) {
+        throw ("Exiting fullscreen did not restore the prior window bounds. Before=({0},{1},{2},{3}) After=({4},{5},{6},{7})" -f $windowedRect.Left,$windowedRect.Top,$windowedRect.Right,$windowedRect.Bottom,$restoredRect.Left,$restoredRect.Top,$restoredRect.Right,$restoredRect.Bottom)
+    }
+    $hostRect = New-Object BlazeSmoke.NativeRect
+    if (-not [BlazeSmoke.Native]::GetWindowRect($hostHandle, [ref]$hostRect)) {
+        throw 'Could not refresh the WebKit host bounds after fullscreen exit.'
+    }
+    $results.Add([ordered]@{ name = 'WebKit Fullscreen API expands WinUI to monitor bounds and hides browser chrome'; status = 'PASS' })
+    $results.Add([ordered]@{ name = 'Fullscreen exit restores previous windowed bounds and browser chrome'; status = 'PASS' })
 
     # Close pages while navigation is active to exercise teardown with outstanding work.
     for ($iteration = 1; $iteration -le 3; $iteration++) {
