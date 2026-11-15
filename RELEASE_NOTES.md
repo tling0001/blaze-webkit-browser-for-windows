@@ -1,5 +1,15 @@
 # Blaze release notes
 
+## [1.1.63] - 2026-11-15
+
+### D3D responsiveness and lifecycle
+- Create per-view D3D11 texture rings off the WinUI dispatcher and marshal only WebKit descriptor submission back to the UI thread.
+- Resize shared-surface generations asynchronously on fullscreen entry/exit, serialize concurrent resizes, and discard stale creations when a native view is retired.
+- Preserve the HWND renderer if D3D creation, binding or resize fails.
+
+### Versioning
+- Align product, assembly, file, informational and package versions at 1.1.63.
+
 ## [1.1.62] - 2026-11-15
 
 ### SDK provenance
