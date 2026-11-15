@@ -2,10 +2,12 @@
 
 #include <d3d11.h>
 #include <dxgi1_2.h>
+#include <windows.ui.xaml.media.dxinterop.h>
 #include <wrl/client.h>
 
 #include <array>
 #include <cstdint>
+#include <mutex>
 #include <new>
 
 using Microsoft::WRL::ComPtr;
@@ -21,6 +23,10 @@ struct WB_GPU_SURFACE {
     ComPtr<ID3D11DeviceContext> context;
     std::array<Slot, Blaze::Gpu::kMaximumRingSlots> slots;
     Blaze::Gpu::SharedSurfaceDescriptor descriptor{};
+    ComPtr<IDXGISwapChain1> swapChain;
+    ComPtr<ISwapChainPanelNative> panelNative;
+    std::mutex presentationMutex;
+    std::uint64_t lastPresentedSequence{};
 };
 
 namespace {
@@ -143,9 +149,114 @@ BOOL WB_GpuSurfaceGetDescriptor(
     return TRUE;
 }
 
+HRESULT WB_GpuSurfaceAttachSwapChainPanel(WB_GPU_SURFACE_HANDLE surface, IUnknown* panel)
+{
+    if (!surface || !panel)
+        return E_INVALIDARG;
+    std::lock_guard lock(surface->presentationMutex);
+    if (surface->swapChain)
+        return HRESULT_FROM_WIN32(ERROR_ALREADY_INITIALIZED);
+
+    ComPtr<ISwapChainPanelNative> panelNative;
+    auto result = panel->QueryInterface(IID_PPV_ARGS(&panelNative));
+    if (FAILED(result))
+        return result;
+
+    ComPtr<IDXGIDevice> dxgiDevice;
+    result = surface->device.As(&dxgiDevice);
+    if (FAILED(result))
+        return result;
+    ComPtr<IDXGIAdapter> adapter;
+    result = dxgiDevice->GetAdapter(&adapter);
+    if (FAILED(result))
+        return result;
+    ComPtr<IDXGIFactory2> factory;
+    result = adapter->GetParent(IID_PPV_ARGS(&factory));
+    if (FAILED(result))
+        return result;
+
+    DXGI_SWAP_CHAIN_DESC1 description{};
+    description.Width = surface->descriptor.width;
+    description.Height = surface->descriptor.height;
+    description.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    description.SampleDesc.Count = 1;
+    description.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+    description.BufferCount = 2;
+    description.Scaling = DXGI_SCALING_STRETCH;
+    description.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
+    description.AlphaMode = DXGI_ALPHA_MODE_IGNORE;
+
+    ComPtr<IDXGISwapChain1> swapChain;
+    result = factory->CreateSwapChainForComposition(
+        surface->device.Get(), &description, nullptr, &swapChain);
+    if (FAILED(result))
+        return result;
+    result = panelNative->SetSwapChain(swapChain.Get());
+    if (FAILED(result))
+        return result;
+
+    surface->panelNative = std::move(panelNative);
+    surface->swapChain = std::move(swapChain);
+    surface->lastPresentedSequence = 0;
+    return S_OK;
+}
+
+HRESULT WB_GpuSurfacePresent(
+    WB_GPU_SURFACE_HANDLE surface, const Blaze::Gpu::FrameReadyMessage* frame)
+{
+    using namespace Blaze::Gpu;
+    if (!surface || !frame || !isValid(*frame, surface->descriptor))
+        return E_INVALIDARG;
+    std::lock_guard lock(surface->presentationMutex);
+    if (!surface->swapChain || !surface->panelNative)
+        return E_HANDLE;
+    if (frame->frameSequence <= surface->lastPresentedSequence)
+        return S_FALSE;
+
+    auto& slot = surface->slots[frame->slotIndex];
+    const auto acquired = slot.keyedMutex->AcquireSync(frame->producerReleaseKey, 0);
+    if (acquired == WAIT_TIMEOUT)
+        return HRESULT_FROM_WIN32(WAIT_TIMEOUT);
+    if (FAILED(acquired))
+        return acquired;
+
+    ComPtr<ID3D11Texture2D> backBuffer;
+    auto result = surface->swapChain->GetBuffer(0, IID_PPV_ARGS(&backBuffer));
+    if (SUCCEEDED(result)) {
+        // Same-device BGRA8 GPU copy; no CPU readback or bitmap IPC.
+        surface->context->CopyResource(backBuffer.Get(), slot.texture.Get());
+        result = surface->swapChain->Present(1, 0);
+    }
+    const auto released = slot.keyedMutex->ReleaseSync(frame->consumerReleaseKey);
+    if (FAILED(released))
+        return released;
+    if (SUCCEEDED(result))
+        surface->lastPresentedSequence = frame->frameSequence;
+    return result;
+}
+
+HRESULT WB_GpuSurfaceDetachSwapChainPanel(WB_GPU_SURFACE_HANDLE surface)
+{
+    if (!surface)
+        return E_INVALIDARG;
+    std::lock_guard lock(surface->presentationMutex);
+    if (surface->panelNative) {
+        const auto result = surface->panelNative->SetSwapChain(nullptr);
+        if (FAILED(result))
+            return result;
+    }
+    surface->swapChain.Reset();
+    surface->panelNative.Reset();
+    surface->lastPresentedSequence = 0;
+    return S_OK;
+}
+
 void WB_GpuSurfaceDestroy(WB_GPU_SURFACE_HANDLE surface)
 {
-    // The caller must first retire the WebKit GPU-process consumer and wait for
-    // its generation acknowledgement. Releasing this object invalidates tokens.
+    if (!surface)
+        return;
+    (void)WB_GpuSurfaceDetachSwapChainPanel(surface);
+    // Retire the WebKit GPU-process consumer and acknowledge this generation
+    // before destroying the owner; shared-resource tokens die with this object.
     delete surface;
 }

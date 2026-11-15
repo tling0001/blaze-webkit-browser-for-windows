@@ -1,5 +1,18 @@
 # Blaze release notes
 
+## [1.1.54] - 2026-11-15
+
+### WinUI composition presentation and native keyboard focus
+- Add native SwapChainPanel attachment through ISwapChainPanelNative, using a flip-sequential DXGI composition swap chain created on the shared-surface D3D11 device.
+- Add validated frame presentation: reject stale sequences and invalid generation/slot/key metadata, acquire the producer keyed-mutex key without blocking, copy BGRA8 textures directly on the GPU, present, and release the consumer return key.
+- Add a managed WinUI SwapChainPanel wrapper for creating, attaching, presenting, detaching and retiring the native surface.
+- Keep composition presentation opt-in until WebKit's GPU process sends per-view frame-ready IPC; the live HWND-backed WCScene renderer remains enabled.
+- Keep cross-thread input queues attached while WebKit owns focus, and defer detachment until focus has actually moved away, avoiding keyboard input loss during owner-window foreground restoration.
+
+### Versioning
+- Align product, assembly, file, informational and package versions at 1.1.54.
+
+
 ## [1.1.53] - 2026-11-13
 
 ### Native D3D shared-surface resource owner

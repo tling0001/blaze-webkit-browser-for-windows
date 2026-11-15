@@ -125,3 +125,77 @@ internal static class WebKitNative
         return length <= 0 ? string.Empty : buffer.ToString();
     }
 }
+
+
+/// <summary>
+/// Opt-in D3D11-to-WinUI composition surface. The WebKit GPU process supplies
+/// validated FrameReadyMessage values after the per-view descriptor IPC lands.
+/// </summary>
+internal sealed class GpuCompositionSurface : IDisposable
+{
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct FrameReadyMessage
+    {
+        public uint StructSize;
+        public uint ProtocolVersion;
+        public ulong ViewIdentifier;
+        public ulong ResizeGeneration;
+        public ulong FrameSequence;
+        public uint SlotIndex;
+        public uint Reserved;
+        public ulong ProducerReleaseKey;
+        public ulong ConsumerReleaseKey;
+        public ulong ProducerQpc;
+    }
+
+    private const string Library = "WebKitHost.dll";
+    private IntPtr _handle;
+
+    [DllImport(Library, EntryPoint = "WB_GpuSurfaceCreate", CallingConvention = CallingConvention.Cdecl)]
+    private static extern IntPtr CreateNative(ulong viewIdentifier, uint width, uint height, ulong generation);
+    [DllImport(Library, EntryPoint = "WB_GpuSurfaceAttachSwapChainPanel", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int AttachNative(IntPtr surface, IntPtr panelUnknown);
+    [DllImport(Library, EntryPoint = "WB_GpuSurfacePresent", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int PresentNative(IntPtr surface, in FrameReadyMessage frame);
+    [DllImport(Library, EntryPoint = "WB_GpuSurfaceDetachSwapChainPanel", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int DetachNative(IntPtr surface);
+    [DllImport(Library, EntryPoint = "WB_GpuSurfaceDestroy", CallingConvention = CallingConvention.Cdecl)]
+    private static extern void DestroyNative(IntPtr surface);
+
+    internal GpuCompositionSurface(ulong viewIdentifier, uint width, uint height, ulong generation)
+    {
+        _handle = CreateNative(viewIdentifier, width, height, generation);
+        if (_handle == IntPtr.Zero)
+            throw new InvalidOperationException("The native D3D11 shared-texture ring could not be created.");
+    }
+
+    internal void Attach(Microsoft.UI.Xaml.Controls.SwapChainPanel panel)
+    {
+        ArgumentNullException.ThrowIfNull(panel);
+        ObjectDisposedException.ThrowIf(_handle == IntPtr.Zero, this);
+        var unknown = Marshal.GetIUnknownForObject(panel);
+        try { Marshal.ThrowExceptionForHR(AttachNative(_handle, unknown)); }
+        finally { Marshal.Release(unknown); }
+    }
+
+    internal void Present(in FrameReadyMessage frame)
+    {
+        ObjectDisposedException.ThrowIf(_handle == IntPtr.Zero, this);
+        Marshal.ThrowExceptionForHR(PresentNative(_handle, frame));
+    }
+
+    internal void Detach()
+    {
+        if (_handle != IntPtr.Zero)
+            Marshal.ThrowExceptionForHR(DetachNative(_handle));
+    }
+
+    public void Dispose()
+    {
+        var handle = Interlocked.Exchange(ref _handle, IntPtr.Zero);
+        if (handle == IntPtr.Zero)
+            return;
+        DestroyNative(handle);
+        GC.SuppressFinalize(this);
+    }
+}
