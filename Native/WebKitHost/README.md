@@ -38,3 +38,6 @@ The pinned WinCairo fullscreen manager reports enter/exit transitions to the own
 ## WebKit D3D descriptor IPC
 
 The native host can bind a D3D shared-surface ring to a WKView. The pinned WebKit patch series forwards the fixed descriptor through the WebPage and DrawingAreaWC path into the GPU-process RemoteWCLayerTreeHost, where it is validated and retained for the next import/rendering stage. This is descriptor transport only: GPU-process ANGLE import, WCScene rendering into the ring and actual WinUI composition presentation remain subsequent milestones.
+
+
+The descriptor-only ring is recreated with a new generation on fullscreen entry/exit. Because the GPU process has not started importing textures yet, the current host can release the previous ring after submitting the replacement descriptor. A future live importer must add an explicit GPU-process acknowledgement before this release point.

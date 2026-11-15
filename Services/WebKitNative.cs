@@ -190,6 +190,10 @@ internal sealed class GpuCompositionSurface : IDisposable
 
     private const string Library = "WebKitHost.dll";
     private IntPtr _handle;
+    private readonly ulong _viewIdentifier;
+    private ulong _generation;
+    private uint _width;
+    private uint _height;
 
     [DllImport(Library, EntryPoint = "WB_GpuSurfaceCreate", CallingConvention = CallingConvention.Cdecl)]
     private static extern IntPtr CreateNative(ulong viewIdentifier, uint width, uint height, ulong generation);
@@ -210,6 +214,10 @@ internal sealed class GpuCompositionSurface : IDisposable
 
     internal GpuCompositionSurface(ulong viewIdentifier, uint width, uint height, ulong generation)
     {
+        _viewIdentifier = viewIdentifier;
+        _generation = generation;
+        _width = width;
+        _height = height;
         _handle = CreateNative(viewIdentifier, width, height, generation);
         if (_handle == IntPtr.Zero)
             throw new InvalidOperationException("The native D3D11 shared-texture ring could not be created.");
@@ -236,6 +244,38 @@ internal sealed class GpuCompositionSurface : IDisposable
         ObjectDisposedException.ThrowIf(_handle == IntPtr.Zero, this);
         if (nativeView == IntPtr.Zero || !BindToWebKitViewNative(nativeView, _handle))
             throw new InvalidOperationException("The shared D3D11 surface descriptor could not be forwarded to the WebKit GPU process.");
+    }
+
+    internal void ResizeAndBind(IntPtr nativeView, uint width, uint height)
+    {
+        ObjectDisposedException.ThrowIf(_handle == IntPtr.Zero, this);
+        if (nativeView == IntPtr.Zero)
+            throw new ArgumentException("A live WebKit view is required.", nameof(nativeView));
+        if (width == _width && height == _height)
+            return;
+
+        var nextGeneration = checked(_generation + 1);
+        var nextHandle = CreateNative(_viewIdentifier, width, height, nextGeneration);
+        if (nextHandle == IntPtr.Zero)
+            throw new InvalidOperationException("The resized D3D11 shared-texture ring could not be created.");
+        try
+        {
+            // The current GPU-process receiver only stores descriptors. Once texture import is enabled,
+            // replace this with an explicit GPU-process acknowledgement before releasing the old ring.
+            if (!BindToWebKitViewNative(nativeView, nextHandle))
+                throw new InvalidOperationException("The resized D3D11 descriptor could not be submitted to WebKit.");
+        }
+        catch
+        {
+            DestroyNative(nextHandle);
+            throw;
+        }
+
+        var previousHandle = Interlocked.Exchange(ref _handle, nextHandle);
+        DestroyNative(previousHandle);
+        _generation = nextGeneration;
+        _width = width;
+        _height = height;
     }
 
     internal void Attach(Microsoft.UI.Xaml.Controls.SwapChainPanel panel)

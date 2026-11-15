@@ -1,5 +1,15 @@
 # Blaze release notes
 
+## [1.1.58] - 2026-11-15
+
+### D3D fullscreen groundwork
+- Recreate each per-view shared texture ring with a new resize generation when WebKit fullscreen enters or exits, and forward the replacement descriptor through the WebKit IPC path.
+- Keep the prior renderer untouched: the GPU process currently retains descriptors but does not yet import or render into them. The descriptor-only resize path explicitly requires an acknowledgement before old resources can be released once GPU import is enabled.
+- Expose the GPU-process descriptor state for the upcoming ANGLE/TextureMapper import stage.
+
+### Versioning
+- Align product, assembly, file, informational and package versions at 1.1.58.
+
 ## [1.1.57] - 2026-11-15
 
 ### D3D shared-surface IPC

@@ -1962,6 +1962,20 @@ public sealed partial class MainPage : Page
         }
     }
 
+    private void ResizeGpuSurfacesForFullscreen()
+    {
+        if (_gpuSurfaces.Count == 0 || _isPageUnloading)
+            return;
+        var (_, _, width, height) = GetBrowserSurfaceBounds();
+        var pixelWidth = (uint)Math.Max(1, width);
+        var pixelHeight = (uint)Math.Max(1, height);
+        foreach (var pair in _gpuSurfaces.ToArray())
+        {
+            try { pair.Value.ResizeAndBind(pair.Key, pixelWidth, pixelHeight); }
+            catch (Exception exception) { CrashLogger.LogException("D3D11 fullscreen surface resize failed; HWND rendering remains active.", exception); }
+        }
+    }
+
     private void SetBrowserFullscreen(bool fullscreen)
     {
         if (_isBrowserFullscreen == fullscreen || (_isPageUnloading && fullscreen))
@@ -1973,6 +1987,7 @@ public sealed partial class MainPage : Page
         if (App.Window is MainWindow window)
             window.SetBrowserFullscreen(fullscreen);
         LayoutNativeViews();
+        App.DispatcherQueue.TryEnqueue(ResizeGpuSurfacesForFullscreen);
     }
 
     private void LayoutNativeViews()

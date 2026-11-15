@@ -15,7 +15,7 @@ diff --git a/Source/WebKit/UIProcess/API/C/win/WKView.h b/Source/WebKit/UIProces
 diff --git a/Source/WebKit/UIProcess/API/C/win/WKView.cpp b/Source/WebKit/UIProcess/API/C/win/WKView.cpp
 --- a/Source/WebKit/UIProcess/API/C/win/WKView.cpp
 +++ b/Source/WebKit/UIProcess/API/C/win/WKView.cpp
-@@ -1,8 +1,13 @@
+@@ -70,8 +70,13 @@
  void WKViewSetUsesOffscreenRendering(WKViewRef viewRef, bool enabled)
  {
      toImpl(viewRef)->setUsesOffscreenRendering(enabled);
@@ -52,13 +52,13 @@ diff --git a/Source/WebKit/UIProcess/win/WebView.cpp b/Source/WebKit/UIProcess/w
 +#include "WebPageMessages.h"
  #include "WebPageProxy.h"
 +#include "WebProcessProxy.h"
-@@ -1,3 +1,5 @@
+@@ -50,3 +50,5 @@
  #include <array>
 +#include <cstring>
  #include <commctrl.h>
  #include <wtf/FileSystem.h>
 +#include <wtf/Vector.h>
-@@ -1,6 +1,25 @@
+@@ -950,6 +950,25 @@
  bool WebView::usesOffscreenRendering() const
  {
      return m_usesOffscreenRendering;
@@ -84,7 +84,6 @@ diff --git a/Source/WebKit/UIProcess/win/WebView.cpp b/Source/WebKit/UIProcess/w
 +}
 +
  } // namespace WebKit
-
 diff --git a/Source/WebKit/WebProcess/WebPage/WebPage.messages.in b/Source/WebKit/WebProcess/WebPage/WebPage.messages.in
 --- a/Source/WebKit/WebProcess/WebPage/WebPage.messages.in
 +++ b/Source/WebKit/WebProcess/WebPage/WebPage.messages.in
@@ -169,7 +168,7 @@ diff --git a/Source/WebKit/WebProcess/GPU/graphics/wc/RemoteWCLayerTreeHostProxy
 diff --git a/Source/WebKit/WebProcess/GPU/graphics/wc/RemoteWCLayerTreeHostProxy.cpp b/Source/WebKit/WebProcess/GPU/graphics/wc/RemoteWCLayerTreeHostProxy.cpp
 --- a/Source/WebKit/WebProcess/GPU/graphics/wc/RemoteWCLayerTreeHostProxy.cpp
 +++ b/Source/WebKit/WebProcess/GPU/graphics/wc/RemoteWCLayerTreeHostProxy.cpp
-@@ -1,6 +1,11 @@
+@@ -90,6 +90,11 @@
  void RemoteWCLayerTreeHostProxy::update(WCUpdateInfo&& updateInfo, CompletionHandler<void(std::optional<WebKit::UpdateInfo>)>&& completionHandler)
  {
      sendWithAsyncReply(Messages::RemoteWCLayerTreeHost::Update(updateInfo), WTF::move(completionHandler));
@@ -198,13 +197,14 @@ diff --git a/Source/WebKit/GPUProcess/graphics/wc/RemoteWCLayerTreeHost.h b/Sour
  #include <wtf/RefCounted.h>
  #include <wtf/TZoneMalloc.h>
 +#include <wtf/Vector.h>
-@@ -55,4 +56,5 @@
+@@ -55,4 +56,6 @@
      // message handlers
      void update(WCUpdateInfo&&, CompletionHandler<void(std::optional<WebKit::UpdateInfo>)>&&);
 +    void setSharedSurfaceDescriptor(Vector<uint8_t>&&);
++    const Vector<uint8_t>& sharedSurfaceDescriptor() const { return m_sharedSurfaceDescriptor; }
  
      void ref() const final { RefCounted::ref(); }
-@@ -85,2 +87,3 @@
+@@ -60,2 +62,3 @@
      RefPtr<WCSharedSceneContextHolder::Holder> m_sharedSceneContextHolder;
      std::unique_ptr<WCScene> m_scene;
 +    Vector<uint8_t> m_sharedSurfaceDescriptor;
