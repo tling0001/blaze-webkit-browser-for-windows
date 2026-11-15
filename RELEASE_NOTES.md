@@ -1,5 +1,14 @@
 # Blaze release notes
 
+## [1.1.62] - 2026-11-15
+
+### SDK provenance
+- Validate the patch-series identifier in both the downloaded SDK release manifest and the embedded SDK manifest.
+- Match the SDK workflow to either the exact SDK-definition commit or the current push head, so a multi-commit push does not wait for a workflow run under an intermediate SHA.
+
+### Versioning
+- Align product, assembly, file, informational and package versions at 1.1.62.
+
 ## [1.1.61] - 2026-11-15
 
 ### Native keyboard focus

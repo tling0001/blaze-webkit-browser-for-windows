@@ -70,7 +70,7 @@ jobs:
             $sdkRunsJson = & gh run list --repo $env:GITHUB_REPOSITORY --workflow build-webkit-sdk.yml --branch main --limit 100 --json headSha,status,conclusion 2>$null
             if ($LASTEXITCODE -eq 0 -and $sdkRunsJson) {
               $sdkRuns = @($sdkRunsJson | ConvertFrom-Json)
-              $matchingSdkRun = $sdkRuns | Where-Object { $_.headSha -eq $expectedSdkSourceSha } | Select-Object -First 1
+              $matchingSdkRun = $sdkRuns | Where-Object { $_.headSha -eq $expectedSdkSourceSha -or $_.headSha -eq $env:GITHUB_SHA } | Select-Object -First 1
               if ($matchingSdkRun -and $matchingSdkRun.status -eq 'completed' -and
                   $matchingSdkRun.conclusion -in @('failure', 'timed_out', 'startup_failure', 'action_required')) {
                 throw "WebKit SDK workflow for pinned SDK definition $expectedSdkSourceSha completed with conclusion '$($matchingSdkRun.conclusion)'. See the Build versioned WebKit SDK run logs."
@@ -90,7 +90,7 @@ jobs:
           $archives = @(Get-ChildItem -LiteralPath $download -Filter 'Blaze-WebKitSDK-*.zip' -File)
           if (-not (Test-Path $manifestPath) -or -not (Test-Path $checksumPath) -or $archives.Count -ne 1) { throw 'SDK release must contain one ZIP, sdk-manifest.json and sdk.sha256.' }
           $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
-          if ($manifest.releaseTag -ne $sdkTag -or $manifest.webkitCommit -ne $spec.webkitCommit -or $manifest.architecture -ne 'x64' -or $manifest.port -ne 'WinCairo' -or [int]$manifest.sdkFormatVersion -ne [int]$spec.sdkFormatVersion) { throw 'SDK manifest does not match the pinned source, format or architecture.' }
+          if ($manifest.releaseTag -ne $sdkTag -or $manifest.webkitCommit -ne $spec.webkitCommit -or $manifest.patchSet -ne $spec.patchSet -or $manifest.architecture -ne 'x64' -or $manifest.port -ne 'WinCairo' -or [int]$manifest.sdkFormatVersion -ne [int]$spec.sdkFormatVersion) { throw 'SDK manifest does not match the pinned source, patch series, format or architecture.' }
           $actualHash = (Get-FileHash -LiteralPath $archives[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
           $expectedHash = ([string]$manifest.archiveSha256).ToLowerInvariant()
           $checksumHash = ((Get-Content -LiteralPath $checksumPath -Raw).Trim() -split '\s+')[0].ToLowerInvariant()
@@ -98,7 +98,7 @@ jobs:
           $sdkRoot = Join-Path $PWD 'webkit-sdk'
           Expand-Archive -LiteralPath $archives[0].FullName -DestinationPath $sdkRoot -Force
           $embeddedManifest = Get-Content -LiteralPath (Join-Path $sdkRoot 'sdk-manifest.json') -Raw | ConvertFrom-Json
-          if ($embeddedManifest.webkitCommit -ne $spec.webkitCommit -or $embeddedManifest.vcpkgBuiltinBaseline -ne $spec.vcpkgBuiltinBaseline -or $embeddedManifest.webkitRequirementsBaseline -ne $spec.webkitRequirementsBaseline) { throw 'Embedded SDK provenance does not match eng\WebKitSdk.json.' }
+          if ($embeddedManifest.webkitCommit -ne $spec.webkitCommit -or $embeddedManifest.patchSet -ne $spec.patchSet -or $embeddedManifest.vcpkgBuiltinBaseline -ne $spec.vcpkgBuiltinBaseline -or $embeddedManifest.webkitRequirementsBaseline -ne $spec.webkitRequirementsBaseline) { throw 'Embedded SDK provenance does not match eng\WebKitSdk.json.' }
           foreach ($required in @('include\WebKit\WKView.h','bin64\WebKit2.dll','dependencies.lock.txt')) { if (-not (Test-Path (Join-Path $sdkRoot $required))) { throw "SDK is incomplete: missing $required." } }
           if (-not ((Test-Path (Join-Path $sdkRoot 'lib64\WebKit2.lib')) -or (Test-Path (Join-Path $sdkRoot 'bin64\WebKit2.lib')))) { throw 'SDK does not contain WebKit2.lib.' }
           cmake -S Native\WebKitHost -B WebKitHostBuild -A x64 "-DWEBKIT_ROOT=$sdkRoot"
