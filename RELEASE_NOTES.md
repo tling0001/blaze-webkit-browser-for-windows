@@ -1,5 +1,15 @@
 # Blaze release notes
 
+## [1.1.61] - 2026-11-15
+
+### Native keyboard focus
+- Allow the owned WinCairo host to activate during the mouse-activation transaction so its WebKit child can receive keyboard focus.
+- Restore the WinUI owner as the foreground window on the deferred owner queue, then reapply WebKit focus only when the click still targets that view.
+- Keep the end-to-end Unicode keyboard smoke assertion enabled.
+
+### Versioning
+- Align product, assembly, file, informational and package versions at 1.1.61.
+
 ## [1.1.60] - 2026-11-15
 
 ### Fullscreen verification

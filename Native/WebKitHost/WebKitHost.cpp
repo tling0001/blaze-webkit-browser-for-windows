@@ -594,11 +594,12 @@ LRESULT CALLBACK nativeWebKitWindowProc(HWND window, UINT message, WPARAM wParam
     UINT_PTR subclassId, DWORD_PTR ownerValue)
 {
     if (message == WM_MOUSEACTIVATE) {
-        // Give WebKit keyboard focus, but do not try to activate its owned
-        // top-level host while Windows is still processing WM_MOUSEACTIVATE.
+        // Activate the owned host long enough for Windows to assign keyboard
+        // focus to the WebKit child. The deferred owner-queue message restores
+        // the WinUI foreground window and reapplies WebKit focus afterward.
         auto* view = reinterpret_cast<WB_VIEW*>(ownerValue);
         deferOwnerActivationRestore(view, view ? view->parentWindow : nullptr, window);
-        return MA_NOACTIVATE;
+        return MA_ACTIVATE;
     }
     if (message == WM_KILLFOCUS) {
         auto* view = reinterpret_cast<WB_VIEW*>(ownerValue);
@@ -617,10 +618,10 @@ LRESULT CALLBACK nativeSurfaceHostProc(HWND window, UINT message, WPARAM wParam,
     if (message == WM_MOUSEACTIVATE) {
         auto* view = reinterpret_cast<WB_VIEW*>(GetWindowLongPtrW(window, GWLP_USERDATA));
         const auto owner = view ? view->parentWindow : GetWindow(window, GW_OWNER);
-        // Focus WebKit during mouse activation, then restore the WinUI owner
-        // on its own message queue after this activation transaction unwinds.
+        // Let the owned host activate so its child can take keyboard focus;
+        // the deferred owner message restores the WinUI foreground window.
         deferOwnerActivationRestore(view, owner, view ? view->window : nullptr);
-        return MA_NOACTIVATE;
+        return MA_ACTIVATE;
     }
     if (message == WM_NCDESTROY) SetWindowLongPtrW(window, GWLP_USERDATA, 0);
     return DefWindowProcW(window, message, wParam, lParam);
