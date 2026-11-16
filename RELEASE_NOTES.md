@@ -1,5 +1,15 @@
 # Blaze release notes
 
+## [1.1.66] - 2026-11-15
+
+### WebKit SDK patch-series repair
+- Rebase every shared-surface descriptor IPC patch hunk against the exact pinned WebKit commit instead of relying on stale source line offsets.
+- Advance the immutable WebKit SDK release tag and patch-set identity so CI cannot reuse the failed or unpatched SDK artifact.
+- Keep the WinCairo HWND renderer as the production fallback while D3D GPU-process texture import and frame presentation remain in progress.
+
+### Versioning
+- Align product, assembly, file, informational and package versions at 1.1.66.
+
 ## [1.1.65] - 2026-11-15
 
 ### D3D async error handling
