@@ -16,13 +16,13 @@
     <AppxPackageSigningEnabled>false</AppxPackageSigningEnabled>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <Version>1.1.66</Version>
-    <AssemblyVersion>1.1.66.0</AssemblyVersion>
-    <FileVersion>1.1.66.0</FileVersion>
-    <InformationalVersion>1.1.66</InformationalVersion>
+    <Version>1.1.67</Version>
+    <AssemblyVersion>1.1.67.0</AssemblyVersion>
+    <FileVersion>1.1.67.0</FileVersion>
+    <InformationalVersion>1.1.67</InformationalVersion>
     <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
     <WindowsPackageType>None</WindowsPackageType>
-    <AppxPackageVersion>1.1.66.0</AppxPackageVersion>
+    <AppxPackageVersion>1.1.67.0</AppxPackageVersion>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <SelfContained>true</SelfContained>
   </PropertyGroup>

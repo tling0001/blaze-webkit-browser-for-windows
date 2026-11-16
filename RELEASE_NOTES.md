@@ -1,5 +1,15 @@
 # Blaze release notes
 
+## [1.1.67] - 2026-11-15
+
+### Correct WebKit SDK patch metadata
+- Recalculate old and new unified-diff hunk coordinates against the pinned WebKit source, preserving exact hunk lengths and insertion offsets.
+- Advance the immutable SDK release tag and patch-set identity so no malformed intermediate SDK patch can be reused.
+- Keep the descriptor IPC experiment opt-in and preserve HWND rendering until the GPU-process import/presentation path is validated.
+
+### Versioning
+- Align product, assembly, file, informational and package versions at 1.1.67.
+
 ## [1.1.66] - 2026-11-15
 
 ### WebKit SDK patch-series repair

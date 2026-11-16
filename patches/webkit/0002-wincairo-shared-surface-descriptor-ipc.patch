@@ -1,12 +1,12 @@
 diff --git a/Source/WebKit/UIProcess/API/C/win/WKView.h b/Source/WebKit/UIProcess/API/C/win/WKView.h
 --- a/Source/WebKit/UIProcess/API/C/win/WKView.h
 +++ b/Source/WebKit/UIProcess/API/C/win/WKView.h
-@@ -29,3 +3,undefined @@
+@@ -29,3 +29,3 @@
  #include <WebKit/WKBase.h>
  #include <WebKit/WKGeometry.h>
 +#include <stdint.h>
  #include <windows.h>
-@@ -43,4 +3,undefined @@
+@@ -43,3 +44,4 @@
  WK_EXPORT void WKViewSetIsInWindow(WKViewRef view, bool isInWindow);
  WK_EXPORT void WKViewSetUsesOffscreenRendering(WKViewRef view, bool enabled);
 +WK_EXPORT void WKViewSetSharedSurfaceDescriptor(WKViewRef view, const uint8_t* descriptor, uint32_t descriptorSize);
@@ -15,7 +15,7 @@ diff --git a/Source/WebKit/UIProcess/API/C/win/WKView.h b/Source/WebKit/UIProces
 diff --git a/Source/WebKit/UIProcess/API/C/win/WKView.cpp b/Source/WebKit/UIProcess/API/C/win/WKView.cpp
 --- a/Source/WebKit/UIProcess/API/C/win/WKView.cpp
 +++ b/Source/WebKit/UIProcess/API/C/win/WKView.cpp
-@@ -66,13 +8,undefined @@
+@@ -66,8 +66,13 @@
  void WKViewSetUsesOffscreenRendering(WKViewRef viewRef, bool enabled)
  {
      toImpl(viewRef)->setUsesOffscreenRendering(enabled);
@@ -33,11 +33,11 @@ diff --git a/Source/WebKit/UIProcess/API/C/win/WKView.cpp b/Source/WebKit/UIProc
 diff --git a/Source/WebKit/UIProcess/win/WebView.h b/Source/WebKit/UIProcess/win/WebView.h
 --- a/Source/WebKit/UIProcess/win/WebView.h
 +++ b/Source/WebKit/UIProcess/win/WebView.h
-@@ -35,3 +2,undefined @@
+@@ -35,2 +35,3 @@
  #include <wtf/Forward.h>
  #include <wtf/RefPtr.h>
 +#include <stdint.h>
-@@ -74,5 +4,undefined @@
+@@ -73,4 +74,5 @@
      void setUsesOffscreenRendering(bool);
      bool usesOffscreenRendering() const;
 +    void setSharedSurfaceDescriptor(const uint8_t*, uint32_t);
@@ -47,18 +47,18 @@ diff --git a/Source/WebKit/UIProcess/win/WebView.h b/Source/WebKit/UIProcess/win
 diff --git a/Source/WebKit/UIProcess/win/WebView.cpp b/Source/WebKit/UIProcess/win/WebView.cpp
 --- a/Source/WebKit/UIProcess/win/WebView.cpp
 +++ b/Source/WebKit/UIProcess/win/WebView.cpp
-@@ -41,4 +2,undefined @@
+@@ -41,2 +41,4 @@
  #include "WebPageGroup.h"
 +#include "WebPageMessages.h"
  #include "WebPageProxy.h"
 +#include "WebProcessProxy.h"
-@@ -56,5 +3,undefined @@
+@@ -54,3 +56,5 @@
  #include <array>
 +#include <cstring>
  #include <commctrl.h>
  #include <wtf/FileSystem.h>
 +#include <wtf/Vector.h>
-@@ -971,25 +6,undefined @@
+@@ -967,6 +971,25 @@
  bool WebView::usesOffscreenRendering() const
  {
      return m_usesOffscreenRendering;
@@ -87,7 +87,7 @@ diff --git a/Source/WebKit/UIProcess/win/WebView.cpp b/Source/WebKit/UIProcess/w
 diff --git a/Source/WebKit/WebProcess/WebPage/WebPage.messages.in b/Source/WebKit/WebProcess/WebPage/WebPage.messages.in
 --- a/Source/WebKit/WebProcess/WebPage/WebPage.messages.in
 +++ b/Source/WebKit/WebProcess/WebPage/WebPage.messages.in
-@@ -32,4 +3,undefined @@
+@@ -32,3 +32,4 @@
      SetBackgroundColor(std::optional<WebCore::Color> color)
 +    SetSharedSurfaceDescriptor(Vector<uint8_t> descriptor)
  
@@ -96,7 +96,7 @@ diff --git a/Source/WebKit/WebProcess/WebPage/WebPage.messages.in b/Source/WebKi
 diff --git a/Source/WebKit/WebProcess/WebPage/WebPage.h b/Source/WebKit/WebProcess/WebPage/WebPage.h
 --- a/Source/WebKit/WebProcess/WebPage/WebPage.h
 +++ b/Source/WebKit/WebProcess/WebPage/WebPage.h
-@@ -669,3 +2,undefined @@
+@@ -669,2 +669,3 @@
      void setSize(const WebCore::IntSize&);
 +    void setSharedSurfaceDescriptor(Vector<uint8_t>&&);
      const WebCore::IntSize& size() const LIFETIME_BOUND { return m_viewSize; }
@@ -104,7 +104,7 @@ diff --git a/Source/WebKit/WebProcess/WebPage/WebPage.h b/Source/WebKit/WebProce
 diff --git a/Source/WebKit/WebProcess/WebPage/WebPage.cpp b/Source/WebKit/WebProcess/WebPage/WebPage.cpp
 --- a/Source/WebKit/WebProcess/WebPage/WebPage.cpp
 +++ b/Source/WebKit/WebProcess/WebPage/WebPage.cpp
-@@ -3131,7 +1,undefined @@
+@@ -3131,1 +3131,7 @@
 -void WebPage::setSize(const WebCore::IntSize& viewSize)
 +void WebPage::setSharedSurfaceDescriptor(Vector<uint8_t>&& descriptor)
 +{
@@ -117,10 +117,10 @@ diff --git a/Source/WebKit/WebProcess/WebPage/WebPage.cpp b/Source/WebKit/WebPro
 diff --git a/Source/WebKit/WebProcess/WebPage/DrawingArea.h b/Source/WebKit/WebProcess/WebPage/DrawingArea.h
 --- a/Source/WebKit/WebProcess/WebPage/DrawingArea.h
 +++ b/Source/WebKit/WebProcess/WebPage/DrawingArea.h
-@@ -43,2 +1,undefined @@
+@@ -43,1 +43,2 @@
  #include <wtf/TypeCasts.h>
 +#include <wtf/Vector.h>
-@@ -102,3 +2,undefined @@
+@@ -101,2 +102,3 @@
      virtual void updatePreferences(const WebPreferencesStore&) { }
 +    virtual void setSharedSurfaceDescriptor(Vector<uint8_t>&&) { }
      virtual void mainFrameContentSizeChanged(WebCore::FrameIdentifier, const WebCore::IntSize&) { }
@@ -128,7 +128,7 @@ diff --git a/Source/WebKit/WebProcess/WebPage/DrawingArea.h b/Source/WebKit/WebP
 diff --git a/Source/WebKit/WebProcess/WebPage/wc/DrawingAreaWC.h b/Source/WebKit/WebProcess/WebPage/wc/DrawingAreaWC.h
 --- a/Source/WebKit/WebProcess/WebPage/wc/DrawingAreaWC.h
 +++ b/Source/WebKit/WebProcess/WebPage/wc/DrawingAreaWC.h
-@@ -69,4 +3,undefined @@
+@@ -69,3 +69,4 @@
      void attachViewOverlayGraphicsLayer(WebCore::FrameIdentifier, WebCore::GraphicsLayer*) override;
      void updatePreferences(const WebPreferencesStore&) override;
 +    void setSharedSurfaceDescriptor(Vector<uint8_t>&&) override;
@@ -137,7 +137,7 @@ diff --git a/Source/WebKit/WebProcess/WebPage/wc/DrawingAreaWC.h b/Source/WebKit
 diff --git a/Source/WebKit/WebProcess/WebPage/wc/DrawingAreaWC.cpp b/Source/WebKit/WebProcess/WebPage/wc/DrawingAreaWC.cpp
 --- a/Source/WebKit/WebProcess/WebPage/wc/DrawingAreaWC.cpp
 +++ b/Source/WebKit/WebProcess/WebPage/wc/DrawingAreaWC.cpp
-@@ -121,13 +8,undefined @@
+@@ -121,8 +121,13 @@
  void DrawingAreaWC::updatePreferences(const WebPreferencesStore& store)
  {
      Settings& settings = m_webPage->corePage()->settings();
@@ -155,11 +155,11 @@ diff --git a/Source/WebKit/WebProcess/WebPage/wc/DrawingAreaWC.cpp b/Source/WebK
 diff --git a/Source/WebKit/WebProcess/GPU/graphics/wc/RemoteWCLayerTreeHostProxy.h b/Source/WebKit/WebProcess/GPU/graphics/wc/RemoteWCLayerTreeHostProxy.h
 --- a/Source/WebKit/WebProcess/GPU/graphics/wc/RemoteWCLayerTreeHostProxy.h
 +++ b/Source/WebKit/WebProcess/GPU/graphics/wc/RemoteWCLayerTreeHostProxy.h
-@@ -35,3 +2,undefined @@
+@@ -35,2 +35,3 @@
  #include <wtf/TZoneMalloc.h>
  #include <wtf/WeakRef.h>
 +#include <wtf/Vector.h>
-@@ -52,4 +3,undefined @@
+@@ -51,3 +52,4 @@
      void update(WCUpdateInfo&&, CompletionHandler<void(std::optional<WebKit::UpdateInfo>)>&&);
 +    void setSharedSurfaceDescriptor(Vector<uint8_t>&&);
  
@@ -168,7 +168,7 @@ diff --git a/Source/WebKit/WebProcess/GPU/graphics/wc/RemoteWCLayerTreeHostProxy
 diff --git a/Source/WebKit/WebProcess/GPU/graphics/wc/RemoteWCLayerTreeHostProxy.cpp b/Source/WebKit/WebProcess/GPU/graphics/wc/RemoteWCLayerTreeHostProxy.cpp
 --- a/Source/WebKit/WebProcess/GPU/graphics/wc/RemoteWCLayerTreeHostProxy.cpp
 +++ b/Source/WebKit/WebProcess/GPU/graphics/wc/RemoteWCLayerTreeHostProxy.cpp
-@@ -90,11 +6,undefined @@
+@@ -90,6 +90,11 @@
  void RemoteWCLayerTreeHostProxy::update(WCUpdateInfo&& updateInfo, CompletionHandler<void(std::optional<WebKit::UpdateInfo>)>&& completionHandler)
  {
      sendWithAsyncReply(Messages::RemoteWCLayerTreeHost::Update(updateInfo), WTF::move(completionHandler));
@@ -184,7 +184,7 @@ diff --git a/Source/WebKit/WebProcess/GPU/graphics/wc/RemoteWCLayerTreeHostProxy
 diff --git a/Source/WebKit/GPUProcess/graphics/wc/RemoteWCLayerTreeHost.messages.in b/Source/WebKit/GPUProcess/graphics/wc/RemoteWCLayerTreeHost.messages.in
 --- a/Source/WebKit/GPUProcess/graphics/wc/RemoteWCLayerTreeHost.messages.in
 +++ b/Source/WebKit/GPUProcess/graphics/wc/RemoteWCLayerTreeHost.messages.in
-@@ -30,4 +3,undefined @@
+@@ -30,3 +30,4 @@
  messages -> RemoteWCLayerTreeHost {
      Update(struct WebKit::WCUpdateInfo updateInfo) -> (std::optional<WebKit::UpdateInfo> updateInfo)
 +    SetSharedSurfaceDescriptor(Vector<uint8_t> descriptor)
@@ -193,18 +193,18 @@ diff --git a/Source/WebKit/GPUProcess/graphics/wc/RemoteWCLayerTreeHost.messages
 diff --git a/Source/WebKit/GPUProcess/graphics/wc/RemoteWCLayerTreeHost.h b/Source/WebKit/GPUProcess/graphics/wc/RemoteWCLayerTreeHost.h
 --- a/Source/WebKit/GPUProcess/graphics/wc/RemoteWCLayerTreeHost.h
 +++ b/Source/WebKit/GPUProcess/graphics/wc/RemoteWCLayerTreeHost.h
-@@ -36,3 +2,undefined @@
+@@ -36,2 +36,3 @@
  #include <wtf/RefCounted.h>
  #include <wtf/TZoneMalloc.h>
 +#include <wtf/Vector.h>
-@@ -55,6 +4,undefined @@
+@@ -54,4 +55,6 @@
      // message handlers
      void update(WCUpdateInfo&&, CompletionHandler<void(std::optional<WebKit::UpdateInfo>)>&&);
 +    void setSharedSurfaceDescriptor(Vector<uint8_t>&&);
 +    const Vector<uint8_t>& sharedSurfaceDescriptor() const { return m_sharedSurfaceDescriptor; }
  
      void ref() const final { RefCounted::ref(); }
-@@ -74,3 +2,undefined @@
+@@ -72,2 +74,3 @@
      RefPtr<WCSharedSceneContextHolder::Holder> m_sharedSceneContextHolder;
      std::unique_ptr<WCScene> m_scene;
 +    Vector<uint8_t> m_sharedSurfaceDescriptor;
@@ -212,11 +212,11 @@ diff --git a/Source/WebKit/GPUProcess/graphics/wc/RemoteWCLayerTreeHost.h b/Sour
 diff --git a/Source/WebKit/GPUProcess/graphics/wc/RemoteWCLayerTreeHost.cpp b/Source/WebKit/GPUProcess/graphics/wc/RemoteWCLayerTreeHost.cpp
 --- a/Source/WebKit/GPUProcess/graphics/wc/RemoteWCLayerTreeHost.cpp
 +++ b/Source/WebKit/GPUProcess/graphics/wc/RemoteWCLayerTreeHost.cpp
-@@ -26,3 +2,undefined @@
+@@ -26,2 +26,3 @@
  #include "config.h"
  #include "RemoteWCLayerTreeHost.h"
 +#include <cstring>
-@@ -101,24 +11,undefined @@
+@@ -100,11 +101,24 @@
  void RemoteWCLayerTreeHost::update(WCUpdateInfo&& update, CompletionHandler<void(std::optional<WebKit::UpdateInfo>)>&& completionHandler)
  {
      remoteGraphicsStreamWorkQueue().dispatch([scene = m_scene.get(), update = WTF::move(update), completionHandler = WTF::move(completionHandler)]() mutable {
