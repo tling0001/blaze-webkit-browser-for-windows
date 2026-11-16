@@ -1,5 +1,15 @@
 # Blaze release notes
 
+## [1.1.68] - 2026-11-15
+
+### Unified-diff integrity correction
+- Correct the final descriptor IPC hunk's added-line count and verify all 24 patch hunks have exact old/new line counts.
+- Advance the immutable SDK tag and patch-set identity again to prevent reuse of the malformed v6 attempt.
+- Preserve the HWND renderer until GPU-process D3D import, WCScene rendering and live WinUI presentation are implemented and tested.
+
+### Versioning
+- Align product, assembly, file, informational and package versions at 1.1.68.
+
 ## [1.1.67] - 2026-11-15
 
 ### Correct WebKit SDK patch metadata
