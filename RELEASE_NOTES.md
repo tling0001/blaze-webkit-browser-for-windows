@@ -1,6 +1,17 @@
 # Blaze release notes
 
-## [1.1.69] - 2026-11-15
+## [1.1.70] - 2026-11-15
+
+### Windows checkout-safe WebKit patch application
+- Normalize the pinned WebKit checkout to LF working-tree files before applying the downstream patch series.
+- Apply each patch with whitespace-tolerant context matching and immediately verify it before moving to the next patch; retain exact added source contents.
+- Advance the immutable SDK tag and patch-set identity so the corrected patch attempt cannot reuse a prior failed SDK artifact.
+- Keep the production HWND renderer enabled until the experimental D3D shared-surface path passes live rendering validation.
+
+### Versioning
+- Align product, assembly, file, informational and package versions at 1.1.70.
+
+## [1.1.70] - 2026-11-15
 
 ### WebKit patch rebase against pinned source
 - Rebase the fullscreen and shared-surface IPC patch locations against exact contexts in pinned WebKit commit d641dd75af65b0469eff30bb76a97e01e02633fc.
@@ -9,7 +20,7 @@
 - Preserve the WinCairo HWND renderer until the D3D GPU-process import and live presentation path is validated.
 
 ### Versioning
-- Align product, assembly, file, informational and package versions at 1.1.69.
+- Align product, assembly, file, informational and package versions at 1.1.70.
 
 ## [1.1.68] - 2026-11-15
 

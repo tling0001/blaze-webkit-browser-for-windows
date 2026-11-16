@@ -88,9 +88,14 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Creating the short physical WebKit worktree failed.' }
           $spec = Get-Content -LiteralPath 'blaze\eng\WebKitSdk.json' -Raw | ConvertFrom-Json
           git -C $sourceRoot config core.autocrlf false
+          git -C $sourceRoot config core.eol lf
           git -C $sourceRoot config core.whitespace cr-at-eol
-          git -C $sourceRoot checkout --detach $spec.webkitCommit
+          git -C $sourceRoot checkout --force --detach $spec.webkitCommit
           if ($LASTEXITCODE -ne 0) { throw 'Checking out the pinned WebKit commit into the short worktree failed.' }
+          # Confirm the checkout is clean before patching. Windows Git may otherwise
+          # leave CRLF working-tree files even when the pinned blobs are LF.
+          git -C $sourceRoot status --short
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to inspect the pinned WebKit checkout state.' }
           if (-not (Test-Path -LiteralPath (Join-Path $sourceRoot 'Tools\Scripts\build-webkit'))) { throw 'The short physical WebKit checkout is incomplete.' }
           "WEBKIT_SOURCE_ROOT=$sourceRoot" >> $env:GITHUB_ENV
           Write-Host "WebKit source and all generated build paths will use the physical path $sourceRoot"
@@ -104,13 +109,13 @@ jobs:
           $patches = @(Get-ChildItem -LiteralPath $patchRoot -Filter '*.patch' -File | Sort-Object Name)
           if ($patches.Count -lt 2) { throw "Expected the ordered WebKit patch series in $patchRoot." }
           foreach ($patch in $patches) {
-            git -C $env:WEBKIT_SOURCE_ROOT -c core.whitespace=cr-at-eol apply --check --verbose $patch.FullName
+            # Patch contexts are LF in the pinned Git blobs; tolerate Windows checkout
+            # EOL/whitespace normalization without changing any added source text.
+            git -C $env:WEBKIT_SOURCE_ROOT -c core.whitespace=cr-at-eol apply --ignore-whitespace --check --verbose $patch.FullName
             if ($LASTEXITCODE -ne 0) { throw "Patch does not apply cleanly: $($patch.Name)" }
-          }
-          foreach ($patch in $patches) {
-            git -C $env:WEBKIT_SOURCE_ROOT -c core.whitespace=cr-at-eol apply --verbose $patch.FullName
+            git -C $env:WEBKIT_SOURCE_ROOT -c core.whitespace=cr-at-eol apply --ignore-whitespace --verbose $patch.FullName
             if ($LASTEXITCODE -ne 0) { throw "Applying patch failed: $($patch.Name)" }
-            Write-Host "Applied $($patch.Name)"
+            Write-Host "Applied and verified $($patch.Name)"
           }
           Write-Host "Applied patch set $((Get-Content -LiteralPath 'blaze\eng\WebKitSdk.json' -Raw | ConvertFrom-Json).patchSet)"
 
