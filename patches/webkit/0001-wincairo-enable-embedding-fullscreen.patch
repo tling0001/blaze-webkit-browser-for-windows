@@ -74,7 +74,7 @@ diff --git a/Source/WebKit/UIProcess/win/PageClientImpl.cpp b/Source/WebKit/UIPr
 diff --git a/Source/WebKit/UIProcess/win/PageClientImpl.h b/Source/WebKit/UIProcess/win/PageClientImpl.h
 --- a/Source/WebKit/UIProcess/win/PageClientImpl.h
 +++ b/Source/WebKit/UIProcess/win/PageClientImpl.h
-@@ -201,4 +201,8 @@
+@@ -165,4 +165,8 @@
      // Members of PageClientImpl class
      DefaultUndoController m_undoController;
  

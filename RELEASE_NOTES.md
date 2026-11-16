@@ -1,5 +1,16 @@
 # Blaze release notes
 
+## [1.1.69] - 2026-11-15
+
+### WebKit patch rebase against pinned source
+- Rebase the fullscreen and shared-surface IPC patch locations against exact contexts in pinned WebKit commit d641dd75af65b0469eff30bb76a97e01e02633fc.
+- Correct cumulative new-file offsets in WebView.h and RemoteWCLayerTreeHost.h, and use the actual PageClientImpl.h declaration location.
+- Advance the immutable SDK artifact tag and patch-set identity to avoid reusing earlier failed patch attempts.
+- Preserve the WinCairo HWND renderer until the D3D GPU-process import and live presentation path is validated.
+
+### Versioning
+- Align product, assembly, file, informational and package versions at 1.1.69.
+
 ## [1.1.68] - 2026-11-15
 
 ### Unified-diff integrity correction

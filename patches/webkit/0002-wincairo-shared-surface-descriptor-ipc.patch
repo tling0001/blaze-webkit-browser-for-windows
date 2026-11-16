@@ -37,7 +37,7 @@ diff --git a/Source/WebKit/UIProcess/win/WebView.h b/Source/WebKit/UIProcess/win
  #include <wtf/Forward.h>
  #include <wtf/RefPtr.h>
 +#include <stdint.h>
-@@ -73,4 +74,5 @@
+@@ -73,4 +73,5 @@
      void setUsesOffscreenRendering(bool);
      bool usesOffscreenRendering() const;
 +    void setSharedSurfaceDescriptor(const uint8_t*, uint32_t);
@@ -204,7 +204,7 @@ diff --git a/Source/WebKit/GPUProcess/graphics/wc/RemoteWCLayerTreeHost.h b/Sour
 +    const Vector<uint8_t>& sharedSurfaceDescriptor() const { return m_sharedSurfaceDescriptor; }
  
      void ref() const final { RefCounted::ref(); }
-@@ -72,2 +74,3 @@
+@@ -72,2 +75,3 @@
      RefPtr<WCSharedSceneContextHolder::Holder> m_sharedSceneContextHolder;
      std::unique_ptr<WCScene> m_scene;
 +    Vector<uint8_t> m_sharedSurfaceDescriptor;
