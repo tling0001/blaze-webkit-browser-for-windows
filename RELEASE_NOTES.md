@@ -1,6 +1,16 @@
 # Blaze release notes
 
-## [1.1.70] - 2026-11-15
+## [1.1.71] - 2026-11-16
+
+### Repair WebKit patch 0002 format
+- Removed 14 unprefixed blank separator lines accidentally embedded inside unified-diff hunks; Git interpreted them as extra context, causing all affected source hunks to fail despite their visible context matching the pinned source.
+- Verified all 24 hunk old/new line counts in patch 0002 now match the actual hunk contents.
+- Keep the pinned WebKit revision unchanged and force a fresh SDK release/cache identity for the corrected patch set.
+
+### Versioning
+- Align product, assembly, file, informational and package versions at 1.1.71.
+
+## [1.1.71] - 2026-11-15
 
 ### Windows checkout-safe WebKit patch application
 - Normalize the pinned WebKit checkout to LF working-tree files before applying the downstream patch series.
@@ -9,9 +19,9 @@
 - Keep the production HWND renderer enabled until the experimental D3D shared-surface path passes live rendering validation.
 
 ### Versioning
-- Align product, assembly, file, informational and package versions at 1.1.70.
+- Align product, assembly, file, informational and package versions at 1.1.71.
 
-## [1.1.70] - 2026-11-15
+## [1.1.71] - 2026-11-15
 
 ### WebKit patch rebase against pinned source
 - Rebase the fullscreen and shared-surface IPC patch locations against exact contexts in pinned WebKit commit d641dd75af65b0469eff30bb76a97e01e02633fc.
@@ -20,7 +30,7 @@
 - Preserve the WinCairo HWND renderer until the D3D GPU-process import and live presentation path is validated.
 
 ### Versioning
-- Align product, assembly, file, informational and package versions at 1.1.70.
+- Align product, assembly, file, informational and package versions at 1.1.71.
 
 ## [1.1.68] - 2026-11-15
 
