@@ -1,5 +1,16 @@
 # Blaze release notes
 
+## [1.1.73] - 2026-11-16
+
+### Normalize WebKit patch inputs before applying
+- Investigate SDK run #17: patch 0001 applies, but patch 0002 cannot match context in multiple pinned WebKit files even though the checked-out revision and source snippets were verified.
+- Explicitly normalize every file touched by the downstream patch series and each patch file to UTF-8 without BOM and LF line endings before checking/applying; fail early if any expected target file is missing.
+- Remove the whitespace-ignore fallback so patch application now validates exact normalized context instead of silently accepting unrelated whitespace changes.
+- Advance immutable SDK release/cache identity for a clean validation against the pinned WebKit commit.
+
+### Versioning
+- Align product, assembly, file, informational and package versions at 1.1.73.
+
 ## [1.1.72] - 2026-11-16
 
 ### Native HTML video fullscreen

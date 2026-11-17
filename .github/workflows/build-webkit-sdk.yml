@@ -108,14 +108,44 @@ jobs:
           $patchRoot = Join-Path $env:GITHUB_WORKSPACE 'blaze\patches\webkit'
           $patches = @(Get-ChildItem -LiteralPath $patchRoot -Filter '*.patch' -File | Sort-Object Name)
           if ($patches.Count -lt 2) { throw "Expected the ordered WebKit patch series in $patchRoot." }
+          # Normalize the exact source files touched by the downstream patches and the patch
+          # text itself. Windows Git attributes/global settings can otherwise leave CRLF
+          # working-tree files even when the pinned Git blobs and patch are LF.
+          $targets = @(
+            'Source/WebKit/UIProcess/API/C/win/WKView.h',
+            'Source/WebKit/UIProcess/API/C/win/WKView.cpp',
+            'Source/WebKit/UIProcess/win/WebView.h',
+            'Source/WebKit/UIProcess/win/WebView.cpp',
+            'Source/WebKit/WebProcess/WebPage/WebPage.messages.in',
+            'Source/WebKit/WebProcess/WebPage/WebPage.h',
+            'Source/WebKit/WebProcess/WebPage/WebPage.cpp',
+            'Source/WebKit/WebProcess/WebPage/DrawingArea.h',
+            'Source/WebKit/WebProcess/WebPage/wc/DrawingAreaWC.h',
+            'Source/WebKit/WebProcess/WebPage/wc/DrawingAreaWC.cpp',
+            'Source/WebKit/WebProcess/GPU/graphics/wc/RemoteWCLayerTreeHostProxy.h',
+            'Source/WebKit/WebProcess/GPU/graphics/wc/RemoteWCLayerTreeHostProxy.cpp',
+            'Source/WebKit/GPUProcess/graphics/wc/RemoteWCLayerTreeHost.messages.in',
+            'Source/WebKit/GPUProcess/graphics/wc/RemoteWCLayerTreeHost.h',
+            'Source/WebKit/GPUProcess/graphics/wc/RemoteWCLayerTreeHost.cpp'
+          )
+          $utf8NoBom = [Text.UTF8Encoding]::new($false)
+          foreach ($relative in $targets) {
+            $file = Join-Path $env:WEBKIT_SOURCE_ROOT $relative
+            if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "Pinned WebKit patch target is missing: $relative" }
+            $content = [IO.File]::ReadAllText($file)
+            $normalized = [regex]::Replace($content, "`r`n?", "`n")
+            if ($normalized -cne $content) { [IO.File]::WriteAllText($file, $normalized, $utf8NoBom) }
+          }
           foreach ($patch in $patches) {
-            # Patch contexts are LF in the pinned Git blobs; tolerate Windows checkout
-            # EOL/whitespace normalization without changing any added source text.
-            git -C $env:WEBKIT_SOURCE_ROOT -c core.whitespace=cr-at-eol apply --ignore-whitespace --check --verbose $patch.FullName
-            if ($LASTEXITCODE -ne 0) { throw "Patch does not apply cleanly: $($patch.Name)" }
-            git -C $env:WEBKIT_SOURCE_ROOT -c core.whitespace=cr-at-eol apply --ignore-whitespace --verbose $patch.FullName
-            if ($LASTEXITCODE -ne 0) { throw "Applying patch failed: $($patch.Name)" }
-            Write-Host "Applied and verified $($patch.Name)"
+            $patchText = [IO.File]::ReadAllText($patch.FullName)
+            $normalizedPatch = [regex]::Replace($patchText, "`r`n?", "`n")
+            $normalizedPatchPath = Join-Path $env:RUNNER_TEMP $patch.Name
+            [IO.File]::WriteAllText($normalizedPatchPath, $normalizedPatch, $utf8NoBom)
+            git -C $env:WEBKIT_SOURCE_ROOT -c core.whitespace=cr-at-eol apply --check --verbose $normalizedPatchPath
+            if ($LASTEXITCODE -ne 0) { throw "Patch does not apply cleanly after explicit LF normalization: $($patch.Name)" }
+            git -C $env:WEBKIT_SOURCE_ROOT -c core.whitespace=cr-at-eol apply --verbose $normalizedPatchPath
+            if ($LASTEXITCODE -ne 0) { throw "Applying normalized patch failed: $($patch.Name)" }
+            Write-Host "Applied and verified normalized $($patch.Name)"
           }
           Write-Host "Applied patch set $((Get-Content -LiteralPath 'blaze\eng\WebKitSdk.json' -Raw | ConvertFrom-Json).patchSet)"
 
