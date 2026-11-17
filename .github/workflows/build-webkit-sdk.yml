@@ -133,17 +133,22 @@ jobs:
             $file = Join-Path $env:WEBKIT_SOURCE_ROOT $relative
             if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "Pinned WebKit patch target is missing: $relative" }
             $content = [IO.File]::ReadAllText($file)
-            $normalized = [regex]::Replace($content, "`r`n?", "`n")
+            $normalized = [regex]::Replace($content, '\r\n?', "`n")
+            if ($normalized.Contains("`r")) { throw "Line-ending normalization failed for $relative." }
             if ($normalized -cne $content) { [IO.File]::WriteAllText($file, $normalized, $utf8NoBom) }
+            $remainingCR = ([regex]::Matches([IO.File]::ReadAllText($file), '\r')).Count
+            if ($remainingCR -ne 0) { throw "CR characters remain in normalized source file $relative ($remainingCR)." }
           }
           foreach ($patch in $patches) {
             $patchText = [IO.File]::ReadAllText($patch.FullName)
-            $normalizedPatch = [regex]::Replace($patchText, "`r`n?", "`n")
+            $normalizedPatch = [regex]::Replace($patchText, '\r\n?', "`n")
             $normalizedPatchPath = Join-Path $env:RUNNER_TEMP $patch.Name
+            if ($normalizedPatch.Contains("`r")) { throw "Patch normalization failed for $($patch.Name)." }
             [IO.File]::WriteAllText($normalizedPatchPath, $normalizedPatch, $utf8NoBom)
-            git -C $env:WEBKIT_SOURCE_ROOT -c core.whitespace=cr-at-eol apply --check --verbose $normalizedPatchPath
+            if (([regex]::Matches([IO.File]::ReadAllText($normalizedPatchPath), '\r')).Count -ne 0) { throw "CR characters remain in normalized patch $($patch.Name)." }
+            git -C $env:WEBKIT_SOURCE_ROOT -c core.autocrlf=false -c core.eol=lf -c core.whitespace=cr-at-eol apply --check --verbose $normalizedPatchPath
             if ($LASTEXITCODE -ne 0) { throw "Patch does not apply cleanly after explicit LF normalization: $($patch.Name)" }
-            git -C $env:WEBKIT_SOURCE_ROOT -c core.whitespace=cr-at-eol apply --verbose $normalizedPatchPath
+            git -C $env:WEBKIT_SOURCE_ROOT -c core.autocrlf=false -c core.eol=lf -c core.whitespace=cr-at-eol apply --verbose $normalizedPatchPath
             if ($LASTEXITCODE -ne 0) { throw "Applying normalized patch failed: $($patch.Name)" }
             Write-Host "Applied and verified normalized $($patch.Name)"
           }
@@ -157,7 +162,7 @@ jobs:
           path: |
             ${{ runner.temp }}/webkit/WebKitBuild/Release
             ${{ runner.temp }}/webkit/WebKitLibraries/win
-          key: wincairo-x64-d641dd75af65b0469eff30bb76a97e01e02633fc-7d5f3c6241729acbbb7774f54bf687429aaf6492-9a80b82f283a1d69ffdc64e32536627ae738a65b-blaze-wincairo-fullscreen-d3d-ipc-v9-windows-latest-release-runtime-no-tests-v8
+          key: wincairo-x64-d641dd75af65b0469eff30bb76a97e01e02633fc-7d5f3c6241729acbbb7774f54bf687429aaf6492-9a80b82f283a1d69ffdc64e32536627ae738a65b-blaze-wincairo-fullscreen-d3d-ipc-v11-windows-latest-release-runtime-no-tests-v8
           restore-keys: |
             wincairo-x64-d641dd75af65b0469eff30bb76a97e01e02633fc-7d5f3c6241729acbbb7774f54bf687429aaf6492-9a80b82f283a1d69ffdc64e32536627ae738a65b-windows-latest-release-runtime-no-tests-v3
 
@@ -230,7 +235,7 @@ jobs:
           path: |
             ${{ runner.temp }}/webkit/WebKitBuild/Release
             ${{ runner.temp }}/webkit/WebKitLibraries/win
-          key: wincairo-x64-d641dd75af65b0469eff30bb76a97e01e02633fc-7d5f3c6241729acbbb7774f54bf687429aaf6492-9a80b82f283a1d69ffdc64e32536627ae738a65b-blaze-wincairo-fullscreen-d3d-ipc-v9-windows-latest-release-runtime-no-tests-v8
+          key: wincairo-x64-d641dd75af65b0469eff30bb76a97e01e02633fc-7d5f3c6241729acbbb7774f54bf687429aaf6492-9a80b82f283a1d69ffdc64e32536627ae738a65b-blaze-wincairo-fullscreen-d3d-ipc-v11-windows-latest-release-runtime-no-tests-v8
 
       - name: Print WebKit build diagnostics
         if: failure() && steps.sdk.outputs.exists != 'true'

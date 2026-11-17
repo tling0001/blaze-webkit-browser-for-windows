@@ -1,5 +1,14 @@
 # Blaze release notes
 
+## [1.1.74] - 2026-11-16
+
+### WebKit patch checkout normalization
+- Correct the PowerShell regular expression used to normalize WebKit source and patch files: use the literal regex `\\r\\n?` rather than embedding actual PowerShell CR/LF characters in the pattern.
+- Assert that all source and patch files are free of carriage-return bytes before applying the ordered patch series, and apply with explicit LF checkout settings.
+- Correct the SDK cache identity to match the patch-set identity, so a stale cache cannot be mistaken for the current patch series.
+- Align the package manifest version with the project and assembly version.
+
+
 ## [1.1.73] - 2026-11-16
 
 ### Normalize WebKit patch inputs before applying
