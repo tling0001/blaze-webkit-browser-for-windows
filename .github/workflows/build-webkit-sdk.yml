@@ -127,7 +127,7 @@ jobs:
           path: |
             ${{ runner.temp }}/webkit/WebKitBuild/Release
             ${{ runner.temp }}/webkit/WebKitLibraries/win
-          key: wincairo-x64-d641dd75af65b0469eff30bb76a97e01e02633fc-7d5f3c6241729acbbb7774f54bf687429aaf6492-9a80b82f283a1d69ffdc64e32536627ae738a65b-blaze-wincairo-fullscreen-d3d-ipc-v8-windows-latest-release-runtime-no-tests-v8
+          key: wincairo-x64-d641dd75af65b0469eff30bb76a97e01e02633fc-7d5f3c6241729acbbb7774f54bf687429aaf6492-9a80b82f283a1d69ffdc64e32536627ae738a65b-blaze-wincairo-fullscreen-d3d-ipc-v9-windows-latest-release-runtime-no-tests-v8
           restore-keys: |
             wincairo-x64-d641dd75af65b0469eff30bb76a97e01e02633fc-7d5f3c6241729acbbb7774f54bf687429aaf6492-9a80b82f283a1d69ffdc64e32536627ae738a65b-windows-latest-release-runtime-no-tests-v3
 
@@ -187,8 +187,8 @@ jobs:
           $ninjaDir = Split-Path $env:WEBKIT_NINJA
           $extraPath = $env:WEBKIT_XAMPP + '\perl\bin;' + $env:WEBKIT_XAMPP + '\apache\bin;' + $pythonDir + ';' + $pythonDir + '\Scripts;' + $ninjaDir
           $command = 'cd /d "' + $sourceRoot + '" && call "' + $vcvars + '" && set "PATH=' + $extraPath + ';%PATH%" && set "CC=clang-cl" && set "CXX=clang-cl" && where.exe ninja && ninja --version && perl Tools\Scripts\build-webkit --release'
-          $command = $command.TrimEnd() + ' --cmakeargs="-DENABLE_API_TESTS=OFF -DENABLE_LAYOUT_TESTS=OFF -DENABLE_WEBDRIVER=OFF -DENABLE_MINIBROWSER=OFF"'
-          Write-Host 'Building the patched production WebKit runtime in Release mode; cached targets are incrementally rebuilt; optional API/layout tests, WebDriver and MiniBrowser targets are disabled.'
+          $command = $command.TrimEnd() + ' --cmakeargs="-DENABLE_API_TESTS=OFF -DENABLE_LAYOUT_TESTS=OFF -DENABLE_WEBDRIVER=OFF -DENABLE_MINIBROWSER=OFF -DENABLE_FULLSCREEN_API=ON -DENABLE_VIDEO_USES_ELEMENT_FULLSCREEN=ON"'
+          Write-Host 'Building the patched production WebKit runtime in Release mode; cached targets are incrementally rebuilt; optional API/layout tests, WebDriver and MiniBrowser targets are disabled; native HTML video fullscreen is explicitly enabled.'
           cmd.exe /d /s /c $command
           if ($LASTEXITCODE -ne 0) { throw "Pinned WebKit WinCairo build failed (exit $LASTEXITCODE)." }
 
@@ -200,7 +200,7 @@ jobs:
           path: |
             ${{ runner.temp }}/webkit/WebKitBuild/Release
             ${{ runner.temp }}/webkit/WebKitLibraries/win
-          key: wincairo-x64-d641dd75af65b0469eff30bb76a97e01e02633fc-7d5f3c6241729acbbb7774f54bf687429aaf6492-9a80b82f283a1d69ffdc64e32536627ae738a65b-blaze-wincairo-fullscreen-d3d-ipc-v8-windows-latest-release-runtime-no-tests-v8
+          key: wincairo-x64-d641dd75af65b0469eff30bb76a97e01e02633fc-7d5f3c6241729acbbb7774f54bf687429aaf6492-9a80b82f283a1d69ffdc64e32536627ae738a65b-blaze-wincairo-fullscreen-d3d-ipc-v9-windows-latest-release-runtime-no-tests-v8
 
       - name: Print WebKit build diagnostics
         if: failure() && steps.sdk.outputs.exists != 'true'

@@ -1,5 +1,19 @@
 # Blaze release notes
 
+## [1.1.72] - 2026-11-16
+
+### Native HTML video fullscreen
+- Explicitly enable `ENABLE_FULLSCREEN_API` and `ENABLE_VIDEO_USES_ELEMENT_FULLSCREEN` in the pinned WinCairo build so native video-control fullscreen requests use WebKit's element-fullscreen manager instead of falling through to the unsupported video-presentation-mode path.
+- Keep the WebKit fullscreen transition connected to the owned HWND host and WinUI window presenter: hide browser chrome on entry, restore the prior windowed/maximized state on exit, and relayout the native view.
+- Keep fullscreen layout updates renderer-independent; resize any registered D3D shared surfaces after the same WinUI transition while retaining the validated HWND renderer as the active backend.
+
+### WebKit patch parser repair
+- Restore the required final LF in patch 0002. The prior file ended without a newline, causing Git to report a corrupt patch at its final context line (line 230) even though every hunk's old/new counts matched.
+- Advance the immutable WebKit SDK tag and patch-set/cache identity so the corrected patch and explicit fullscreen feature configuration are rebuilt from the pinned WebKit source.
+
+### Versioning
+- Align product, assembly, file, informational and package versions at 1.1.72.
+
 ## [1.1.71] - 2026-11-16
 
 ### Repair WebKit patch 0002 format
